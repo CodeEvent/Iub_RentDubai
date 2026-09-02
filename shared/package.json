@@ -1,0 +1,8 @@
+{
+  "name": "@rentshield/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Single source of truth for Dubai Rent Shield's statutory notice logic (reasons, date math, bilingual document templates). Consumed by api/, vue/, and mcp/ as a workspace package so the legal text and RERA date rules can never drift between the three."
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@rentshield/vue",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@rentshield/shared": "*",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.42",
+    "@lucide/vue": "^1.39.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.2.2"
+  }
+}

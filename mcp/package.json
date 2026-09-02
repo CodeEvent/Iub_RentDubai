@@ -1,0 +1,16 @@
+{
+  "name": "@rentshield/mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "description": "MCP (Model Context Protocol) server exposing Dubai Rent Shield's statutory notice logic as tools an LLM client (Claude Desktop, Claude Code, etc.) can call directly — the real integration point the old prototype's chat panel only simulated locally.",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@rentshield/shared": "*",
+    "zod": "^4.5.4"
+  }
+}
