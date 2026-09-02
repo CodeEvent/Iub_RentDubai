@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dubai Rent Shield | Statutory Eviction Notice Generator</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          slate950: '#0f172a',
+          emerald: {
+            DEFAULT: '#10b981',
+            50: '#ecfdf5',
+            100: '#d1fae5',
+            600: '#059669',
+            700: '#047857'
+          }
+        },
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          arabic: ['"Noto Kufi Arabic"', '"Cairo"', 'sans-serif']
+        },
+        boxShadow: {
+          premium: '0 20px 40px -15px rgba(15, 23, 42, 0.25)'
+        }
+      }
+    }
+  }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Kufi+Arabic:wght@400;500;600;700;800&family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+  .arabic-text { font-family: 'Noto Kufi Arabic', 'Cairo', sans-serif; direction: rtl; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  .step-panel { animation: fadeSlide .35s ease; }
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .doc-card {
+    background:
+      repeating-linear-gradient(135deg, rgba(15,23,42,0.015) 0px, rgba(15,23,42,0.015) 1px, transparent 1px, transparent 14px),
+      #ffffff;
+  }
+
+  .watermark {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 20;
+  }
+  .watermark span {
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: rgba(15, 23, 42, 0.08);
+    transform: rotate(-28deg);
+    white-space: nowrap;
+    letter-spacing: 0.15em;
+    user-select: none;
+  }
+
+  .blur-doc { filter: blur(3.5px) saturate(60%); user-select: none; }
+
+  .field-input {
+    transition: all .15s ease;
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
+  }
+
+  .step-dot { transition: all .25s ease; }
+
+  .card-pop { animation: popIn .3s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(.92); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  .spinner {
+    border: 3px solid rgba(255,255,255,0.25);
+    border-top-color: #fff;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .card-shine {
+    background: linear-gradient(120deg, #0f172a 0%, #1e293b 45%, #0f172a 100%);
+  }
+
+  @media print {
+    body * { visibility: hidden; }
+    #printable-area, #printable-area * { visibility: visible; }
+    #printable-area {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .no-print { display: none !important; }
+    .print-page-break { page-break-before: always; }
+  }
+</style>
+</head>
+
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+<!-- ============ NAVBAR ============ -->
+<header class="no-print sticky top-0 z-30 bg-slate-950 text-white border-b border-slate-800">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-lg bg-emerald flex items-center justify-center shadow-lg shadow-emerald/30">
+        <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
+      </div>
+      <div class="leading-tight">
+        <p class="font-bold text-[15px] tracking-tight">Dubai Rent Shield</p>
+        <p class="text-[10px] text-slate-400 tracking-wide uppercase">RERA &middot; DLD Compliant</p>
+      </div>
+    </div>
+    <div class="hidden sm:flex items-center gap-2 text-xs text-slate-300">
+      <i data-lucide="lock" class="w-3.5 h-3.5 text-emerald"></i>
+      <span>Law No. (33) of 2008 &mdash; Article 25</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO STRIP ============ -->
+<div class="no-print bg-white border-b border-slate-200">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+    <h1 class="text-xl sm:text-2xl font-extrabold text-slate-950 tracking-tight">12-Month Statutory Eviction Notice Generator</h1>
+    <p class="text-sm text-slate-500 mt-1">Generate a bilingual (English &amp; Arabic) notice compliant with Dubai Law No. (33) of 2008, ready for Notary Public service.</p>
+  </div>
+</div>
+
+<!-- ============ MAIN SPLIT LAYOUT ============ -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+  <!-- ================= LEFT: FORM WIZARD ================= -->
+  <section class="no-print">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-premium overflow-hidden">
+
+      <!-- Step Progress -->
+      <div class="px-6 sm:px-8 pt-6">
+        <div class="flex items-center justify-between" id="stepIndicator"></div>
+      </div>
+
+      <!-- Step Content -->
+      <div class="px-6 sm:px-8 py-6 min-h-[420px]" id="stepContent"></div>
+
+      <!-- Nav Buttons -->
+      <div class="px-6 sm:px-8 pb-7 flex items-center justify-between border-t border-slate-100 pt-5">
+        <button id="btnBack" class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800 disabled:opacity-0 transition">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i> Back
+        </button>
+        <button id="btnNext" class="inline-flex items-center gap-2 bg-slate-950 hover:bg-slate-800 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition shadow-lg shadow-slate-950/10">
+          Continue <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Compliance footnote -->
+    <div class="mt-5 flex gap-3 items-start bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3.5">
+      <i data-lucide="scale" class="w-4 h-4 text-emerald-700 mt-0.5 shrink-0"></i>
+      <p class="text-xs text-emerald-800 leading-relaxed">This tool auto-calculates a mandatory <strong>365-day</strong> notice period per Article 25(2) and enforces the 4 statutory eviction grounds recognized by RERA / the Rental Dispute Settlement Centre (RDSC).</p>
+    </div>
+  </section>
+
+  <!-- ================= RIGHT: LIVE PREVIEW ================= -->
+  <section>
+    <div class="lg:sticky lg:top-24 space-y-4">
+
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="file-text" class="w-4 h-4 text-slate-500"></i>
+          <h2 class="text-sm font-bold text-slate-700 uppercase tracking-wide">Live Legal Document Preview</h2>
+        </div>
+        <span id="langToggleWrap" class="lg:hidden inline-flex bg-slate-100 rounded-lg p-1 text-xs font-semibold no-print">
+          <button data-lang="en" class="lang-btn px-3 py-1 rounded-md transition">EN</button>
+          <button data-lang="ar" class="lang-btn px-3 py-1 rounded-md transition">AR</button>
+        </span>
+      </div>
+
+      <div class="relative rounded-2xl border border-slate-200 shadow-premium overflow-hidden bg-white">
+
+        <!-- Watermark for unpaid state -->
+        <div class="watermark no-print" id="watermarkEl">
+          <span>SAMPLE &middot; UNPAID PREVIEW</span>
+        </div>
+
+        <div id="printable-area" class="doc-card">
+          <div id="docWrapEn" class="p-6 sm:p-8"></div>
+          <div id="docWrapAr" class="p-6 sm:p-8 border-t-2 border-dashed border-slate-200 lg:border-t-0 lg:border-l-2 print-page-break"></div>
+        </div>
+      </div>
+
+      <!-- Paywall CTA -->
+      <button id="btnDownload" class="no-print w-full group relative overflow-hidden bg-emerald hover:bg-emerald-600 text-white font-bold text-sm sm:text-base py-4 rounded-2xl shadow-xl shadow-emerald/25 transition flex items-center justify-center gap-2.5">
+        <i data-lucide="download-cloud" class="w-5 h-5"></i>
+        <span>Download DLD-Compliant Notarized PDF</span>
+        <span class="bg-white/20 px-2 py-0.5 rounded-md text-xs font-extrabold tracking-wide">99 AED</span>
+      </button>
+      <p class="no-print text-center text-[11px] text-slate-400 -mt-1">Secure checkout &middot; Instant PDF &middot; Notary-ready formatting</p>
+    </div>
+  </section>
+</main>
+
+<footer class="no-print border-t border-slate-200 bg-white">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-xs text-slate-400">
+    Dubai Rent Shield is a document drafting aid and does not constitute legal advice. Always verify service requirements with a licensed UAE legal counsel or Notary Public.
+  </div>
+</footer>
+
+<!-- ============ PAYMENT MODAL (Paywall Simulation) ============ -->
+<div id="paymentModal" class="no-print fixed inset-0 z-50 hidden">
+  <div id="modalBackdrop" class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"></div>
+
+  <div class="relative min-h-full flex items-center justify-center p-4">
+    <div class="card-pop relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+
+      <!-- Card header -->
+      <div class="card-shine px-6 py-5 flex items-center justify-between">
+        <div class="flex items-center gap-2 text-white">
+          <i data-lucide="shield-check" class="w-5 h-5 text-emerald"></i>
+          <span class="font-bold text-sm">Secure Checkout</span>
+        </div>
+        <button id="btnCloseModal" class="text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Views -->
+      <div id="viewForm" class="p-6">
+        <div class="flex items-center justify-between mb-5">
+          <p class="text-sm text-slate-500">Dubai Rent Shield &mdash; Notarized PDF</p>
+          <p class="text-xl font-extrabold text-slate-950">99.00 <span class="text-sm font-semibold text-slate-400">AED</span></p>
+        </div>
+
+        <form id="fakePaymentForm" class="space-y-4">
+          <div>
+            <label class="text-xs font-semibold text-slate-600 mb-1 block">Cardholder Name</label>
+            <input required type="text" placeholder="Ahmed Al Maktoum" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-slate-600 mb-1 block">Card Number</label>
+            <div class="relative">
+              <input required id="cardNumberInput" type="text" inputmode="numeric" maxlength="19" placeholder="4242 4242 4242 4242" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm pr-10">
+              <i data-lucide="credit-card" class="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2"></i>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs font-semibold text-slate-600 mb-1 block">Expiry</label>
+              <input required id="expiryInput" type="text" maxlength="5" placeholder="MM/YY" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+            </div>
+            <div>
+              <label class="text-xs font-semibold text-slate-600 mb-1 block">CVC</label>
+              <input required type="text" inputmode="numeric" maxlength="4" placeholder="123" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+            </div>
+          </div>
+
+          <button type="submit" class="w-full bg-slate-950 hover:bg-slate-800 text-white font-bold text-sm py-3.5 rounded-xl transition flex items-center justify-center gap-2 mt-2">
+            <i data-lucide="lock" class="w-4 h-4"></i>
+            Pay 99.00 AED
+          </button>
+          <p class="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1">
+            <i data-lucide="shield" class="w-3 h-3"></i> Simulated payment for prototype purposes only. No real charge occurs.
+          </p>
+        </form>
+      </div>
+
+      <div id="viewProcessing" class="hidden p-10 flex flex-col items-center justify-center gap-4 text-center">
+        <div class="w-12 h-12 rounded-full bg-slate-950 flex items-center justify-center">
+          <div class="spinner"></div>
+        </div>
+        <p class="font-semibold text-slate-700 text-sm">Processing your payment securely&hellip;</p>
+        <p class="text-xs text-slate-400">Please do not close this window.</p>
+      </div>
+
+      <div id="viewSuccess" class="hidden p-10 flex flex-col items-center justify-center gap-3 text-center">
+        <div class="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
+          <i data-lucide="check-circle-2" class="w-8 h-8 text-emerald-600"></i>
+        </div>
+        <p class="font-bold text-slate-900">Payment Successful</p>
+        <p class="text-xs text-slate-400">Preparing your notarized document for print / download&hellip;</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   DUBAI RENT SHIELD — APPLICATION STATE & LOGIC
+   ========================================================= */
+
+const state = {
+  step: 0,
+  landlordName: '',
+  tenantName: '',
+  propertyType: 'Apartment',
+  unitNo: '',
+  buildingName: '',
+  plotNumber: '',
+  ejariNumber: '',
+  noticeDate: '',
+  reason: '',
+  paid: false,
+  mobileLang: 'en'
+};
+
+const REASONS = {
+  sale: {
+    label: 'Sale of Property',
+    labelAr: 'بيع العقار',
+    warning: 'Note: The landlord must prove intent to sell. If sold, the notice remains valid for the new owner.',
+    icon: 'tag',
+    tone: 'amber',
+    clauseEn: 'The Landlord intends to sell the Property. Should the Property be sold prior to the Expiry Date, this Notice shall remain valid, binding, and fully enforceable in favor of any new owner or successor-in-title of the Property.',
+    clauseAr: 'يعتزم المؤجر بيع العقار. وفي حال بيع العقار قبل تاريخ الانتهاء، يظل هذا الإنذار سارياً ونافذاً وملزماً لصالح أي مالك جديد أو خلف قانوني للعقار.'
+  },
+  personal: {
+    label: 'Personal Use / Recovery',
+    labelAr: 'الاستخدام الشخصي / الاسترداد',
+    warning: '⚠️ CRITICAL: Under Dubai law, if you evict for personal use, you cannot rent this property to another tenant for 2 consecutive years from the eviction date.',
+    icon: 'alert-triangle',
+    tone: 'red',
+    clauseEn: 'The Landlord requires vacant possession of the Property for personal use and occupation by the Landlord or a first-degree relative. Pursuant to Article 25(4) of Law No. (33) of 2008, the Landlord shall not lease the Property to any new tenant for a period of two (2) consecutive years from the date of eviction, save as otherwise permitted by law.',
+    clauseAr: 'يحتاج المؤجر إلى استلام العقار خالياً لغرض الاستخدام الشخصي وسكن المؤجر أو أحد أقاربه من الدرجة الأولى. وعملاً بأحكام المادة 25(4) من القانون رقم (33) لسنة 2008، يتعهد المؤجر بعدم تأجير العقار لمستأجر جديد لمدة سنتين (2) متتاليتين من تاريخ الإخلاء، إلا فيما يسمح به القانون.'
+  },
+  demolition: {
+    label: 'Demolition',
+    labelAr: 'الهدم',
+    warning: 'Note: Requires technical reports or government approvals to be presented at the Rental Dispute Settlement Centre (RDSC).',
+    icon: 'hammer',
+    tone: 'amber',
+    clauseEn: 'The Property is required to be vacated for the purpose of demolition, subject to the necessary permits and approvals obtained from the competent government authorities, which shall be presented, if required, before the Rental Dispute Settlement Centre (RDSC).',
+    clauseAr: 'يستلزم إخلاء العقار لغرض هدمه، وذلك رهناً بالحصول على التصاريح والموافقات اللازمة من الجهات الحكومية المختصة، والتي سيتم تقديمها، عند الطلب، أمام مركز فض المنازعات الإيجارية.'
+  },
+  renovation: {
+    label: 'Extensive Renovation',
+    labelAr: 'التجديدات الشاملة',
+    warning: 'Note: Requires technical reports or government approvals to be presented at the Rental Dispute Settlement Centre (RDSC).',
+    icon: 'wrench',
+    tone: 'amber',
+    clauseEn: 'The Property requires extensive renovation or modification works that cannot reasonably be carried out while occupied, necessitating the Tenant\'s vacancy. This is supported by a technical report issued by a certified engineering consultant/authority, which shall be presented, if required, before the Rental Dispute Settlement Centre (RDSC).',
+    clauseAr: 'يستلزم العقار أعمال ترميم أو تعديل شاملة يتعذر تنفيذها بشكل معقول أثناء إشغاله، مما يستوجب إخلاء المستأجر له. ويستند ذلك إلى تقرير فني صادر عن استشاري هندسي/جهة معتمدة، وسيتم تقديمه، عند الطلب، أمام مركز فض المنازعات الإيجارية.'
+  }
+};
+
+const STEPS = [
+  { title: 'Parties', icon: 'users' },
+  { title: 'Property', icon: 'building-2' },
+  { title: 'Notice & Reason', icon: 'calendar-clock' },
+  { title: 'Review', icon: 'check-square' }
+];
+
+const EN_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const AR_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+function formatDateEn(d) {
+  if (!d) return '[Notice Date]';
+  const dt = new Date(d + 'T00:00:00');
+  return `${String(dt.getDate()).padStart(2,'0')} ${EN_MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+function formatDateAr(d) {
+  if (!d) return '[تاريخ الإنذار]';
+  const dt = new Date(d + 'T00:00:00');
+  return `${String(dt.getDate()).padStart(2,'0')} ${AR_MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+function getExpiryDate(d) {
+  if (!d) return null;
+  const dt = new Date(d + 'T00:00:00');
+  dt.setDate(dt.getDate() + 365);
+  return dt;
+}
+function formatExpiryEn(d) {
+  const dt = getExpiryDate(d);
+  if (!dt) return '[Expiry Date]';
+  return `${String(dt.getDate()).padStart(2,'0')} ${EN_MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+function formatExpiryAr(d) {
+  const dt = getExpiryDate(d);
+  if (!dt) return '[تاريخ الانتهاء]';
+  return `${String(dt.getDate()).padStart(2,'0')} ${AR_MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+
+function fallback(val, placeholder) {
+  return val && val.trim() ? val.trim() : placeholder;
+}
+
+/* ---------- Step Indicator ---------- */
+function renderStepIndicator() {
+  const el = document.getElementById('stepIndicator');
+  el.innerHTML = STEPS.map((s, i) => {
+    const active = i === state.step;
+    const done = i < state.step;
+    const circleClasses = done
+      ? 'bg-emerald text-white'
+      : active
+        ? 'bg-slate-950 text-white ring-4 ring-slate-950/10'
+        : 'bg-slate-100 text-slate-400';
+    return `
+      <div class="flex items-center ${i < STEPS.length - 1 ? 'flex-1' : ''}">
+        <div class="flex flex-col items-center gap-1.5 shrink-0">
+          <div class="step-dot w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${circleClasses}">
+            ${done ? '<i data-lucide="check" class="w-4 h-4"></i>' : (i + 1)}
+          </div>
+          <span class="text-[10px] font-semibold uppercase tracking-wide ${active ? 'text-slate-800' : 'text-slate-400'} hidden sm:block">${s.title}</span>
+        </div>
+        ${i < STEPS.length - 1 ? `<div class="flex-1 h-0.5 mx-2 rounded ${done ? 'bg-emerald' : 'bg-slate-100'}"></div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+/* ---------- Field helper ---------- */
+function field(label, id, value, opts = {}) {
+  const type = opts.type || 'text';
+  const req = opts.required !== false;
+  if (type === 'select') {
+    return `
+      <div class="${opts.wrap || ''}">
+        <label class="text-xs font-semibold text-slate-600 mb-1.5 block">${label}${req ? '' : ' <span class=\'text-slate-300\'>(optional)</span>'}</label>
+        <select data-field="${id}" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm bg-white">
+          ${opts.options.map(o => `<option value="${o.value}" ${o.value === value ? 'selected' : ''}>${o.text}</option>`).join('')}
+        </select>
+      </div>`;
+  }
+  return `
+    <div class="${opts.wrap || ''}">
+      <label class="text-xs font-semibold text-slate-600 mb-1.5 block">${label}${req ? '' : ' <span class=\'text-slate-300\'>(optional)</span>'}</label>
+      <input data-field="${id}" type="${type}" value="${value || ''}" placeholder="${opts.placeholder || ''}" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+    </div>`;
+}
+
+/* ---------- Step Content ---------- */
+function renderStepContent() {
+  const el = document.getElementById('stepContent');
+  let html = '';
+
+  if (state.step === 0) {
+    html = `
+      <div class="step-panel space-y-5">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><i data-lucide="users" class="w-4 h-4 text-slate-600"></i></div>
+          <h3 class="font-bold text-slate-900">Landlord &amp; Tenant Details</h3>
+        </div>
+        ${field('Landlord Full Name', 'landlordName', state.landlordName, { placeholder: 'e.g. Ahmed Khalifa Al Suwaidi' })}
+        ${field('Tenant Full Name', 'tenantName', state.tenantName, { placeholder: 'e.g. John Michael Smith' })}
+      </div>`;
+  }
+
+  if (state.step === 1) {
+    html = `
+      <div class="step-panel space-y-5">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><i data-lucide="building-2" class="w-4 h-4 text-slate-600"></i></div>
+          <h3 class="font-bold text-slate-900">Property Details</h3>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          ${field('Unit Type', 'propertyType', state.propertyType, { type: 'select', options: [
+            { value: 'Apartment', text: 'Apartment' },
+            { value: 'Villa', text: 'Villa' },
+            { value: 'Townhouse', text: 'Townhouse' },
+            { value: 'Office', text: 'Office / Commercial Unit' }
+          ]})}
+          ${field('Unit / Villa No.', 'unitNo', state.unitNo, { placeholder: 'e.g. 1204' })}
+        </div>
+        ${field('Building / Community Name', 'buildingName', state.buildingName, { placeholder: 'e.g. Marina Heights, Dubai Marina' })}
+        <div class="grid grid-cols-2 gap-4">
+          ${field('Plot Number', 'plotNumber', state.plotNumber, { placeholder: 'e.g. 341-2891' })}
+          ${field('Ejari Certificate No.', 'ejariNumber', state.ejariNumber, { placeholder: 'e.g. 1234567890' })}
+        </div>
+      </div>`;
+  }
+
+  if (state.step === 2) {
+    const r = REASONS[state.reason];
+    html = `
+      <div class="step-panel space-y-5">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><i data-lucide="calendar-clock" class="w-4 h-4 text-slate-600"></i></div>
+          <h3 class="font-bold text-slate-900">Notice Date &amp; Legal Reason</h3>
+        </div>
+        ${field('Notice Served Date', 'noticeDate', state.noticeDate, { type: 'date' })}
+
+        ${state.noticeDate ? `
+        <div class="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+          <i data-lucide="shield-check" class="w-4 h-4 text-emerald shrink-0"></i>
+          <p class="text-xs text-slate-600">Legal expiry date (365 days from service): <strong class="text-slate-900">${formatDateEn(getExpiryDate(state.noticeDate).toISOString().slice(0,10))}</strong></p>
+        </div>` : ''}
+
+        ${field('Reason for Eviction', 'reason', state.reason, { type: 'select', options: [
+          { value: '', text: 'Select a statutory reason...' },
+          { value: 'sale', text: 'Sale of Property' },
+          { value: 'personal', text: 'Personal Use / Recovery' },
+          { value: 'demolition', text: 'Demolition' },
+          { value: 'renovation', text: 'Extensive Renovation' }
+        ]})}
+
+        ${r ? `
+        <div class="rounded-xl border px-4 py-3.5 flex gap-3 items-start ${r.tone === 'red' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}">
+          <i data-lucide="${r.icon}" class="w-4 h-4 mt-0.5 shrink-0 ${r.tone === 'red' ? 'text-red-600' : 'text-amber-600'}"></i>
+          <p class="text-xs leading-relaxed ${r.tone === 'red' ? 'text-red-800 font-semibold' : 'text-amber-800'}">${r.warning}</p>
+        </div>` : ''}
+      </div>`;
+  }
+
+  if (state.step === 3) {
+    const r = REASONS[state.reason];
+    html = `
+      <div class="step-panel space-y-4">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><i data-lucide="check-square" class="w-4 h-4 text-slate-600"></i></div>
+          <h3 class="font-bold text-slate-900">Review Summary</h3>
+        </div>
+        <div class="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden text-sm">
+          ${reviewRow('Landlord', state.landlordName)}
+          ${reviewRow('Tenant', state.tenantName)}
+          ${reviewRow('Property', `${state.propertyType} ${state.unitNo || ''}, ${state.buildingName || ''}`.trim())}
+          ${reviewRow('Plot No.', state.plotNumber)}
+          ${reviewRow('Ejari No.', state.ejariNumber)}
+          ${reviewRow('Notice Date', state.noticeDate ? formatDateEn(state.noticeDate) : '')}
+          ${reviewRow('Expiry Date (365 days)', state.noticeDate ? formatDateEn(getExpiryDate(state.noticeDate).toISOString().slice(0,10)) : '')}
+          ${reviewRow('Reason', r ? r.label : '')}
+        </div>
+        <div class="flex items-start gap-2.5 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
+          <i data-lucide="sparkles" class="w-4 h-4 text-emerald-700 mt-0.5 shrink-0"></i>
+          <p class="text-xs text-emerald-800">Your bilingual notice is ready in the live preview panel. Scroll to download the notarized PDF.</p>
+        </div>
+      </div>`;
+  }
+
+  el.innerHTML = html;
+  attachFieldListeners();
+  refreshIcons();
+}
+
+function reviewRow(label, value) {
+  return `<div class="flex items-center justify-between px-4 py-2.5">
+    <span class="text-slate-400 text-xs font-medium">${label}</span>
+    <span class="text-slate-800 font-semibold text-right ${!value ? 'text-slate-300 italic font-normal' : ''}">${value || 'Not provided'}</span>
+  </div>`;
+}
+
+function attachFieldListeners() {
+  document.querySelectorAll('[data-field]').forEach(input => {
+    input.addEventListener('input', (e) => {
+      state[e.target.dataset.field] = e.target.value;
+      if (e.target.dataset.field === 'reason' || e.target.dataset.field === 'noticeDate') {
+        renderStepContent();
+      }
+      renderPreview();
+    });
+    input.addEventListener('change', (e) => {
+      state[e.target.dataset.field] = e.target.value;
+      renderStepContent();
+      renderPreview();
+    });
+  });
+}
+
+/* ---------- Navigation ---------- */
+function goStep(delta) {
+  const next = state.step + delta;
+  if (next < 0 || next > STEPS.length - 1) return;
+  state.step = next;
+  renderAll();
+  document.getElementById('stepContent').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function updateNavButtons() {
+  const back = document.getElementById('btnBack');
+  const next = document.getElementById('btnNext');
+  back.disabled = state.step === 0;
+  if (state.step === STEPS.length - 1) {
+    next.innerHTML = `Done <i data-lucide="check" class="w-4 h-4"></i>`;
+  } else {
+    next.innerHTML = `Continue <i data-lucide="arrow-right" class="w-4 h-4"></i>`;
+  }
+  refreshIcons();
+}
+
+/* ---------- Document Rendering ---------- */
+function renderPreview() {
+  const r = REASONS[state.reason];
+  const landlord = fallback(state.landlordName, '[Landlord Full Name]');
+  const tenant = fallback(state.tenantName, '[Tenant Full Name]');
+  const unitNo = fallback(state.unitNo, '[Unit No.]');
+  const building = fallback(state.buildingName, '[Building / Community Name]');
+  const plot = fallback(state.plotNumber, '[Plot No.]');
+  const ejari = fallback(state.ejariNumber, '[Ejari No.]');
+  const noticeDateEn = formatDateEn(state.noticeDate);
+  const noticeDateAr = formatDateAr(state.noticeDate);
+  const expiryEn = formatExpiryEn(state.noticeDate);
+  const expiryAr = formatExpiryAr(state.noticeDate);
+  const reasonEn = r ? r.label : '[Reason for Eviction]';
+  const reasonAr = r ? r.labelAr : '[سبب الإخلاء]';
+  const clauseEn = r ? r.clauseEn : 'The Landlord relies on a statutory ground for eviction as recognized under Article 25 of Law No. (33) of 2008.';
+  const clauseAr = r ? r.clauseAr : 'يستند المؤجر إلى سبب قانوني موجب للإخلاء وفقاً لأحكام المادة 25 من القانون رقم (33) لسنة 2008.';
+
+  document.getElementById('docWrapEn').innerHTML = `
+    <div class="text-[13px] leading-relaxed text-slate-800">
+      <div class="text-center mb-6">
+        <p class="text-[10px] tracking-[0.2em] text-slate-400 font-semibold uppercase mb-1">Served via Notary Public</p>
+        <h3 class="text-base font-extrabold text-slate-950 uppercase tracking-tight">Notice of Eviction</h3>
+        <p class="text-[11px] text-slate-500 mt-1">Pursuant to Law No. (33) of 2008 Amending Law No. (26) of 2007<br>Regulating the Relationship Between Landlords and Tenants in the Emirate of Dubai</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mb-5 text-[11px]">
+        <div class="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+          <p class="text-slate-400 font-semibold uppercase text-[9px] mb-0.5">Notice Date</p>
+          <p class="font-bold text-slate-900">${noticeDateEn}</p>
+        </div>
+        <div class="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+          <p class="text-slate-400 font-semibold uppercase text-[9px] mb-0.5">Legal Expiry (365 Days)</p>
+          <p class="font-bold text-emerald-700">${expiryEn}</p>
+        </div>
+      </div>
+
+      <p class="mb-3"><strong>To:</strong> ${tenant} (the "Tenant")<br>
+      <strong>Ejari No.:</strong> ${ejari}<br>
+      <strong>Property:</strong> ${state.propertyType} No. ${unitNo}, ${building}, Plot No. ${plot}, Dubai, United Arab Emirates</p>
+
+      <p class="mb-3"><strong>From:</strong> ${landlord} (the "Landlord")</p>
+
+      <p class="mb-3">Dear Tenant,</p>
+
+      <p class="mb-3 text-justify">Pursuant to Article 25(2) of Law No. (33) of 2008 Amending Law No. (26) of 2007 Regulating the Relationship Between Landlords and Tenants in the Emirate of Dubai, and in accordance with the requirements of the Real Estate Regulatory Agency (RERA), the Landlord hereby serves this formal Notice of Eviction upon the Tenant occupying the above-referenced Property under Ejari Contract No. ${ejari}.</p>
+
+      <p class="mb-3 text-justify">This Notice is served on <strong>${noticeDateEn}</strong> and shall take legal effect after a period of not less than twelve (12) calendar months / three hundred and sixty-five (365) days from the date of service, expiring on <strong>${expiryEn}</strong> (the "Expiry Date"), upon which date the Tenant shall vacate and hand over vacant possession of the Property to the Landlord free of occupants and belongings.</p>
+
+      <p class="mb-1 font-bold">Reason for Eviction: ${reasonEn}</p>
+      <p class="mb-3 text-justify">${clauseEn}</p>
+
+      <p class="mb-3 text-justify">This Notice is issued in accordance with the statutory grounds for eviction recognized under UAE law. The Landlord reserves all rights available at law, including recourse to the Rental Dispute Settlement Centre (RDSC) in the event of the Tenant's non-compliance with this Notice.</p>
+
+      <div class="mt-8 grid grid-cols-2 gap-6 text-[11px]">
+        <div>
+          <p class="text-slate-400 mb-6">Landlord Signature</p>
+          <div class="border-t border-slate-300 pt-1.5">
+            <p class="font-semibold text-slate-800">${landlord}</p>
+            <p class="text-slate-400">${noticeDateEn}</p>
+          </div>
+        </div>
+        <div>
+          <p class="text-slate-400 mb-6">Notary Public Attestation</p>
+          <div class="border-t border-slate-300 pt-1.5">
+            <p class="font-semibold text-slate-300">&mdash;</p>
+          </div>
+        </div>
+      </div>
+      <p class="text-[10px] text-slate-400 mt-6 italic">Served via Notary Public / Registered Mail / Court Bailiff in accordance with Article 25(3) of Law No. (33) of 2008.</p>
+    </div>`;
+
+  document.getElementById('docWrapAr').innerHTML = `
+    <div class="arabic-text text-[13px] leading-loose text-slate-800">
+      <div class="text-center mb-6">
+        <p class="text-[10px] tracking-widest text-slate-400 font-semibold mb-1">تم التبليغ عن طريق الكاتب العدل</p>
+        <h3 class="text-base font-extrabold text-slate-950">إنذار عدلي بالإخلاء</h3>
+        <p class="text-[11px] text-slate-500 mt-1">صادر بموجب القانون رقم (33) لسنة 2008 المعدل للقانون رقم (26) لسنة 2007<br>بشأن تنظيم العلاقة بين المؤجرين والمستأجرين في إمارة دبي</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mb-5 text-[11px]">
+        <div class="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+          <p class="text-slate-400 font-semibold text-[9px] mb-0.5">تاريخ الإنذار</p>
+          <p class="font-bold text-slate-900">${noticeDateAr}</p>
+        </div>
+        <div class="bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+          <p class="text-slate-400 font-semibold text-[9px] mb-0.5">تاريخ الانتهاء القانوني (365 يوماً)</p>
+          <p class="font-bold text-emerald-700">${expiryAr}</p>
+        </div>
+      </div>
+
+      <p class="mb-3"><strong>إلى:</strong> المستأجر ${tenant} ("المستأجر")<br>
+      <strong>رقم عقد إيجاري:</strong> ${ejari}<br>
+      <strong>العقار:</strong> ${state.propertyType} رقم ${unitNo}، ${building}، رقم القطعة ${plot}، دبي، الإمارات العربية المتحدة</p>
+
+      <p class="mb-3"><strong>من:</strong> المؤجر ${landlord} ("المؤجر")</p>
+
+      <p class="mb-3">السيد/السيدة المستأجر المحترم،</p>
+
+      <p class="mb-3 text-justify">عملاً بأحكام المادة 25(2) من القانون رقم (33) لسنة 2008 المعدل للقانون رقم (26) لسنة 2007 بشأن تنظيم العلاقة بين المؤجرين والمستأجرين في إمارة دبي، ووفقاً لمتطلبات مؤسسة التنظيم العقاري (ريرا)، يقوم المؤجر بموجب هذا الإنذار بتوجيه إنذار عدلي رسمي بالإخلاء إلى المستأجر شاغل العقار المشار إليه أعلاه بموجب عقد إيجاري رقم ${ejari}.</p>
+
+      <p class="mb-3 text-justify">صدر هذا الإنذار بتاريخ <strong>${noticeDateAr}</strong> ويسري مفعوله القانوني بعد مدة لا تقل عن اثني عشر (12) شهراً ميلادياً / ثلاثمائة وخمسة وستين (365) يوماً من تاريخ تبليغه، وينتهي بتاريخ <strong>${expiryAr}</strong> ("تاريخ الانتهاء")، والذي يتوجب على المستأجر بحلوله إخلاء العقار وتسليمه خالياً من الشواغل والمنقولات للمؤجر.</p>
+
+      <p class="mb-1 font-bold">سبب الإخلاء: ${reasonAr}</p>
+      <p class="mb-3 text-justify">${clauseAr}</p>
+
+      <p class="mb-3 text-justify">صدر هذا الإنذار وفقاً للأسباب القانونية الموجبة للإخلاء المقررة بموجب قوانين دولة الإمارات العربية المتحدة، ويحتفظ المؤجر بكافة حقوقه المقررة قانوناً، بما في ذلك حق اللجوء إلى مركز فض المنازعات الإيجارية في حال عدم امتثال المستأجر لهذا الإنذار.</p>
+
+      <div class="mt-8 grid grid-cols-2 gap-6 text-[11px]">
+        <div>
+          <p class="text-slate-400 mb-6">توقيع المؤجر</p>
+          <div class="border-t border-slate-300 pt-1.5">
+            <p class="font-semibold text-slate-800">${landlord}</p>
+            <p class="text-slate-400">${noticeDateAr}</p>
+          </div>
+        </div>
+        <div>
+          <p class="text-slate-400 mb-6">توثيق الكاتب العدل</p>
+          <div class="border-t border-slate-300 pt-1.5">
+            <p class="font-semibold text-slate-300">&mdash;</p>
+          </div>
+        </div>
+      </div>
+      <p class="text-[10px] text-slate-400 mt-6 italic">تم التبليغ عن طريق الكاتب العدل / البريد المسجل / محضر المحكمة وفقاً للمادة 25(3) من القانون رقم (33) لسنة 2008.</p>
+    </div>`;
+}
+
+function refreshIcons() {
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderAll() {
+  renderStepIndicator();
+  renderStepContent();
+  updateNavButtons();
+  renderPreview();
+  refreshIcons();
+}
+
+/* ---------- Mobile language toggle ---------- */
+function applyMobileLang() {
+  const en = document.getElementById('docWrapEn');
+  const ar = document.getElementById('docWrapAr');
+  if (window.innerWidth < 1024) {
+    en.classList.toggle('hidden', state.mobileLang !== 'en');
+    ar.classList.toggle('hidden', state.mobileLang !== 'ar');
+  } else {
+    en.classList.remove('hidden');
+    ar.classList.remove('hidden');
+  }
+  document.querySelectorAll('.lang-btn').forEach(b => {
+    const activeState = b.dataset.lang === state.mobileLang;
+    b.classList.toggle('bg-white', activeState);
+    b.classList.toggle('shadow-sm', activeState);
+    b.classList.toggle('text-slate-900', activeState);
+    b.classList.toggle('text-slate-400', !activeState);
+  });
+}
+
+/* =========================================================
+   PAYWALL SIMULATION
+   ========================================================= */
+const modal = document.getElementById('paymentModal');
+const watermarkEl = document.getElementById('watermarkEl');
+
+function openModal() {
+  modal.classList.remove('hidden');
+  document.getElementById('viewForm').classList.remove('hidden');
+  document.getElementById('viewProcessing').classList.add('hidden');
+  document.getElementById('viewSuccess').classList.add('hidden');
+  document.body.style.overflow = 'hidden';
+  refreshIcons();
+}
+function closeModal() {
+  modal.classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('btnDownload').addEventListener('click', () => {
+  if (!state.landlordName || !state.tenantName || !state.noticeDate || !state.reason) {
+    state.step = state.step; // no-op
+    alert('Please complete Landlord, Tenant, Notice Date and Reason before generating your document.');
+    return;
+  }
+  openModal();
+});
+
+document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+document.getElementById('modalBackdrop').addEventListener('click', closeModal);
+
+/* Card number auto-formatting */
+document.getElementById('cardNumberInput').addEventListener('input', (e) => {
+  let v = e.target.value.replace(/\D/g, '').slice(0, 16);
+  e.target.value = v.replace(/(.{4})/g, '$1 ').trim();
+});
+document.getElementById('expiryInput').addEventListener('input', (e) => {
+  let v = e.target.value.replace(/\D/g, '').slice(0, 4);
+  if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
+  e.target.value = v;
+});
+
+document.getElementById('fakePaymentForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  document.getElementById('viewForm').classList.add('hidden');
+  document.getElementById('viewProcessing').classList.remove('hidden');
+  refreshIcons();
+
+  setTimeout(() => {
+    document.getElementById('viewProcessing').classList.add('hidden');
+    document.getElementById('viewSuccess').classList.remove('hidden');
+    refreshIcons();
+    state.paid = true;
+    watermarkEl.classList.add('hidden');
+
+    setTimeout(() => {
+      closeModal();
+      window.print();
+    }, 1400);
+  }, 1800);
+});
+
+/* =========================================================
+   INIT
+   ========================================================= */
+document.getElementById('btnBack').addEventListener('click', () => goStep(-1));
+document.getElementById('btnNext').addEventListener('click', () => goStep(1));
+document.querySelectorAll('.lang-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    state.mobileLang = b.dataset.lang;
+    applyMobileLang();
+  });
+});
+window.addEventListener('resize', applyMobileLang);
+
+// Set a sensible default notice date (today) for a smoother first-run preview
+state.noticeDate = new Date().toISOString().slice(0, 10);
+
+renderAll();
+applyMobileLang();
+</script>
+
+</body>
+</html>
