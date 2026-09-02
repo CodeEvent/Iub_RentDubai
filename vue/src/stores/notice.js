@@ -25,7 +25,11 @@ export const useNoticeStore = defineStore('notice', {
     saving: false,
     saveError: null,
     savedId: null,
-    savedNotices: []
+    savedNotices: [],
+
+    // Paywall simulation modal
+    showPaymentModal: false,
+    paymentView: 'form' // 'form' | 'processing' | 'success'
   }),
 
   getters: {
@@ -98,6 +102,27 @@ export const useNoticeStore = defineStore('notice', {
       } catch {
         // Listing saved notices is a convenience, not load-bearing — fail quietly.
       }
+    },
+
+    openPaymentModal() {
+      this.paymentView = 'form';
+      this.showPaymentModal = true;
+    },
+
+    closePaymentModal() {
+      this.showPaymentModal = false;
+    },
+
+    // Simulated Stripe-style checkout — no real payment rail, matches the
+    // original prototype's paywall demo. Unblurs the document and prints.
+    async completeFakePayment() {
+      this.paymentView = 'processing';
+      await new Promise((r) => setTimeout(r, 1800));
+      this.paymentView = 'success';
+      this.paid = true;
+      await new Promise((r) => setTimeout(r, 1400));
+      this.closePaymentModal();
+      window.print();
     }
   }
 });

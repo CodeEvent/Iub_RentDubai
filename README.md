@@ -68,17 +68,24 @@ docker compose -f docker/docker-compose.yml up --build
 
 **Ported to the new architecture:** the 4-step wizard, the full bilingual
 (EN/AR) document for both notice types, the 365-day/30-day date engine, the
-reason-specific compliance warnings, the pre-payment blur, and real
-persistence via the API (replacing the single-file version's in-browser-only
-state).
+reason-specific compliance warnings, the pre-payment blur, real persistence
+via the API, the RentShield AI chat drawer (conversational intake, off-topic
+refusal, drag-and-drop document upload with the simulated OCR/compliance
+card, Premium tier unlock), and the simulated Stripe-style paywall modal
+(fake card form → processing → success → unblur → print).
 
-**Not yet ported** — the prototype (`legacy/index.html`) still has these,
-and they're the natural next slice of work: the RentShield AI chat drawer
-(text intake + drag-and-drop document upload), the simulated Stripe paywall
-modal, and the mobile/PWA polish (safe-area insets, install manifest,
-favicon). The `mcp/` server is a real head start on the chat panel's actual
-brains — it exposes the same notice-drafting logic as callable tools instead
-of the prototype's local simulation.
+The chat drawer is still a local simulation, same as the prototype — no
+network calls, no API key in the browser. `mcp/server.js` is the real
+integration point for wiring it to an actual hosted model later: its tool
+descriptions (Dubai-only focus, hedged legal language, the 12-month vs
+30-day distinction) are written to match what the simulated chat already
+does, so swapping the simulation for real tool calls shouldn't change the
+UX contract.
+
+**Not yet ported:** the mobile/PWA polish from the prototype (safe-area
+insets beyond the chat drawer, install manifest, favicon, iOS zoom-on-focus
+fix). The Vue app inherits Tailwind's default mobile behavior but hasn't
+had that pass applied yet.
 
 **Known limitation:** the production Docker build serves `vue/` as a static
 bundle, which doesn't proxy `/api/*` the way the Vite dev server does — a

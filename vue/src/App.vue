@@ -3,6 +3,8 @@ import AppHeader from './components/AppHeader.vue';
 import WizardForm from './components/WizardForm.vue';
 import DocumentPreview from './components/DocumentPreview.vue';
 import SavedNotices from './components/SavedNotices.vue';
+import ChatDrawer from './components/ChatDrawer.vue';
+import PaymentModal from './components/PaymentModal.vue';
 </script>
 
 <template>
@@ -34,4 +36,7 @@ import SavedNotices from './components/SavedNotices.vue';
       Dubai Rent Shield is a document drafting aid and does not constitute legal advice. Always verify service requirements with a licensed UAE legal counsel or Notary Public.
     </div>
   </footer>
+
+  <ChatDrawer />
+  <PaymentModal />
 </template>

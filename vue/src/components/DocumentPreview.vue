@@ -15,6 +15,14 @@ async function handleSave() {
     // store.saveError already holds the message for the template to show
   }
 }
+
+function handleDownloadClick() {
+  if (!store.isReadyToSave) {
+    alert('Please complete Landlord, Tenant, Notice Date and Reason before generating your document.');
+    return;
+  }
+  store.openPaymentModal();
+}
 </script>
 
 <template>
@@ -162,19 +170,28 @@ async function handleSave() {
       ><Sparkles class="w-3.5 h-3.5" /> Premium AI <span class="opacity-60">&middot; 249 AED</span></button>
     </div>
 
-    <!-- Save (persists to the API — the real backend round-trip) -->
+    <!-- Primary paywall CTA (fake Stripe checkout — see PaymentModal.vue) -->
     <button
-      class="w-full bg-emerald hover:bg-emerald-600 text-white font-bold text-sm sm:text-base py-4 rounded-2xl shadow-xl shadow-emerald/25 transition flex items-center justify-center gap-2.5 disabled:opacity-60"
+      class="w-full group relative overflow-hidden bg-emerald hover:bg-emerald-600 text-white font-bold text-sm sm:text-base py-4 rounded-2xl shadow-xl shadow-emerald/25 transition flex items-center justify-center gap-2.5"
+      @click="handleDownloadClick"
+    >
+      <DownloadCloud class="w-5 h-5" />
+      <span>{{ store.tier === 'premium' ? 'Download Premium AI-Reviewed Package' : 'Download DLD-Compliant Notarized PDF' }}</span>
+      <span class="bg-white/20 px-2 py-0.5 rounded-md text-xs font-extrabold tracking-wide">{{ store.tier === 'premium' ? '249 AED' : '99 AED' }}</span>
+    </button>
+    <p class="text-center text-[11px] text-slate-400 -mt-1">Secure checkout &middot; Instant PDF &middot; Notary-ready formatting</p>
+
+    <!-- Secondary: persist to the API (the real backend round-trip) -->
+    <button
+      class="w-full border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-sm py-3 rounded-2xl transition flex items-center justify-center gap-2.5 disabled:opacity-60"
       :disabled="!store.isReadyToSave || store.saving"
       @click="handleSave"
     >
-      <Loader2 v-if="store.saving" class="w-5 h-5 animate-spin" />
-      <CheckCircle2 v-else-if="store.savedId" class="w-5 h-5" />
-      <Save v-else class="w-5 h-5" />
+      <Loader2 v-if="store.saving" class="w-4 h-4 animate-spin" />
+      <CheckCircle2 v-else-if="store.savedId" class="w-4 h-4 text-emerald-600" />
+      <Save v-else class="w-4 h-4" />
       <span>{{ store.saving ? 'Saving…' : store.savedId ? 'Saved — Save Another' : 'Save Notice to Your Account' }}</span>
-      <span class="bg-white/20 px-2 py-0.5 rounded-md text-xs font-extrabold tracking-wide">{{ store.tier === 'premium' ? '249 AED' : '99 AED' }}</span>
     </button>
     <p v-if="store.saveError" class="text-center text-[11px] text-red-600">{{ store.saveError }}</p>
-    <p v-else class="text-center text-[11px] text-slate-400 -mt-1">Persists to the RentShield API &middot; Notary-ready formatting</p>
   </div>
 </template>
