@@ -113,6 +113,35 @@
     background: linear-gradient(120deg, #0f172a 0%, #1e293b 45%, #0f172a 100%);
   }
 
+  .spinner-sm {
+    display: inline-block;
+    border: 2px solid rgba(15, 23, 42, 0.15);
+    border-top-color: #0f172a;
+    border-radius: 50%;
+    width: 13px;
+    height: 13px;
+    animation: spin .7s linear infinite;
+  }
+
+  #chatDrawer { transition: transform .32s cubic-bezier(.34,1.1,.64,1); }
+
+  .typing-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #94a3b8;
+    animation: typingBounce 1.1s infinite ease-in-out;
+  }
+  .typing-dot:nth-child(2) { animation-delay: .15s; }
+  .typing-dot:nth-child(3) { animation-delay: .3s; }
+  @keyframes typingBounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: .5; }
+    30% { transform: translateY(-4px); opacity: 1; }
+  }
+
+  .chat-chip {
+    transition: all .15s ease;
+  }
+  .chat-chip:hover { background: #0f172a; color: #fff; }
+
   @media print {
     body * { visibility: hidden; }
     #printable-area, #printable-area * { visibility: visible; }
@@ -219,13 +248,23 @@
         </div>
       </div>
 
+      <!-- Tier Switcher -->
+      <div class="no-print flex items-center gap-1 bg-slate-100 rounded-xl p-1" id="tierSwitcher">
+        <button data-tier="standard" class="tier-btn flex-1 text-xs font-semibold py-2 rounded-lg transition text-slate-400">
+          Standard <span class="opacity-60">&middot; 99 AED</span>
+        </button>
+        <button data-tier="premium" class="tier-btn flex-1 text-xs font-semibold py-2 rounded-lg transition text-slate-400 inline-flex items-center justify-center gap-1">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Premium AI <span class="opacity-60">&middot; 249 AED</span>
+        </button>
+      </div>
+
       <!-- Paywall CTA -->
       <button id="btnDownload" class="no-print w-full group relative overflow-hidden bg-emerald hover:bg-emerald-600 text-white font-bold text-sm sm:text-base py-4 rounded-2xl shadow-xl shadow-emerald/25 transition flex items-center justify-center gap-2.5">
         <i data-lucide="download-cloud" class="w-5 h-5"></i>
-        <span>Download DLD-Compliant Notarized PDF</span>
-        <span class="bg-white/20 px-2 py-0.5 rounded-md text-xs font-extrabold tracking-wide">99 AED</span>
+        <span id="downloadBtnLabel">Download DLD-Compliant Notarized PDF</span>
+        <span class="bg-white/20 px-2 py-0.5 rounded-md text-xs font-extrabold tracking-wide" id="downloadBtnBadge">99 AED</span>
       </button>
-      <p class="no-print text-center text-[11px] text-slate-400 -mt-1">Secure checkout &middot; Instant PDF &middot; Notary-ready formatting</p>
+      <p class="no-print text-center text-[11px] text-slate-400 -mt-1" id="downloadSubtext">Secure checkout &middot; Instant PDF &middot; Notary-ready formatting</p>
     </div>
   </section>
 </main>
@@ -257,8 +296,8 @@
       <!-- Views -->
       <div id="viewForm" class="p-6">
         <div class="flex items-center justify-between mb-5">
-          <p class="text-sm text-slate-500">Dubai Rent Shield &mdash; Notarized PDF</p>
-          <p class="text-xl font-extrabold text-slate-950">99.00 <span class="text-sm font-semibold text-slate-400">AED</span></p>
+          <p class="text-sm text-slate-500" id="modalDescription">Dubai Rent Shield &mdash; Notarized PDF</p>
+          <p class="text-xl font-extrabold text-slate-950" id="modalAmount">99.00 <span class="text-sm font-semibold text-slate-400">AED</span></p>
         </div>
 
         <form id="fakePaymentForm" class="space-y-4">
@@ -286,7 +325,7 @@
 
           <button type="submit" class="w-full bg-slate-950 hover:bg-slate-800 text-white font-bold text-sm py-3.5 rounded-xl transition flex items-center justify-center gap-2 mt-2">
             <i data-lucide="lock" class="w-4 h-4"></i>
-            Pay 99.00 AED
+            <span id="payButtonLabel">Pay 99.00 AED</span>
           </button>
           <p class="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1">
             <i data-lucide="shield" class="w-3 h-3"></i> Simulated payment for prototype purposes only. No real charge occurs.
@@ -314,6 +353,62 @@
   </div>
 </div>
 
+<!-- ============ AI CHAT ASSISTANT (Text + Document Upload) ============ -->
+<button id="chatToggleBtn" class="no-print fixed bottom-5 right-5 z-40 w-14 h-14 rounded-full bg-slate-950 hover:bg-slate-800 text-white shadow-2xl shadow-slate-950/30 flex items-center justify-center transition">
+  <i data-lucide="message-circle" class="w-6 h-6"></i>
+  <span id="chatUnreadDot" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-emerald rounded-full ring-2 ring-white"></span>
+</button>
+
+<div id="chatBackdrop" class="no-print fixed inset-0 bg-slate-950/30 z-30 hidden"></div>
+
+<div id="chatDrawer" class="no-print fixed inset-y-0 right-0 z-40 w-full sm:w-[400px] bg-white shadow-2xl border-l border-slate-200 flex flex-col translate-x-full">
+  <!-- Header -->
+  <div class="card-shine px-5 py-4 flex items-center justify-between shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-full bg-emerald/20 flex items-center justify-center relative shrink-0">
+        <i data-lucide="bot" class="w-5 h-5 text-emerald"></i>
+        <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald rounded-full ring-2 ring-slate-950"></span>
+      </div>
+      <div>
+        <p class="text-white font-bold text-sm leading-tight">RentShield AI</p>
+        <p class="text-[10px] text-slate-400">Dubai RERA Compliance Agent</p>
+      </div>
+    </div>
+    <button id="btnCloseChat" class="text-slate-400 hover:text-white transition">
+      <i data-lucide="x" class="w-5 h-5"></i>
+    </button>
+  </div>
+
+  <!-- Premium tier banner -->
+  <div id="chatTierBanner" class="hidden px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800 font-semibold flex items-center gap-1.5 shrink-0">
+    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Premium AI Tier unlocked &mdash; document analyzed
+  </div>
+
+  <!-- Messages -->
+  <div id="chatMessages" class="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-slate-50"></div>
+
+  <!-- Quick replies -->
+  <div id="chatQuickReplies" class="hidden px-4 pb-3 flex flex-wrap gap-2 bg-slate-50"></div>
+
+  <!-- Input bar -->
+  <div class="border-t border-slate-200 bg-white p-3 shrink-0">
+    <div class="flex items-end gap-2">
+      <input type="file" id="chatFileInput" accept=".pdf,.png,.jpg,.jpeg,.txt" class="hidden">
+      <button id="btnChatUpload" title="Upload Document (PDF/Image)" type="button" class="shrink-0 w-10 h-10 rounded-xl border border-slate-200 hover:bg-slate-100 flex items-center justify-center transition text-slate-500">
+        <i data-lucide="paperclip" class="w-4 h-4"></i>
+      </button>
+      <input id="chatInput" type="text" placeholder="Type your message..." class="field-input flex-1 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+      <button id="btnChatSend" type="button" class="shrink-0 w-10 h-10 rounded-xl bg-slate-950 hover:bg-slate-800 text-white flex items-center justify-center transition">
+        <i data-lucide="send" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <p class="text-[10px] text-slate-400 mt-1.5 text-center">Simulated locally for this prototype &middot; Not legal advice</p>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="no-print fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-950 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-xl opacity-0 pointer-events-none transition-opacity duration-300"></div>
+
 <script>
 /* =========================================================
    DUBAI RENT SHIELD — APPLICATION STATE & LOGIC
@@ -333,6 +428,45 @@ const state = {
   paid: false,
   mobileLang: 'en'
 };
+
+/* ---------------------------------------------------------
+   RentShield AI — chat/agent state.
+   This prototype simulates the agent entirely client-side (no network
+   calls, no API key in the browser). The SYSTEM_PROMPT below is the
+   exact governing spec for the agent's behavior — if you later wire this
+   up to a real hosted model (e.g. Llama-3 via Groq/Together's
+   OpenAI-compatible /chat/completions endpoint), send it as the
+   "system" message from a small server-side proxy that holds the API
+   key; never call a third-party LLM API directly from client JS with an
+   embedded secret.
+   --------------------------------------------------------- */
+const SYSTEM_PROMPT = `You are "RentShield AI," an elite legal-tech AI agent specializing exclusively in Dubai Real Estate Law, specifically Dubai Law No. (26) of 2007, Law No. (33) of 2008, and Decree No. (43) of 2013.
+
+Your sole mission is to guide landlords, property managers, and real estate brokers through the process of gathering data to generate a legally binding 12-Month Eviction Notice or a 30-Day Lease Breach Notice for the Dubai Land Department (DLD) and Rental Dispute Settlement Centre (RDSC).
+
+STRICT BEHAVIORAL CONTROLS:
+1. FOCUS EXCLUSIVELY ON DUBAI RENTAL LAW: If the user asks about properties outside of Dubai, general advice, programming, or any topic unrelated to Dubai real estate, politely refuse to answer. Say: "I am programmed exclusively to assist with Dubai real estate rental compliance."
+2. NO DEFINITIVE DIAGNOSIS / DISCLAIMER: You are a legal-tech automation tool, not a human lawyer. Never say "I guarantee you will win this case." Always structure suggestions using hedging language (e.g., "This appears to align with...", "This is consistent with RERA guidelines...").
+3. DO NOT COMPUTE ADVANCED CALCULATIONS: If asked to calculate complex multi-year financial damages, guide them to use the official DLD RERA calculator link instead of guessing the math.
+
+THE CONVERSATIONAL INTAKE PROTOCOL:
+Interact with the user step-by-step. Do not blast them with all questions at once. Politely gather: Landlord and Tenant names, Ejari Certificate Number, and the Core Reason for Eviction.
+
+STRICT REAL ESTATE LOGIC TO ENFORCE:
+- If the reason is "Sale" or "Personal Use", remind them it requires a strict statutory 12-month notice served via Notary Public or Registered Post.
+- If the reason is "Personal Use", warn them they cannot legally re-rent the property for 2 years.
+- If the reason is "Non-payment of rent" or "Unauthorized Subleasing", inform them this falls under Article 25 of Law No. (33) of 2008, requiring an immediate 30-day notice instead of 12 months.
+
+DOCUMENT UPLOAD PROTOCOL (OCR): When the user uploads a contract addendum or image, analyze it for customized notice periods and obligations, and cross-reference against Dubai law — flag any private clause that shortens the mandatory 12-month notice as ILLEGAL and VOID.
+
+THE UPSELL TRIGGER: Once required parameters are collected or a document is analyzed, offer to compile the bilingual (English & Legal Arabic) eviction package.`;
+
+const chatState = {
+  stage: 'idle', // idle -> landlord -> tenant -> ejari -> reason -> done
+  tier: 'standard'
+};
+
+const OFF_TOPIC_RE = /\b(weather|joke|football|cricket score|recipe|stock market|share price|movie|song lyrics|write (a |me )?(poem|code|program)|python tutorial|javascript tutorial|crypto|bitcoin|capital of|who won)\b/i;
 
 const REASONS = {
   sale: {
@@ -772,6 +906,14 @@ const modal = document.getElementById('paymentModal');
 const watermarkEl = document.getElementById('watermarkEl');
 
 function openModal() {
+  const isPremium = chatState.tier === 'premium';
+  const amount = isPremium ? '249.00' : '99.00';
+  document.getElementById('modalAmount').innerHTML = `${amount} <span class="text-sm font-semibold text-slate-400">AED</span>`;
+  document.getElementById('payButtonLabel').textContent = `Pay ${amount} AED`;
+  document.getElementById('modalDescription').textContent = isPremium
+    ? 'Dubai Rent Shield — Premium AI-Reviewed Package'
+    : 'Dubai Rent Shield — Notarized PDF';
+
   modal.classList.remove('hidden');
   document.getElementById('viewForm').classList.remove('hidden');
   document.getElementById('viewProcessing').classList.add('hidden');
@@ -828,6 +970,339 @@ document.getElementById('fakePaymentForm').addEventListener('submit', (e) => {
 });
 
 /* =========================================================
+   TOAST
+   ========================================================= */
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('opacity-0');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('opacity-0'), 2200);
+}
+
+/* =========================================================
+   TIER (Standard 99 AED / Premium AI 249 AED)
+   ========================================================= */
+function updateTierUI() {
+  const isPremium = chatState.tier === 'premium';
+  document.getElementById('downloadBtnLabel').textContent = isPremium
+    ? 'Download Premium AI-Reviewed Package'
+    : 'Download DLD-Compliant Notarized PDF';
+  document.getElementById('downloadBtnBadge').textContent = isPremium ? '249 AED' : '99 AED';
+  document.getElementById('downloadSubtext').innerHTML = isPremium
+    ? 'AI clause analysis &middot; Custom breach review &middot; Notary-ready formatting'
+    : 'Secure checkout &middot; Instant PDF &middot; Notary-ready formatting';
+  document.getElementById('btnDownload').classList.toggle('ring-2', isPremium);
+  document.getElementById('btnDownload').classList.toggle('ring-amber-300', isPremium);
+
+  document.querySelectorAll('.tier-btn').forEach(b => {
+    const active = b.dataset.tier === chatState.tier;
+    b.classList.toggle('bg-white', active);
+    b.classList.toggle('shadow-sm', active);
+    b.classList.toggle('text-slate-900', active);
+    b.classList.toggle('text-slate-400', !active);
+  });
+}
+document.querySelectorAll('.tier-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    chatState.tier = b.dataset.tier;
+    updateTierUI();
+  });
+});
+
+/* =========================================================
+   RENTSHIELD AI — CHAT ASSISTANT (text + document upload)
+   ========================================================= */
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function addChatMessage(sender, html) {
+  const wrap = document.getElementById('chatMessages');
+  const isUser = sender === 'user';
+  const bubble = document.createElement('div');
+  bubble.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+  bubble.innerHTML = `
+    <div class="max-w-[85%] ${isUser ? 'bg-slate-950 text-white' : 'bg-white text-slate-800 border border-slate-200'} rounded-2xl ${isUser ? 'rounded-br-sm' : 'rounded-bl-sm'} px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm">${html}</div>`;
+  wrap.appendChild(bubble);
+  wrap.scrollTop = wrap.scrollHeight;
+  refreshIcons();
+  return bubble;
+}
+
+function addTypingIndicator() {
+  const wrap = document.getElementById('chatMessages');
+  const bubble = document.createElement('div');
+  bubble.className = 'flex justify-start';
+  bubble.id = 'typingIndicator';
+  bubble.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-4 py-3.5 flex gap-1.5 shadow-sm">
+    <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+  </div>`;
+  wrap.appendChild(bubble);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+function removeTypingIndicator() {
+  document.getElementById('typingIndicator')?.remove();
+}
+
+function syncFormFields() {
+  renderStepContent();
+  renderPreview();
+  showToast('✅ Form updated from AI chat');
+}
+
+const REASON_QUICK_REPLIES = [
+  'Sale of Property',
+  'Personal Use / Recovery',
+  'Demolition',
+  'Extensive Renovation',
+  'Non-payment of Rent',
+  'Unauthorized Subleasing'
+];
+
+function showReasonQuickReplies() {
+  const wrap = document.getElementById('chatQuickReplies');
+  wrap.innerHTML = REASON_QUICK_REPLIES.map(label =>
+    `<button class="chat-chip text-[11px] font-semibold bg-white border border-slate-300 text-slate-600 rounded-full px-3 py-1.5" data-reply="${escapeHtml(label)}">${label}</button>`
+  ).join('');
+  wrap.classList.remove('hidden');
+  wrap.querySelectorAll('[data-reply]').forEach(btn => {
+    btn.addEventListener('click', () => handleChatSend(btn.dataset.reply));
+  });
+}
+function hideQuickReplies() {
+  const wrap = document.getElementById('chatQuickReplies');
+  wrap.classList.add('hidden');
+  wrap.innerHTML = '';
+}
+
+function stagePrompt(stage) {
+  return {
+    landlord: "Could you tell me the Landlord's full name?",
+    tenant: "Could you tell me the Tenant's full name?",
+    ejari: 'Could you share the Ejari Certificate Number?',
+    reason: 'What is the core reason for the eviction?'
+  }[stage] || '';
+}
+
+function extractName(text) {
+  let t = text.replace(/^(the\s+)?(landlord|tenant)('s)?\s+(is|name is|full name is)\s*[:\-]?\s*/i, '').trim();
+  t = t.replace(/^(it'?s|it is|my name is|i am|i'?m)\s+/i, '').trim();
+  if (!t) t = text.trim();
+  return t.replace(/[.!]+$/, '');
+}
+function extractEjari(text) {
+  const m = text.match(/[a-zA-Z0-9-]{6,}/);
+  return m ? m[0] : text.trim();
+}
+
+function handleChatSend(rawText) {
+  const text = (rawText || '').trim();
+  if (!text) return;
+  addChatMessage('user', escapeHtml(text));
+  hideQuickReplies();
+
+  addTypingIndicator();
+  setTimeout(() => {
+    removeTypingIndicator();
+    routeIntake(text);
+  }, 650 + Math.random() * 500);
+}
+
+function routeIntake(text) {
+  if (OFF_TOPIC_RE.test(text)) {
+    addChatMessage('ai', `I am programmed exclusively to assist with Dubai real estate rental compliance. ${stagePrompt(chatState.stage === 'idle' ? 'landlord' : chatState.stage)}`);
+    if (chatState.stage === 'reason') showReasonQuickReplies();
+    return;
+  }
+
+  switch (chatState.stage) {
+    case 'idle':
+    case 'landlord': {
+      state.landlordName = extractName(text);
+      syncFormFields();
+      addChatMessage('ai', `Got it — <strong>${escapeHtml(state.landlordName)}</strong> noted as the Landlord. And what's the <strong>Tenant's full name</strong>?`);
+      chatState.stage = 'tenant';
+      break;
+    }
+    case 'tenant': {
+      state.tenantName = extractName(text);
+      syncFormFields();
+      addChatMessage('ai', `Thank you. Could you share the <strong>Ejari Certificate Number</strong> for this tenancy?`);
+      chatState.stage = 'ejari';
+      break;
+    }
+    case 'ejari': {
+      state.ejariNumber = extractEjari(text);
+      syncFormFields();
+      addChatMessage('ai', `Perfect. Now, what is the <strong>core reason for eviction</strong>? Choose one below, or describe it in your own words.`);
+      showReasonQuickReplies();
+      chatState.stage = 'reason';
+      break;
+    }
+    case 'reason': {
+      handleReasonAnswer(text);
+      break;
+    }
+    case 'done': {
+      addChatMessage('ai', `Your data is already compiled. This appears consistent with a complete RERA-ready package — click "Generate Package" above, or upload a tenancy contract addendum if you'd like me to cross-check custom clauses.`);
+      break;
+    }
+  }
+}
+
+function handleReasonAnswer(text) {
+  const lower = text.toLowerCase();
+  let matched = null;
+  if (/sale|sell/.test(lower)) matched = 'sale';
+  else if (/personal|recover|own use|move in/.test(lower)) matched = 'personal';
+  else if (/demoli/.test(lower)) matched = 'demolition';
+  else if (/renovat|refurbish/.test(lower)) matched = 'renovation';
+  else if (/non-?payment|unpaid rent|didn'?t pay|rent arrears|arrears/.test(lower)) matched = 'nonpayment';
+  else if (/sublet|subleas|unauthoriz(ed)? occup/.test(lower)) matched = 'sublease';
+
+  if (!matched) {
+    addChatMessage('ai', `I couldn't confidently match that to a recognized statutory ground. Please choose one of the options below.`);
+    showReasonQuickReplies();
+    return;
+  }
+
+  if (matched === 'nonpayment' || matched === 'sublease') {
+    const label = matched === 'nonpayment' ? 'Non-payment of Rent' : 'Unauthorized Subleasing';
+    addChatMessage('ai', `This appears to fall under Article 25 of Law No. (33) of 2008 — grounds such as <strong>${label}</strong> only require a <strong>30-day notice</strong> via registered mail, not the 12-month statutory notice this tool generates. I'd recommend serving a separate 30-day breach notice for this matter instead. I've kept the Landlord/Tenant/Ejari details you already gave me — would you like to proceed with a 12-month notice for one of the other statutory grounds?`);
+    showReasonQuickReplies();
+    return;
+  }
+
+  state.reason = matched;
+  syncFormFields();
+  const r = REASONS[matched];
+  let extra = '';
+  if (matched === 'personal') {
+    extra = ' <strong>⚠️ Important:</strong> you will not be permitted to re-lease this property to a new tenant for 2 consecutive years from the eviction date.';
+  } else if (matched === 'sale') {
+    extra = ' Note that you should be able to demonstrate genuine intent to sell if this is challenged.';
+  } else {
+    extra = ' A technical report or government approval will likely be needed to support this ground at the RDSC.';
+  }
+  addChatMessage('ai', `This appears consistent with a valid statutory ground under Article 25 — <strong>${r.label}</strong>.${extra}`);
+  chatState.stage = 'done';
+  setTimeout(triggerUpsell, 900);
+}
+
+function triggerUpsell() {
+  addTypingIndicator();
+  setTimeout(() => {
+    removeTypingIndicator();
+    addChatMessage('ai', `I have verified your data against RERA compliance. I'm ready to compile your official bilingual (English &amp; Legal Arabic) eviction package.
+      <div class="mt-2.5 space-y-1.5">
+        <div class="text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-2.5"><strong>Standard &mdash; 99 AED:</strong> Instant bilingual 12-month notice.</div>
+        <div class="text-[11px] bg-emerald-50 border border-emerald-200 rounded-lg p-2.5"><strong>Premium AI &mdash; 249 AED:</strong> + Ejari contract analysis &amp; custom clause review.</div>
+      </div>
+      <button id="btnGeneratePkg" class="mt-3 w-full bg-emerald hover:bg-emerald-600 text-white text-xs font-bold py-2.5 rounded-xl transition">Generate Package →</button>`);
+    document.getElementById('btnGeneratePkg')?.addEventListener('click', () => {
+      closeChatDrawer();
+      state.step = 3;
+      renderAll();
+      document.getElementById('btnDownload').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }, 900);
+}
+
+/* ---------- Document upload (OCR simulation) ---------- */
+document.getElementById('btnChatUpload').addEventListener('click', () => {
+  document.getElementById('chatFileInput').click();
+});
+document.getElementById('chatFileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+
+  addChatMessage('user', `📎 Uploaded: <strong>${escapeHtml(file.name)}</strong>`);
+  const loadingBubble = addChatMessage('ai', `<span class="inline-flex items-center gap-2"><span class="spinner-sm"></span> AI reading tenancy contract addendum&hellip;</span>`);
+
+  setTimeout(() => {
+    loadingBubble.remove();
+    renderDocAnalysisCard();
+  }, 2000);
+});
+
+function renderDocAnalysisCard() {
+  addChatMessage('ai', `
+    <div class="space-y-2">
+      <p class="font-bold text-slate-900">📁 Document Detected: Ejari Tenancy Addendum</p>
+      <p class="text-slate-700">🔍 <strong>Key Findings:</strong> Found a clause stating <em>"60 days notice for vacation."</em></p>
+      <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-red-800 text-[12px] leading-relaxed">
+        ⚠️ <strong>RERA Compliance Alert:</strong> This clause violates Dubai Law No. (33) of 2008. Your notice will be legally invalid at the RDSC unless you serve a full statutory 12-month notice.
+      </div>
+    </div>`);
+
+  chatState.tier = 'premium';
+  updateTierUI();
+  document.getElementById('chatTierBanner').classList.remove('hidden');
+
+  let autoFilledNote = '';
+  if (!state.ejariNumber) {
+    state.ejariNumber = 'EJR-2024-778193';
+    syncFormFields();
+    autoFilledNote = ` I've also auto-filled the Ejari Certificate Number I found in the document (<strong>EJR-2024-778193</strong>) into your notice form.`;
+  }
+
+  setTimeout(() => {
+    addTypingIndicator();
+    setTimeout(() => {
+      removeTypingIndicator();
+      addChatMessage('ai', `This appears to void the 60-day clause in favor of the mandatory 12-month statutory notice — this is consistent with RERA guidelines on public policy overriding private contract terms.${autoFilledNote} Your <strong>Premium AI Tier</strong> is now active, including this custom clause review in your downloadable package.`);
+      showToast('✨ Premium AI Tier unlocked');
+    }, 900);
+  }, 400);
+}
+
+/* ---------- Drawer open/close + intake kickoff ---------- */
+function openChatDrawer() {
+  document.getElementById('chatDrawer').classList.remove('translate-x-full');
+  document.getElementById('chatBackdrop').classList.remove('hidden');
+  document.getElementById('chatUnreadDot').classList.add('hidden');
+
+  if (chatState.stage === 'idle') {
+    setTimeout(() => {
+      addTypingIndicator();
+      setTimeout(() => {
+        removeTypingIndicator();
+        addChatMessage('ai', `👋 Hi, I'm <strong>RentShield AI</strong> — I specialize exclusively in Dubai rental law compliance. I can gather your notice details here, or you can upload a tenancy document for me to review.<br><br>Let's start: what is the <strong>Landlord's full name</strong>?`);
+        chatState.stage = 'landlord';
+      }, 800);
+    }, 300);
+  }
+  document.getElementById('chatInput').focus();
+}
+function closeChatDrawer() {
+  document.getElementById('chatDrawer').classList.add('translate-x-full');
+  document.getElementById('chatBackdrop').classList.add('hidden');
+}
+document.getElementById('chatToggleBtn').addEventListener('click', () => {
+  const isOpen = !document.getElementById('chatDrawer').classList.contains('translate-x-full');
+  isOpen ? closeChatDrawer() : openChatDrawer();
+});
+document.getElementById('btnCloseChat').addEventListener('click', closeChatDrawer);
+document.getElementById('chatBackdrop').addEventListener('click', closeChatDrawer);
+
+document.getElementById('btnChatSend').addEventListener('click', () => {
+  const input = document.getElementById('chatInput');
+  handleChatSend(input.value);
+  input.value = '';
+});
+document.getElementById('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('btnChatSend').click();
+  }
+});
+
+/* =========================================================
    INIT
    ========================================================= */
 document.getElementById('btnBack').addEventListener('click', () => goStep(-1));
@@ -845,6 +1320,7 @@ state.noticeDate = new Date().toISOString().slice(0, 10);
 
 renderAll();
 applyMobileLang();
+updateTierUI();
 </script>
 
 </body>
