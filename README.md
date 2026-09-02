@@ -82,10 +82,19 @@ descriptions (Dubai-only focus, hedged legal language, the 12-month vs
 does, so swapping the simulation for real tool calls shouldn't change the
 UX contract.
 
-**Not yet ported:** the mobile/PWA polish from the prototype (safe-area
-insets beyond the chat drawer, install manifest, favicon, iOS zoom-on-focus
-fix). The Vue app inherits Tailwind's default mobile behavior but hasn't
-had that pass applied yet.
+The mobile/PWA polish is ported too: `viewport-fit=cover` + safe-area
+insets on the header, the chat toggle button, and the chat input bar, the
+16px-on-mobile fix for form inputs (prevents iOS Safari's zoom-on-focus),
+`format-detection` so Ejari/plot numbers don't become tap-to-call links,
+an inline SVG favicon/apple-touch-icon, and a runtime-generated Web App
+Manifest (`vue/src/pwa.js`, a Blob URL — no static manifest file needed)
+so "Add to Home Screen" launches it standalone on both iOS and Android.
+
+At this point everything from `legacy/index.html` has a counterpart in the
+new architecture except: the OCR "analysis" is still a scripted response
+regardless of the uploaded file's actual content, and payment is still
+fully simulated (no real Stripe integration) — both true of the original
+prototype as well, not regressions introduced by the port.
 
 **Known limitation:** the production Docker build serves `vue/` as a static
 bundle, which doesn't proxy `/api/*` the way the Vite dev server does — a
