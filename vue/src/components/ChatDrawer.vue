@@ -300,6 +300,8 @@ function submitInput() {
   handleSend(inputText.value);
   inputText.value = '';
 }
+
+defineExpose({ openDrawer, closeDrawer });
 </script>
 
 <template>

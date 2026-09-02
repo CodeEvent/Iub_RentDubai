@@ -25,9 +25,10 @@ api/        Express + Node's built-in SQLite (node:sqlite — no external
             database to install). CRUD for saved notices, re-renders the
             bilingual document from shared/ on every read.
 
-vue/        Vue 3 + Vite + Pinia + Tailwind v4. The wizard + live bilingual
-            preview, ported from the original single-file prototype
-            (legacy/index.html) onto this real frontend.
+vue/        Vue 3 + Vite + Pinia + Tailwind v4 + Vue Router. A dashboard-
+            platform shell (sidebar navigation, top bar) around the wizard +
+            live bilingual preview, ported from the original single-file
+            prototype (legacy/index.html) onto this real frontend.
 
 mcp/        A real MCP (Model Context Protocol) server — calculate_notice_
             expiry, draft_eviction_notice, list_statutory_reasons — the
@@ -95,6 +96,35 @@ new architecture except: the OCR "analysis" is still a scripted response
 regardless of the uploaded file's actual content, and payment is still
 fully simulated (no real Stripe integration) — both true of the original
 prototype as well, not regressions introduced by the port.
+
+## App shell (dashboard-platform layout)
+
+The prototype was a single-page tool; the Vue app is now a routed
+dashboard-platform shell, matching MintHCM's UI pattern (sidebar nav + top
+bar + module switcher) rather than just its folder structure:
+
+```
+vue/src/components/shell/
+  Sidebar.vue   Dark sidebar, module nav (Dashboard / New Notice / Saved
+                Notices / Settings) driven by router.js's route meta, plus
+                an "AI Assistant" entry that opens the chat drawer. Slides
+                in as an overlay under lg: breakpoint.
+  TopBar.vue    Page title (from route meta), a "New Notice" quick action,
+                and a mobile hamburger to open the sidebar.
+
+vue/src/views/
+  DashboardView.vue      Real stat tiles (total / 12-month / 30-day /
+                          premium — computed from saved notices, not fake
+                          numbers) + a recent-notices panel.
+  NoticeBuilderView.vue  The wizard + live preview (what used to be the
+                          whole app) at /notices/new.
+  NoticesListView.vue    Every saved notice as a table, at /notices.
+  SettingsView.vue       Live API health check, default tier, and app info.
+```
+
+`App.vue` is now just the shell (`Sidebar` + `TopBar` + `<router-view>`)
+with `ChatDrawer` and `PaymentModal` mounted globally so they overlay
+whichever page is active, exactly as before.
 
 **Known limitation:** the production Docker build serves `vue/` as a static
 bundle, which doesn't proxy `/api/*` the way the Vite dev server does — a
