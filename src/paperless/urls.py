@@ -15,6 +15,10 @@ from drf_spectacular.views import SpectacularAPIView
 from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
+from rentshield.views import NoticeViewSet
+from rentshield.views import pricing_view
+from rentshield.views import reasons_view
+
 from documents.views import BulkDownloadView
 from documents.views import BulkEditObjectsView
 from documents.views import BulkEditView
@@ -89,6 +93,10 @@ api_router.register(r"workflows", WorkflowViewSet)
 api_router.register(r"custom_fields", CustomFieldViewSet)
 api_router.register(r"config", ApplicationConfigurationViewSet)
 api_router.register(r"processed_mail", ProcessedMailViewSet)
+# rentshield: Dubai tenancy-notice generation, rebased onto this
+# platform (see src/rentshield/). Every generated notice becomes a real
+# Document above (documents/) via rentshield.services.generate_and_consume().
+api_router.register(r"rentshield/notices", NoticeViewSet, basename="rentshield-notice")
 
 
 urlpatterns = [
@@ -138,6 +146,16 @@ urlpatterns = [
                     "^statistics/",
                     StatisticsView.as_view(),
                     name="statistics",
+                ),
+                re_path(
+                    "^rentshield/reasons/",
+                    reasons_view,
+                    name="rentshield-reasons",
+                ),
+                re_path(
+                    "^rentshield/pricing/",
+                    pricing_view,
+                    name="rentshield-pricing",
                 ),
                 re_path(
                     "^documents/",

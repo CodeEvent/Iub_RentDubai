@@ -137,6 +137,7 @@ INSTALLED_APPS = [
     "paperless",
     "documents.apps.DocumentsConfig",
     "paperless_mail.apps.PaperlessMailConfig",
+    "rentshield.apps.RentshieldConfig",
     "django.contrib.admin",
     "rest_framework",
     "rest_framework.authtoken",
