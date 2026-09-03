@@ -1,0 +1,32 @@
+.dropdown-menu {
+  width: var(--pngx-toast-max-width);
+}
+
+.dropdown-menu .scroll-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.dropdown-toggle::after {
+  display: none;
+}
+
+.notification-count {
+  top: -.2rem;
+  right: -.2rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: .18rem .32rem;
+  font-size: .68rem;
+  line-height: 1;
+}
+
+.dropdown-item {
+  white-space: initial;
+}
+
+@media screen and (max-width: 400px) {
+  :host ::ng-deep .dropdown-menu-end {
+    right: -3rem;
+  }
+}

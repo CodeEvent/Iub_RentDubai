@@ -1,0 +1,1155 @@
+import {
+  Component,
+  inject,
+  Input,
+  OnDestroy,
+  OnInit,
+  signal,
+} from '@angular/core'
+import {
+  FormControl,
+  FormGroup,
+  FormsModule,
+  ReactiveFormsModule,
+} from '@angular/forms'
+import {
+  NgbDropdownModule,
+  NgbModal,
+  NgbModalRef,
+} from '@ng-bootstrap/ng-bootstrap'
+import { saveAs } from 'file-saver'
+import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
+import { first, map, Observable, Subject, switchMap, takeUntil } from 'rxjs'
+import { ConfirmDialogComponent } from 'src/app/components/common/confirm-dialog/confirm-dialog.component'
+import { CustomField } from 'src/app/data/custom-field'
+import { MatchingModel } from 'src/app/data/matching-model'
+import { SelectionDataItem } from 'src/app/data/results'
+import { SETTINGS_KEYS } from 'src/app/data/ui-settings'
+import { IfPermissionsDirective } from 'src/app/directives/if-permissions.directive'
+import { DocumentListViewService } from 'src/app/services/document-list-view.service'
+import { OpenDocumentsService } from 'src/app/services/open-documents.service'
+import {
+  PermissionAction,
+  PermissionsService,
+  PermissionType,
+} from 'src/app/services/permissions.service'
+import { CorrespondentService } from 'src/app/services/rest/correspondent.service'
+import { CustomFieldsService } from 'src/app/services/rest/custom-fields.service'
+import { DocumentTypeService } from 'src/app/services/rest/document-type.service'
+import {
+  DocumentBulkEditMethod,
+  DocumentSelectionQuery,
+  DocumentService,
+  MergeDocumentsRequest,
+} from 'src/app/services/rest/document.service'
+import { SavedViewService } from 'src/app/services/rest/saved-view.service'
+import { ShareLinkBundleService } from 'src/app/services/rest/share-link-bundle.service'
+import { StoragePathService } from 'src/app/services/rest/storage-path.service'
+import { TagService } from 'src/app/services/rest/tag.service'
+import { SettingsService } from 'src/app/services/settings.service'
+import { ToastService } from 'src/app/services/toast.service'
+import { flattenTags } from 'src/app/utils/flatten-tags'
+import { queryParamsFromFilterRules } from 'src/app/utils/query-params'
+import { MergeAsVersionsConfirmDialogComponent } from '../../common/confirm-dialog/merge-as-versions-confirm-dialog/merge-as-versions-confirm-dialog.component'
+import { MergeConfirmDialogComponent } from '../../common/confirm-dialog/merge-confirm-dialog/merge-confirm-dialog.component'
+import { ReprocessConfirmDialogComponent } from '../../common/confirm-dialog/reprocess-confirm-dialog/reprocess-confirm-dialog.component'
+import { RotateConfirmDialogComponent } from '../../common/confirm-dialog/rotate-confirm-dialog/rotate-confirm-dialog.component'
+import { CorrespondentEditDialogComponent } from '../../common/edit-dialog/correspondent-edit-dialog/correspondent-edit-dialog.component'
+import { CustomFieldEditDialogComponent } from '../../common/edit-dialog/custom-field-edit-dialog/custom-field-edit-dialog.component'
+import { DocumentTypeEditDialogComponent } from '../../common/edit-dialog/document-type-edit-dialog/document-type-edit-dialog.component'
+import { EditDialogMode } from '../../common/edit-dialog/edit-dialog.component'
+import { StoragePathEditDialogComponent } from '../../common/edit-dialog/storage-path-edit-dialog/storage-path-edit-dialog.component'
+import { TagEditDialogComponent } from '../../common/edit-dialog/tag-edit-dialog/tag-edit-dialog.component'
+import { EmailDocumentDialogComponent } from '../../common/email-document-dialog/email-document-dialog.component'
+import {
+  ChangedItems,
+  FilterableDropdownComponent,
+  FilterableDropdownSelectionModel,
+} from '../../common/filterable-dropdown/filterable-dropdown.component'
+import { ToggleableItemState } from '../../common/filterable-dropdown/toggleable-dropdown-button/toggleable-dropdown-button.component'
+import { PermissionsDialogComponent } from '../../common/permissions-dialog/permissions-dialog.component'
+import { ShareLinkBundleDialogComponent } from '../../common/share-link-bundle-dialog/share-link-bundle-dialog.component'
+import { ShareLinkBundleManageDialogComponent } from '../../common/share-link-bundle-manage-dialog/share-link-bundle-manage-dialog.component'
+import { ComponentWithPermissions } from '../../with-permissions/with-permissions.component'
+import { CustomFieldsBulkEditDialogComponent } from './custom-fields-bulk-edit-dialog/custom-fields-bulk-edit-dialog.component'
+
+@Component({
+  selector: 'pngx-bulk-editor',
+  templateUrl: './bulk-editor.component.html',
+  styleUrls: ['./bulk-editor.component.scss'],
+  imports: [
+    FilterableDropdownComponent,
+    IfPermissionsDirective,
+    FormsModule,
+    ReactiveFormsModule,
+    NgbDropdownModule,
+    NgxBootstrapIconsModule,
+  ],
+})
+export class BulkEditorComponent
+  extends ComponentWithPermissions
+  implements OnInit, OnDestroy
+{
+  private documentTypeService = inject(DocumentTypeService)
+  private tagService = inject(TagService)
+  private correspondentService = inject(CorrespondentService)
+  list = inject(DocumentListViewService)
+  private documentService = inject(DocumentService)
+  private modalService = inject(NgbModal)
+  private openDocumentService = inject(OpenDocumentsService)
+  private settings = inject(SettingsService)
+  private toastService = inject(ToastService)
+  private storagePathService = inject(StoragePathService)
+  private customFieldService = inject(CustomFieldsService)
+  public readonly permissionService = inject(PermissionsService)
+  private savedViewService = inject(SavedViewService)
+  private readonly shareLinkBundleService = inject(ShareLinkBundleService)
+
+  tagSelectionModel = new FilterableDropdownSelectionModel(true)
+  correspondentSelectionModel = new FilterableDropdownSelectionModel()
+  documentTypeSelectionModel = new FilterableDropdownSelectionModel()
+  storagePathsSelectionModel = new FilterableDropdownSelectionModel()
+  customFieldsSelectionModel = new FilterableDropdownSelectionModel(true)
+  readonly tagDocumentCounts = signal<SelectionDataItem[]>(undefined)
+  readonly correspondentDocumentCounts = signal<SelectionDataItem[]>(undefined)
+  readonly documentTypeDocumentCounts = signal<SelectionDataItem[]>(undefined)
+  readonly storagePathDocumentCounts = signal<SelectionDataItem[]>(undefined)
+  readonly customFieldDocumentCounts = signal<SelectionDataItem[]>(undefined)
+  readonly awaitingDownload = signal(false)
+
+  unsubscribeNotifier: Subject<any> = new Subject()
+
+  downloadForm = new FormGroup({
+    downloadFileTypeArchive: new FormControl(true),
+    downloadFileTypeOriginals: new FormControl(false),
+    downloadUseFormatting: new FormControl(false),
+  })
+
+  @Input()
+  public disabled: boolean = false
+
+  applyOnClose: boolean = this.settings.get(
+    SETTINGS_KEYS.BULK_EDIT_APPLY_ON_CLOSE
+  )
+  showConfirmationDialogs: boolean = this.settings.get(
+    SETTINGS_KEYS.BULK_EDIT_CONFIRMATION_DIALOGS
+  )
+
+  get userCanEditAll(): boolean {
+    let canEdit: boolean = this.permissionService.currentUserCan(
+      PermissionAction.Change,
+      PermissionType.Document
+    )
+    if (!canEdit) return false
+
+    const docs = this.list.documents.filter((d) => this.list.selected.has(d.id))
+    canEdit = docs.every((d) =>
+      this.permissionService.currentUserHasObjectPermissions(
+        this.PermissionAction.Change,
+        d
+      )
+    )
+    return canEdit
+  }
+
+  get userOwnsAll(): boolean {
+    let ownsAll: boolean = true
+    const docs = this.list.documents.filter((d) => this.list.selected.has(d.id))
+    ownsAll = docs.every((d) => this.permissionService.currentUserOwnsObject(d))
+    return ownsAll
+  }
+
+  get userCanEdit(): boolean {
+    return this.permissionService.currentUserCan(
+      PermissionAction.Change,
+      PermissionType.Document
+    )
+  }
+
+  get userCanAdd(): boolean {
+    return this.permissionService.currentUserCan(
+      PermissionAction.Add,
+      PermissionType.Document
+    )
+  }
+
+  get userCanDelete(): boolean {
+    return this.permissionService.currentUserCan(
+      PermissionAction.Delete,
+      PermissionType.Document
+    )
+  }
+
+  ngOnInit() {
+    if (
+      this.permissionService.currentUserCan(
+        PermissionAction.View,
+        PermissionType.Tag
+      )
+    ) {
+      this.tagService
+        .listAll()
+        .pipe(first())
+        .subscribe(
+          (result) =>
+            (this.tagSelectionModel.items = flattenTags(result.results))
+        )
+    }
+    if (
+      this.permissionService.currentUserCan(
+        PermissionAction.View,
+        PermissionType.Correspondent
+      )
+    ) {
+      this.correspondentService
+        .listAll()
+        .pipe(first())
+        .subscribe(
+          (result) => (this.correspondentSelectionModel.items = result.results)
+        )
+    }
+    if (
+      this.permissionService.currentUserCan(
+        PermissionAction.View,
+        PermissionType.DocumentType
+      )
+    ) {
+      this.documentTypeService
+        .listAll()
+        .pipe(first())
+        .subscribe(
+          (result) => (this.documentTypeSelectionModel.items = result.results)
+        )
+    }
+    if (
+      this.permissionService.currentUserCan(
+        PermissionAction.View,
+        PermissionType.StoragePath
+      )
+    ) {
+      this.storagePathService
+        .listAll()
+        .pipe(first())
+        .subscribe(
+          (result) => (this.storagePathsSelectionModel.items = result.results)
+        )
+    }
+    if (
+      this.permissionService.currentUserCan(
+        PermissionAction.View,
+        PermissionType.CustomField
+      )
+    ) {
+      this.customFieldService
+        .listAll()
+        .pipe(first())
+        .subscribe(
+          (result) => (this.customFieldsSelectionModel.items = result.results)
+        )
+    }
+
+    this.downloadForm
+      .get('downloadFileTypeArchive')
+      .valueChanges.pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe((newValue) => {
+        if (!newValue) {
+          this.downloadForm
+            .get('downloadFileTypeOriginals')
+            .patchValue(true, { emitEvent: false })
+        }
+      })
+    this.downloadForm
+      .get('downloadFileTypeOriginals')
+      .valueChanges.pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe((newValue) => {
+        if (!newValue) {
+          this.downloadForm
+            .get('downloadFileTypeArchive')
+            .patchValue(true, { emitEvent: false })
+        }
+      })
+  }
+
+  ngOnDestroy(): void {
+    this.unsubscribeNotifier.next(this)
+    this.unsubscribeNotifier.complete()
+  }
+
+  private executeBulkEditMethod(
+    modal: NgbModalRef,
+    method: DocumentBulkEditMethod,
+    args: any,
+    overrideSelection?: DocumentSelectionQuery
+  ) {
+    if (modal) {
+      modal.componentInstance.buttonsEnabled.set(false)
+    }
+    this.documentService
+      .bulkEdit(overrideSelection ?? this.getSelectionQuery(), method, args)
+      .pipe(first())
+      .subscribe({
+        next: () => this.handleOperationSuccess(modal),
+        error: (error) => this.handleOperationError(modal, error),
+      })
+  }
+
+  private executeDocumentAction(
+    modal: NgbModalRef,
+    request: Observable<any>,
+    options: { clearSelection?: boolean; successMessage?: string } = {}
+  ) {
+    if (modal) {
+      modal.componentInstance.buttonsEnabled.set(false)
+    }
+    request.pipe(first()).subscribe({
+      next: () => {
+        this.handleOperationSuccess(modal, options.clearSelection ?? false)
+        if (options.successMessage) {
+          this.toastService.showInfo(options.successMessage)
+        }
+      },
+      error: (error) => this.handleOperationError(modal, error),
+    })
+  }
+
+  private handleOperationSuccess(
+    modal: NgbModalRef,
+    clearSelection: boolean = false
+  ) {
+    if (clearSelection) {
+      this.list.selected.clear()
+    }
+    this.list.reload()
+    this.list.reduceSelectionToFilter()
+    this.list.selected.forEach((id) => {
+      this.openDocumentService.refreshDocument(id)
+    })
+    this.savedViewService.maybeRefreshDocumentCounts()
+    if (modal) {
+      modal.close()
+    }
+  }
+
+  private handleOperationError(modal: NgbModalRef, error: any) {
+    if (modal) {
+      modal.componentInstance.buttonsEnabled.set(true)
+    }
+    this.toastService.showError(
+      $localize`Error executing bulk operation`,
+      error
+    )
+  }
+
+  private applySelectionData(
+    items: SelectionDataItem[],
+    selectionModel: FilterableDropdownSelectionModel
+  ) {
+    let selectionData = new Map<number, ToggleableItemState>()
+    items.forEach((i) => {
+      if (i.document_count == this.list.selectedCount) {
+        selectionData.set(i.id, ToggleableItemState.Selected)
+      } else if (i.document_count > 0) {
+        selectionData.set(i.id, ToggleableItemState.PartiallySelected)
+      }
+    })
+    selectionModel.init(selectionData)
+  }
+
+  private getSelectionQuery(): DocumentSelectionQuery {
+    if (this.list.allSelected) {
+      return {
+        all: true,
+        filters: queryParamsFromFilterRules(this.list.filterRules),
+      }
+    }
+
+    return {
+      documents: Array.from(this.list.selected),
+    }
+  }
+
+  private getSelectionSize(): number {
+    return this.list.selectedCount
+  }
+
+  openTagsDropdown() {
+    if (this.list.allSelected) {
+      const selectionData = this.list.selectionData
+      this.tagDocumentCounts.set(selectionData?.selected_tags ?? [])
+      this.applySelectionData(this.tagDocumentCounts(), this.tagSelectionModel)
+      return
+    }
+
+    this.documentService
+      .getSelectionData(Array.from(this.list.selected))
+      .pipe(first())
+      .subscribe((s) => {
+        this.tagDocumentCounts.set(s.selected_tags)
+        this.applySelectionData(s.selected_tags, this.tagSelectionModel)
+      })
+  }
+
+  openDocumentTypeDropdown() {
+    if (this.list.allSelected) {
+      const selectionData = this.list.selectionData
+      this.documentTypeDocumentCounts.set(
+        selectionData?.selected_document_types ?? []
+      )
+      this.applySelectionData(
+        this.documentTypeDocumentCounts(),
+        this.documentTypeSelectionModel
+      )
+      return
+    }
+
+    this.documentService
+      .getSelectionData(Array.from(this.list.selected))
+      .pipe(first())
+      .subscribe((s) => {
+        this.documentTypeDocumentCounts.set(s.selected_document_types)
+        this.applySelectionData(
+          s.selected_document_types,
+          this.documentTypeSelectionModel
+        )
+      })
+  }
+
+  openCorrespondentDropdown() {
+    if (this.list.allSelected) {
+      const selectionData = this.list.selectionData
+      this.correspondentDocumentCounts.set(
+        selectionData?.selected_correspondents ?? []
+      )
+      this.applySelectionData(
+        this.correspondentDocumentCounts(),
+        this.correspondentSelectionModel
+      )
+      return
+    }
+
+    this.documentService
+      .getSelectionData(Array.from(this.list.selected))
+      .pipe(first())
+      .subscribe((s) => {
+        this.correspondentDocumentCounts.set(s.selected_correspondents)
+        this.applySelectionData(
+          s.selected_correspondents,
+          this.correspondentSelectionModel
+        )
+      })
+  }
+
+  openStoragePathDropdown() {
+    if (this.list.allSelected) {
+      const selectionData = this.list.selectionData
+      this.storagePathDocumentCounts.set(
+        selectionData?.selected_storage_paths ?? []
+      )
+      this.applySelectionData(
+        this.storagePathDocumentCounts(),
+        this.storagePathsSelectionModel
+      )
+      return
+    }
+
+    this.documentService
+      .getSelectionData(Array.from(this.list.selected))
+      .pipe(first())
+      .subscribe((s) => {
+        this.storagePathDocumentCounts.set(s.selected_storage_paths)
+        this.applySelectionData(
+          s.selected_storage_paths,
+          this.storagePathsSelectionModel
+        )
+      })
+  }
+
+  openCustomFieldsDropdown() {
+    if (this.list.allSelected) {
+      const selectionData = this.list.selectionData
+      this.customFieldDocumentCounts.set(
+        selectionData?.selected_custom_fields ?? []
+      )
+      this.applySelectionData(
+        this.customFieldDocumentCounts(),
+        this.customFieldsSelectionModel
+      )
+      return
+    }
+
+    this.documentService
+      .getSelectionData(Array.from(this.list.selected))
+      .pipe(first())
+      .subscribe((s) => {
+        this.customFieldDocumentCounts.set(s.selected_custom_fields)
+        this.applySelectionData(
+          s.selected_custom_fields,
+          this.customFieldsSelectionModel
+        )
+      })
+  }
+
+  private _localizeList(items: MatchingModel[]) {
+    if (items.length == 0) {
+      return ''
+    } else if (items.length == 1) {
+      return $localize`"${items[0].name}"`
+    } else if (items.length == 2) {
+      return $localize`:This is for messages like 'modify "tag1" and "tag2"':"${items[0].name}" and "${items[1].name}"`
+    } else {
+      let list = items
+        .slice(0, items.length - 1)
+        .map((i) => $localize`"${i.name}"`)
+        .join(
+          $localize`:this is used to separate enumerations and should probably be a comma and a whitespace in most languages:, `
+        )
+      return $localize`:this is for messages like 'modify "tag1", "tag2" and "tag3"':${list} and "${
+        items[items.length - 1].name
+      }"`
+    }
+  }
+
+  setTags(changedTags: ChangedItems) {
+    if (
+      changedTags.itemsToAdd.length == 0 &&
+      changedTags.itemsToRemove.length == 0
+    )
+      return
+
+    if (this.showConfirmationDialogs) {
+      let modal = this.modalService.open(ConfirmDialogComponent, {
+        backdrop: 'static',
+      })
+      modal.componentInstance.title = $localize`Confirm tags assignment`
+      if (
+        changedTags.itemsToAdd.length == 1 &&
+        changedTags.itemsToRemove.length == 0
+      ) {
+        let tag = changedTags.itemsToAdd[0]
+        modal.componentInstance.message = $localize`This operation will add the tag "${tag.name}" to ${this.getSelectionSize()} selected document(s).`
+      } else if (
+        changedTags.itemsToAdd.length > 1 &&
+        changedTags.itemsToRemove.length == 0
+      ) {
+        modal.componentInstance.message = $localize`This operation will add the tags ${this._localizeList(
+          changedTags.itemsToAdd
+        )} to ${this.getSelectionSize()} selected document(s).`
+      } else if (
+        changedTags.itemsToAdd.length == 0 &&
+        changedTags.itemsToRemove.length == 1
+      ) {
+        let tag = changedTags.itemsToRemove[0]
+        modal.componentInstance.message = $localize`This operation will remove the tag "${tag.name}" from ${this.getSelectionSize()} selected document(s).`
+      } else if (
+        changedTags.itemsToAdd.length == 0 &&
+        changedTags.itemsToRemove.length > 1
+      ) {
+        modal.componentInstance.message = $localize`This operation will remove the tags ${this._localizeList(
+          changedTags.itemsToRemove
+        )} from ${this.getSelectionSize()} selected document(s).`
+      } else {
+        modal.componentInstance.message = $localize`This operation will add the tags ${this._localizeList(
+          changedTags.itemsToAdd
+        )} and remove the tags ${this._localizeList(
+          changedTags.itemsToRemove
+        )} on ${this.getSelectionSize()} selected document(s).`
+      }
+
+      modal.componentInstance.btnClass = 'btn-warning'
+      modal.componentInstance.btnCaption = $localize`Confirm`
+      modal.componentInstance.confirmClicked
+        .pipe(takeUntil(this.unsubscribeNotifier))
+        .subscribe(() => {
+          this.executeBulkEditMethod(modal, 'modify_tags', {
+            add_tags: changedTags.itemsToAdd.map((t) => t.id),
+            remove_tags: changedTags.itemsToRemove.map((t) => t.id),
+          })
+        })
+    } else {
+      this.executeBulkEditMethod(null, 'modify_tags', {
+        add_tags: changedTags.itemsToAdd.map((t) => t.id),
+        remove_tags: changedTags.itemsToRemove.map((t) => t.id),
+      })
+    }
+  }
+
+  setCorrespondents(changedCorrespondents: ChangedItems) {
+    if (
+      changedCorrespondents.itemsToAdd.length == 0 &&
+      changedCorrespondents.itemsToRemove.length == 0
+    )
+      return
+
+    let correspondent =
+      changedCorrespondents.itemsToAdd.length > 0
+        ? changedCorrespondents.itemsToAdd[0]
+        : null
+
+    if (this.showConfirmationDialogs) {
+      let modal = this.modalService.open(ConfirmDialogComponent, {
+        backdrop: 'static',
+      })
+      modal.componentInstance.title = $localize`Confirm correspondent assignment`
+      if (correspondent) {
+        modal.componentInstance.message = $localize`This operation will assign the correspondent "${correspondent.name}" to ${this.getSelectionSize()} selected document(s).`
+      } else {
+        modal.componentInstance.message = $localize`This operation will remove the correspondent from ${this.getSelectionSize()} selected document(s).`
+      }
+      modal.componentInstance.btnClass = 'btn-warning'
+      modal.componentInstance.btnCaption = $localize`Confirm`
+      modal.componentInstance.confirmClicked
+        .pipe(takeUntil(this.unsubscribeNotifier))
+        .subscribe(() => {
+          this.executeBulkEditMethod(modal, 'set_correspondent', {
+            correspondent: correspondent ? correspondent.id : null,
+          })
+        })
+    } else {
+      this.executeBulkEditMethod(null, 'set_correspondent', {
+        correspondent: correspondent ? correspondent.id : null,
+      })
+    }
+  }
+
+  setDocumentTypes(changedDocumentTypes: ChangedItems) {
+    if (
+      changedDocumentTypes.itemsToAdd.length == 0 &&
+      changedDocumentTypes.itemsToRemove.length == 0
+    )
+      return
+
+    let documentType =
+      changedDocumentTypes.itemsToAdd.length > 0
+        ? changedDocumentTypes.itemsToAdd[0]
+        : null
+
+    if (this.showConfirmationDialogs) {
+      let modal = this.modalService.open(ConfirmDialogComponent, {
+        backdrop: 'static',
+      })
+      modal.componentInstance.title = $localize`Confirm document type assignment`
+      if (documentType) {
+        modal.componentInstance.message = $localize`This operation will assign the document type "${documentType.name}" to ${this.getSelectionSize()} selected document(s).`
+      } else {
+        modal.componentInstance.message = $localize`This operation will remove the document type from ${this.getSelectionSize()} selected document(s).`
+      }
+      modal.componentInstance.btnClass = 'btn-warning'
+      modal.componentInstance.btnCaption = $localize`Confirm`
+      modal.componentInstance.confirmClicked
+        .pipe(takeUntil(this.unsubscribeNotifier))
+        .subscribe(() => {
+          this.executeBulkEditMethod(modal, 'set_document_type', {
+            document_type: documentType ? documentType.id : null,
+          })
+        })
+    } else {
+      this.executeBulkEditMethod(null, 'set_document_type', {
+        document_type: documentType ? documentType.id : null,
+      })
+    }
+  }
+
+  setStoragePaths(changedDocumentPaths: ChangedItems) {
+    if (
+      changedDocumentPaths.itemsToAdd.length == 0 &&
+      changedDocumentPaths.itemsToRemove.length == 0
+    )
+      return
+
+    let storagePath =
+      changedDocumentPaths.itemsToAdd.length > 0
+        ? changedDocumentPaths.itemsToAdd[0]
+        : null
+
+    if (this.showConfirmationDialogs) {
+      let modal = this.modalService.open(ConfirmDialogComponent, {
+        backdrop: 'static',
+      })
+      modal.componentInstance.title = $localize`Confirm storage path assignment`
+      if (storagePath) {
+        modal.componentInstance.message = $localize`This operation will assign the storage path "${storagePath.name}" to ${this.getSelectionSize()} selected document(s).`
+      } else {
+        modal.componentInstance.message = $localize`This operation will remove the storage path from ${this.getSelectionSize()} selected document(s).`
+      }
+      modal.componentInstance.btnClass = 'btn-warning'
+      modal.componentInstance.btnCaption = $localize`Confirm`
+      modal.componentInstance.confirmClicked
+        .pipe(takeUntil(this.unsubscribeNotifier))
+        .subscribe(() => {
+          this.executeBulkEditMethod(modal, 'set_storage_path', {
+            storage_path: storagePath ? storagePath.id : null,
+          })
+        })
+    } else {
+      this.executeBulkEditMethod(null, 'set_storage_path', {
+        storage_path: storagePath ? storagePath.id : null,
+      })
+    }
+  }
+
+  setCustomFields(changedCustomFields: ChangedItems) {
+    if (
+      changedCustomFields.itemsToAdd.length == 0 &&
+      changedCustomFields.itemsToRemove.length == 0
+    )
+      return
+
+    if (this.showConfirmationDialogs) {
+      let modal = this.modalService.open(ConfirmDialogComponent, {
+        backdrop: 'static',
+      })
+      modal.componentInstance.title = $localize`Confirm custom field assignment`
+      if (
+        changedCustomFields.itemsToAdd.length == 1 &&
+        changedCustomFields.itemsToRemove.length == 0
+      ) {
+        let customField = changedCustomFields.itemsToAdd[0]
+        modal.componentInstance.message = $localize`This operation will assign the custom field "${customField.name}" to ${this.getSelectionSize()} selected document(s).`
+      } else if (
+        changedCustomFields.itemsToAdd.length > 1 &&
+        changedCustomFields.itemsToRemove.length == 0
+      ) {
+        modal.componentInstance.message = $localize`This operation will assign the custom fields ${this._localizeList(
+          changedCustomFields.itemsToAdd
+        )} to ${this.getSelectionSize()} selected document(s).`
+      } else if (
+        changedCustomFields.itemsToAdd.length == 0 &&
+        changedCustomFields.itemsToRemove.length == 1
+      ) {
+        let customField = changedCustomFields.itemsToRemove[0]
+        modal.componentInstance.message = $localize`This operation will remove the custom field "${customField.name}" from ${this.getSelectionSize()} selected document(s).`
+      } else if (
+        changedCustomFields.itemsToAdd.length == 0 &&
+        changedCustomFields.itemsToRemove.length > 1
+      ) {
+        modal.componentInstance.message = $localize`This operation will remove the custom fields ${this._localizeList(
+          changedCustomFields.itemsToRemove
+        )} from ${this.getSelectionSize()} selected document(s).`
+      } else {
+        modal.componentInstance.message = $localize`This operation will assign the custom fields ${this._localizeList(
+          changedCustomFields.itemsToAdd
+        )} and remove the custom fields ${this._localizeList(
+          changedCustomFields.itemsToRemove
+        )} on ${this.getSelectionSize()} selected document(s).`
+      }
+
+      modal.componentInstance.btnClass = 'btn-warning'
+      modal.componentInstance.btnCaption = $localize`Confirm`
+      modal.componentInstance.confirmClicked
+        .pipe(takeUntil(this.unsubscribeNotifier))
+        .subscribe(() => {
+          this.executeBulkEditMethod(modal, 'modify_custom_fields', {
+            add_custom_fields: changedCustomFields.itemsToAdd.map((f) => f.id),
+            remove_custom_fields: changedCustomFields.itemsToRemove.map(
+              (f) => f.id
+            ),
+          })
+        })
+    } else {
+      this.executeBulkEditMethod(null, 'modify_custom_fields', {
+        add_custom_fields: changedCustomFields.itemsToAdd.map((f) => f.id),
+        remove_custom_fields: changedCustomFields.itemsToRemove.map(
+          (f) => f.id
+        ),
+      })
+    }
+  }
+
+  createTag(name: string) {
+    let modal = this.modalService.open(TagEditDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.dialogMode.set(EditDialogMode.CREATE)
+    modal.componentInstance.object = { name }
+    modal.componentInstance.succeeded
+      .pipe(
+        switchMap((newTag) => {
+          return this.tagService
+            .listAll()
+            .pipe(map((tags) => ({ newTag, tags })))
+        })
+      )
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(({ newTag, tags }) => {
+        this.tagSelectionModel.items = flattenTags(tags.results)
+        this.tagSelectionModel.toggle(newTag.id)
+      })
+    return modal
+  }
+
+  createCorrespondent(name: string) {
+    let modal = this.modalService.open(CorrespondentEditDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.dialogMode.set(EditDialogMode.CREATE)
+    modal.componentInstance.object = { name }
+    modal.componentInstance.succeeded
+      .pipe(
+        switchMap((newCorrespondent) => {
+          return this.correspondentService
+            .listAll()
+            .pipe(
+              map((correspondents) => ({ newCorrespondent, correspondents }))
+            )
+        })
+      )
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(({ newCorrespondent, correspondents }) => {
+        this.correspondentSelectionModel.items = correspondents.results
+        this.correspondentSelectionModel.toggle(newCorrespondent.id)
+      })
+    return modal
+  }
+
+  createDocumentType(name: string) {
+    let modal = this.modalService.open(DocumentTypeEditDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.dialogMode.set(EditDialogMode.CREATE)
+    modal.componentInstance.object = { name }
+    modal.componentInstance.succeeded
+      .pipe(
+        switchMap((newDocumentType) => {
+          return this.documentTypeService
+            .listAll()
+            .pipe(map((documentTypes) => ({ newDocumentType, documentTypes })))
+        })
+      )
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(({ newDocumentType, documentTypes }) => {
+        this.documentTypeSelectionModel.items = documentTypes.results
+        this.documentTypeSelectionModel.toggle(newDocumentType.id)
+      })
+    return modal
+  }
+
+  createStoragePath(name: string) {
+    let modal = this.modalService.open(StoragePathEditDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.dialogMode.set(EditDialogMode.CREATE)
+    modal.componentInstance.object = { name }
+    modal.componentInstance.succeeded
+      .pipe(
+        switchMap((newStoragePath) => {
+          return this.storagePathService
+            .listAll()
+            .pipe(map((storagePaths) => ({ newStoragePath, storagePaths })))
+        })
+      )
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(({ newStoragePath, storagePaths }) => {
+        this.storagePathsSelectionModel.items = storagePaths.results
+        this.storagePathsSelectionModel.toggle(newStoragePath.id)
+      })
+    return modal
+  }
+
+  createCustomField(name: string) {
+    let modal = this.modalService.open(CustomFieldEditDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.dialogMode.set(EditDialogMode.CREATE)
+    modal.componentInstance.object = { name }
+    modal.componentInstance.succeeded
+      .pipe(
+        switchMap((newCustomField) => {
+          return this.customFieldService
+            .listAll()
+            .pipe(map((customFields) => ({ newCustomField, customFields })))
+        })
+      )
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(({ newCustomField, customFields }) => {
+        this.customFieldsSelectionModel.items = customFields.results
+        this.customFieldsSelectionModel.toggle(newCustomField.id)
+      })
+    return modal
+  }
+
+  applyDelete() {
+    if (this.showConfirmationDialogs) {
+      let modal = this.modalService.open(ConfirmDialogComponent, {
+        backdrop: 'static',
+      })
+      modal.componentInstance.title = $localize`Confirm`
+      modal.componentInstance.messageBold = $localize`Move ${this.getSelectionSize()} selected document(s) to the trash?`
+      modal.componentInstance.message = $localize`Documents can be restored prior to permanent deletion.`
+      modal.componentInstance.btnClass = 'btn-danger'
+      modal.componentInstance.btnCaption = $localize`Move to trash`
+      modal.componentInstance.confirmClicked
+        .pipe(takeUntil(this.unsubscribeNotifier))
+        .subscribe(() => {
+          modal.componentInstance.buttonsEnabled.set(false)
+          this.executeDocumentAction(
+            modal,
+            this.documentService.deleteDocuments(this.getSelectionQuery())
+          )
+        })
+    } else {
+      this.executeDocumentAction(
+        null,
+        this.documentService.deleteDocuments(this.getSelectionQuery())
+      )
+    }
+  }
+
+  downloadSelected() {
+    this.awaitingDownload.set(true)
+    let downloadFileType: string =
+      this.downloadForm.get('downloadFileTypeArchive').value &&
+      this.downloadForm.get('downloadFileTypeOriginals').value
+        ? 'both'
+        : this.downloadForm.get('downloadFileTypeArchive').value
+          ? 'archive'
+          : 'originals'
+    this.documentService
+      .bulkDownload(
+        this.getSelectionQuery(),
+        downloadFileType,
+        this.downloadForm.get('downloadUseFormatting').value
+      )
+      .pipe(first())
+      .subscribe((result: any) => {
+        saveAs(result, 'documents.zip')
+        this.awaitingDownload.set(false)
+      })
+  }
+
+  reprocessSelected() {
+    let modal = this.modalService.open(ReprocessConfirmDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.title = $localize`Reprocess confirm`
+    modal.componentInstance.messageBold = $localize`This operation will permanently recreate the archive files for ${this.getSelectionSize()} selected document(s).`
+    modal.componentInstance.message = $localize`The archive files will be re-generated with the current settings.`
+    modal.componentInstance.btnClass = 'btn-danger'
+    modal.componentInstance.btnCaption = $localize`Proceed`
+    modal.componentInstance.confirmClicked
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(() => {
+        modal.componentInstance.buttonsEnabled.set(false)
+        this.executeDocumentAction(
+          modal,
+          this.documentService.reprocessDocuments(
+            this.getSelectionQuery(),
+            modal.componentInstance.remoteOcr
+          )
+        )
+      })
+  }
+
+  setPermissions() {
+    let modal = this.modalService.open(PermissionsDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.confirmClicked.subscribe(
+      ({ permissions, merge }) => {
+        modal.componentInstance.buttonsEnabled.set(false)
+        this.executeBulkEditMethod(modal, 'set_permissions', {
+          ...permissions,
+          merge,
+        })
+      }
+    )
+  }
+
+  rotateSelected() {
+    let modal = this.modalService.open(RotateConfirmDialogComponent, {
+      backdrop: 'static',
+      size: 'lg',
+    })
+    const rotateDialog = modal.componentInstance as RotateConfirmDialogComponent
+    rotateDialog.title = $localize`Rotate confirm`
+    rotateDialog.messageBold = $localize`This operation will add rotated versions of the ${this.getSelectionSize()} document(s).`
+    rotateDialog.btnClass = 'btn-danger'
+    rotateDialog.btnCaption = $localize`Proceed`
+    rotateDialog.documentID.set(Array.from(this.list.selected)[0])
+    rotateDialog.confirmClicked
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(() => {
+        rotateDialog.buttonsEnabled.set(false)
+        this.executeDocumentAction(
+          modal,
+          this.documentService.rotateDocuments(
+            this.getSelectionQuery(),
+            rotateDialog.degrees
+          )
+        )
+      })
+  }
+
+  mergeSelected() {
+    let modal = this.modalService.open(MergeConfirmDialogComponent, {
+      backdrop: 'static',
+    })
+    const mergeDialog = modal.componentInstance as MergeConfirmDialogComponent
+    mergeDialog.title = $localize`Merge confirm`
+    mergeDialog.messageBold = $localize`This operation will merge ${this.getSelectionSize()} selected documents into a new document.`
+    mergeDialog.btnCaption = $localize`Proceed`
+    mergeDialog.documentIDs.set(Array.from(this.list.selected))
+    mergeDialog.confirmClicked
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(() => {
+        const args: MergeDocumentsRequest = {}
+        if (mergeDialog.metadataDocumentID() > -1) {
+          args.metadata_document_id = mergeDialog.metadataDocumentID()
+        }
+        if (mergeDialog.deleteOriginals()) {
+          args.delete_originals = true
+        }
+        if (mergeDialog.archiveFallback()) {
+          args.archive_fallback = true
+        }
+        mergeDialog.buttonsEnabled.set(false)
+        this.executeDocumentAction(
+          modal,
+          this.documentService.mergeDocuments(mergeDialog.documentIDs(), args),
+          { clearSelection: !!args.delete_originals }
+        )
+        this.toastService.showInfo(
+          $localize`Merged document will be queued for consumption.`
+        )
+      })
+  }
+
+  mergeSelectedAsVersions() {
+    let modal = this.modalService.open(MergeAsVersionsConfirmDialogComponent, {
+      backdrop: 'static',
+    })
+    const mergeDialog =
+      modal.componentInstance as MergeAsVersionsConfirmDialogComponent
+    const documentIDs = Array.from(this.list.selected)
+    mergeDialog.title = $localize`Merge as versions`
+    mergeDialog.message = $localize`The selected documents will become versions of the root document.`
+    mergeDialog.btnCaption = $localize`Proceed`
+    mergeDialog.documentIDs.set(documentIDs)
+    mergeDialog.rootDocumentID.set(documentIDs[0])
+    mergeDialog.confirmClicked
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(() => {
+        this.executeDocumentAction(
+          modal,
+          this.documentService.mergeDocumentsAsVersions(
+            mergeDialog.documentIDs(),
+            mergeDialog.rootDocumentID()
+          ),
+          {
+            clearSelection: true,
+            successMessage: $localize`Documents merged as versions.`,
+          }
+        )
+      })
+  }
+
+  public setCustomFieldValues(changedCustomFields: ChangedItems) {
+    const modal = this.modalService.open(CustomFieldsBulkEditDialogComponent, {
+      backdrop: 'static',
+      size: 'lg',
+    })
+    const dialog =
+      modal.componentInstance as CustomFieldsBulkEditDialogComponent
+    dialog.customFields = (
+      this.customFieldsSelectionModel.items as CustomField[]
+    ).filter((f) => f.id !== null)
+    dialog.fieldsToAddIds = changedCustomFields.itemsToAdd.map(
+      (item) => item.id
+    )
+    dialog.fieldsToRemoveIds = changedCustomFields.itemsToRemove.map(
+      (item) => item.id
+    )
+
+    dialog.selection = this.getSelectionQuery()
+    dialog.selectionCount = this.getSelectionSize()
+    dialog.succeeded.subscribe((result) => {
+      this.toastService.showInfo($localize`Custom fields updated.`)
+      this.list.reload()
+      this.list.reduceSelectionToFilter()
+      this.list.selected.forEach((id) => {
+        this.openDocumentService.refreshDocument(id)
+      })
+    })
+    dialog.failed.subscribe((error) => {
+      this.toastService.showError(
+        $localize`Error updating custom fields.`,
+        error
+      )
+    })
+  }
+
+  public get emailEnabled(): boolean {
+    return this.settings.get(SETTINGS_KEYS.EMAIL_ENABLED)
+  }
+
+  public get canSendSelection(): boolean {
+    return (
+      this.list.hasSelection &&
+      (!this.list.allSelected ||
+        this.list.selectedCount === this.list.selected.size)
+    )
+  }
+
+  createShareLinkBundle() {
+    const modal = this.modalService.open(ShareLinkBundleDialogComponent, {
+      backdrop: 'static',
+      size: 'lg',
+    })
+    const dialog = modal.componentInstance as ShareLinkBundleDialogComponent
+    const selectedDocuments = this.list.documents.filter((d) =>
+      this.list.selected.has(d.id)
+    )
+    dialog.setDocuments(selectedDocuments)
+    dialog.confirmClicked
+      .pipe(takeUntil(this.unsubscribeNotifier))
+      .subscribe(() => {
+        dialog.loading.set(true)
+        dialog.buttonsEnabled.set(false)
+        this.shareLinkBundleService
+          .createBundle(dialog.payload)
+          .pipe(first())
+          .subscribe({
+            next: (result) => {
+              dialog.loading.set(false)
+              dialog.buttonsEnabled.set(false)
+              dialog.createdBundle = result
+              dialog.copied.set(false)
+              dialog.payload = null
+              dialog.onOpenManage = () => {
+                modal.close()
+                this.manageShareLinkBundles()
+              }
+              this.toastService.showInfo(
+                $localize`Share link bundle creation requested.`
+              )
+            },
+            error: (error) => {
+              dialog.loading.set(false)
+              dialog.buttonsEnabled.set(true)
+              this.toastService.showError(
+                $localize`Share link bundle creation is not available yet.`,
+                error
+              )
+            },
+          })
+      })
+  }
+
+  manageShareLinkBundles() {
+    this.modalService.open(ShareLinkBundleManageDialogComponent, {
+      backdrop: 'static',
+      size: 'lg',
+    })
+  }
+
+  emailSelected() {
+    const allHaveArchiveVersion = this.list.documents
+      .filter((d) => this.list.selected.has(d.id))
+      .every((doc) => !!doc.archived_file_name)
+
+    const modal = this.modalService.open(EmailDocumentDialogComponent, {
+      backdrop: 'static',
+    })
+    modal.componentInstance.documentIds.set(Array.from(this.list.selected))
+    modal.componentInstance.hasArchiveVersion.set(allHaveArchiveVersion)
+  }
+}
