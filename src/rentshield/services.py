@@ -104,3 +104,57 @@ def check_consume_status(notice: Notice) -> dict:
         "document_id": notice.document_id,
         "result": task.result_data,
     }
+
+
+def request_notarization(notice: Notice) -> dict:
+    """Routes `notice` through a real e-signature workflow (DocuSeal
+    primary, OpenSign fallback) via rentshield.esign.orchestrator —
+    ported 1:1 from legacy-v1's POST /api/notices/:id/notarize. Requires
+    the notarization add-on to have been selected and a landlord email
+    to route the signing request to.
+    """
+    if not notice.add_notarization:
+        raise ValueError("Notarization add-on was not selected for this notice")
+    if not notice.landlord_email:
+        raise ValueError("A landlord email is required to route the notarization request")
+
+    from rentshield.esign.orchestrator import request_signing
+
+    document_data = build_notice(notice_to_builder_input(notice))
+    reason = ALL_REASONS.get(notice.reason)
+    reason_label = reason["label"] if reason else notice.reason
+
+    result = request_signing(document_data, {
+        "landlord_name": notice.landlord_name,
+        "landlord_email": notice.landlord_email,
+        "tenant_name": notice.tenant_name,
+        "reason_label": reason_label,
+    })
+
+    notice.esign_provider = result["provider"]
+    notice.esign_external_id = result["external_id"]
+    notice.esign_signing_url = result["signing_url"]
+    notice.esign_status = result["status"]
+    notice.save(update_fields=["esign_provider", "esign_external_id", "esign_signing_url", "esign_status"])
+    return result
+
+
+def check_notarization_status(notice: Notice) -> dict:
+    """Polls whichever e-signature provider originally handled the
+    request — ported 1:1 from legacy-v1's GET /api/notices/:id/notarize/status.
+    """
+    if not notice.esign_provider or not notice.esign_external_id:
+        raise ValueError("No notarization request has been made for this notice yet")
+
+    from rentshield.esign.orchestrator import check_signing_status
+
+    status = check_signing_status(notice.esign_provider, notice.esign_external_id)
+
+    notice.esign_status = status["status"]
+    notice.esign_signed_document_url = status.get("signed_document_url")
+    notice.save(update_fields=["esign_status", "esign_signed_document_url"])
+    return {
+        "provider": notice.esign_provider,
+        "status": status["status"],
+        "signed_document_url": status.get("signed_document_url"),
+    }

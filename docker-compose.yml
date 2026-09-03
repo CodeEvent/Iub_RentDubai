@@ -1,8 +1,10 @@
 # Full-stack compose for this fork: paperless-ngx (built from the
-# vendored ./Dockerfile) + rentshield's two optional document-parsing
-# services. paperless-ngx's own docker/compose/*.yml variants (sqlite/
-# postgres/mariadb, with/without Tika) are untouched — this file is new,
-# specific to this fork, and deliberately simple (sqlite, no Tika).
+# vendored ./Dockerfile) + rentshield's document-parsing services
+# (docling-service, optionally deepseek-ocr-service) + its e-signature
+# engines (docuseal, opensign). paperless-ngx's own docker/compose/*.yml
+# variants (sqlite/postgres/mariadb, with/without Tika) are untouched —
+# this file is new, specific to this fork, and deliberately simple
+# (sqlite, no Tika).
 services:
   broker:
     image: docker.io/valkey/valkey:9-alpine
@@ -18,6 +20,8 @@ services:
     depends_on:
       - broker
       - docling-service
+      - docuseal
+      - opensign
     ports:
       - "8000:8000"
     volumes:
@@ -30,6 +34,15 @@ services:
       DOCLING_SERVICE_URL: http://docling-service:8010
       DEEPSEEK_OCR_SERVICE_URL: http://deepseek-ocr-service:8011
       DEEPSEEK_OCR_ENABLED: ${DEEPSEEK_OCR_ENABLED:-false}
+      # e-signature (rentshield/esign/) — see "Notarization" in the README
+      ESIGN_PRIMARY: docuseal
+      ESIGN_FALLBACK: opensign
+      DOCUSEAL_URL: http://docuseal:3000
+      DOCUSEAL_API_TOKEN: ${DOCUSEAL_API_TOKEN:-}
+      OPENSIGN_URL: http://opensign:8080
+      OPENSIGN_APP_ID: rentshield
+      OPENSIGN_MASTER_KEY: ${OPENSIGN_MASTER_KEY:-change-me-in-prod}
+      OPENSIGN_SERVICE_USER_ID: ${OPENSIGN_SERVICE_USER_ID:-}
 
   docling-service:
     build:
@@ -37,6 +50,42 @@ services:
     restart: unless-stopped
     ports:
       - "8010:8010"
+
+  # e-signature engines behind the "Notarization Service" add-on
+  # (rentshield/esign/) — DocuSeal is primary, OpenSign the automatic
+  # fallback. Same two services legacy-v1/docker/docker-compose.yml ran.
+  docuseal:
+    image: docuseal/docuseal:latest
+    restart: unless-stopped
+    ports:
+      - "3010:3000"
+    volumes:
+      - docuseal-data:/data
+    environment:
+      - FORCE_SSL=false
+
+  opensign-mongo:
+    image: mongo:latest
+    restart: unless-stopped
+    volumes:
+      - opensign-mongo-data:/data/db
+
+  opensign:
+    image: opensign/opensignserver:main
+    restart: unless-stopped
+    depends_on:
+      - opensign-mongo
+    ports:
+      - "8081:8080"
+    volumes:
+      - opensign-files:/usr/src/app/files
+    environment:
+      - NODE_ENV=production
+      - APP_ID=rentshield
+      - MASTER_KEY=${OPENSIGN_MASTER_KEY:-change-me-in-prod}
+      - MONGODB_URI=mongodb://opensign-mongo:27017/opensign
+      - SERVER_URL=http://localhost:8081/app
+      - PUBLIC_URL=http://localhost:8081
 
   # GPU-only — see deepseek-ocr-service/README.md. Not started by
   # `docker compose up` unless the "gpu" profile is enabled
@@ -61,3 +110,6 @@ volumes:
   pgx-data:
   pgx-media:
   redisdata:
+  docuseal-data:
+  opensign-mongo-data:
+  opensign-files:

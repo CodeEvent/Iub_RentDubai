@@ -15,9 +15,20 @@ def _esc(value) -> str:
     return html_module.escape(str(value) if value is not None else "")
 
 
-def _render_side(side: dict) -> str:
+def _render_side(side: dict, include_signature_field: bool = False) -> str:
     paragraphs = "\n".join(f"<p>{_esc(p)}</p>" for p in side["paragraphs"])
-    signature_block = f'<p style="margin-top:2em;">{_esc(side["landlord_name"])} — {_esc(side["sign_date"])}</p>'
+    if include_signature_field:
+        # DocuSeal's <text-field> tag syntax (see docs/api HTML submission
+        # docs) — turns the landlord's signature block into an actual
+        # fillable/signable field, not just static text.
+        signature_block = (
+            f'<p style="margin-top:2em;">{_esc(side["landlord_name"])}<br>'
+            f'<text-field name="Landlord Signature" role="Landlord" required="true" '
+            f'style="width:220px;height:60px;display:inline-block;border-bottom:1px solid #333;margin-top:8px;">'
+            f'</text-field></p>'
+        )
+    else:
+        signature_block = f'<p style="margin-top:2em;">{_esc(side["landlord_name"])} — {_esc(side["sign_date"])}</p>'
 
     return f"""
     <header>
@@ -39,7 +50,7 @@ def _render_side(side: dict) -> str:
     """
 
 
-def render_notice_html(document: dict) -> str:
+def render_notice_html(document: dict, include_signature_field: bool = False) -> str:
     return f"""<!doctype html>
 <html>
 <head>
@@ -57,7 +68,7 @@ def render_notice_html(document: dict) -> str:
 </style>
 </head>
 <body>
-  <section dir="ltr">{_render_side(document["en"])}</section>
+  <section dir="ltr">{_render_side(document["en"], include_signature_field)}</section>
   <hr class="divider">
   <section dir="rtl">{_render_side(document["ar"])}</section>
 </body>

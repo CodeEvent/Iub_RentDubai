@@ -114,6 +114,16 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
   `/api/rentshield/check-service-method/`, matching what the MCP server
   (`list_legal_skills`/`get_legal_skill`/
   `check_notice_service_method_validity`) exposed in `legacy-v1/`.
+- `esign/` — `docuseal_client.py`, `opensign_client.py`,
+  `orchestrator.py`: real notarization via a self-hosted
+  [DocuSeal](https://github.com/docusealco/docuseal) (primary) with
+  automatic fallback to [OpenSign](https://github.com/opensignlabs/OpenSign),
+  ported 1:1 from `legacy-v1/api/src/services/esign/` — same endpoint
+  shapes (DocuSeal's `/api/submissions/html`, OpenSign's Parse-Server
+  `createdocumentfromapp` Cloud Function), same primary/fallback
+  behavior. Triggered via `POST /api/rentshield/notices/<id>/notarize/`
+  and polled via `GET .../notarize-status/`, matching legacy-v1's
+  `/api/notices/:id/notarize[/status]`.
 - `views.py` / `serializers.py` — a DRF `ViewSet` at
   `/api/rentshield/notices/`, plus `/api/rentshield/reasons/`,
   `/api/rentshield/pricing/`, `/api/rentshield/documents/analyze/`,
@@ -125,7 +135,15 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
 violating/compliant/empty-document test cases used to verify the
 original JS version; the legal-skills endpoints and citation-graph were
 exercised through a real HTTP round trip (Django → docling-service →
-`citation_graph.py` → back), not just unit-level.
+`citation_graph.py` → back), not just unit-level. The e-signature clients
+were verified against mock HTTP servers shaped like each real API
+(including the primary-fails → fallback-succeeds path, with a real
+Playwright PDF render in the loop for OpenSign), and
+`POST /api/rentshield/notices/<id>/notarize/` was exercised over real
+HTTP with no live DocuSeal/OpenSign running — confirmed it degrades
+gracefully (502 with both providers' actual error messages) exactly like
+the original Node version did, plus the `add_notarization`-not-selected
+and no-landlord-email 400 validation paths.
 
 ## Document parsing: Docling + DeepSeek-OCR
 
@@ -228,13 +246,6 @@ that feature.
   own auth (django-allauth, DRF token auth, django-guardian object
   permissions) is fully present and unmodified — wiring `rentshield`
   into it is next, not forgotten.
-- **E-signature**: `legacy-v1/api/src/services/esign/`'s DocuSeal + OpenSign
-  integration (the real notarization workflow behind the "Notarization
-  Service" add-on) has not yet been ported onto this foundation. Its
-  Python port would live in `rentshield/` alongside what's here, backed
-  by the same `Notice` → `Document` relation. (Legal-skills and the
-  citation-graph analyzer — the other two items previously listed here —
-  are now ported; see "What's in `rentshield/`" above.)
 - **Frontend**: `src-ui/` is paperless-ngx's own Angular app, unmodified.
   The wizard, live bilingual preview, chat drawer, and dashboard from
   `legacy-v1/vue/` have not been rebuilt as Angular components — this is

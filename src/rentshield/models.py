@@ -36,6 +36,15 @@ class Notice(models.Model):
     add_notarization = models.BooleanField(default=False)
     add_ai_review = models.BooleanField(default=False)
 
+    # Populated by rentshield.esign.orchestrator.request_signing() when
+    # add_notarization is set — see services.py's request_notarization()
+    # / check_notarization_status().
+    esign_provider = models.CharField(max_length=16, blank=True, null=True)
+    esign_external_id = models.CharField(max_length=255, blank=True, null=True)
+    esign_signing_url = models.URLField(blank=True, null=True, max_length=1024)
+    esign_status = models.CharField(max_length=32, blank=True, null=True)
+    esign_signed_document_url = models.URLField(blank=True, null=True, max_length=1024)
+
     # Populated once rentshield.services.generate_and_consume() hands the
     # rendered PDF to paperless-ngx's consume_file task.
     consume_task_id = models.CharField(max_length=72, blank=True, null=True)

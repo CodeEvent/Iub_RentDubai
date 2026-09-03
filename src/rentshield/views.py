@@ -17,7 +17,9 @@ from rentshield.serializers import NoticeDetailSerializer
 from rentshield.serializers import NoticeSerializer
 from rentshield.service_methods import SERVICE_METHODS
 from rentshield.services import check_consume_status
+from rentshield.services import check_notarization_status
 from rentshield.services import generate_and_consume
+from rentshield.services import request_notarization
 from rentshield.skills import get_skill
 from rentshield.skills import load_skills
 
@@ -51,6 +53,41 @@ class NoticeViewSet(viewsets.ModelViewSet):
     def consume_status(self, request, pk=None):
         notice = self.get_object()
         return Response(check_consume_status(notice))
+
+    @action(detail=True, methods=["post"])
+    def notarize(self, request, pk=None):
+        """POST /api/rentshield/notices/<id>/notarize/ — routes the
+        saved notice through a real e-signature workflow (DocuSeal
+        primary, OpenSign fallback). Mirrors legacy-v1's
+        POST /api/notices/:id/notarize.
+        """
+        notice = self.get_object()
+        try:
+            result = request_notarization(notice)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
+        except Exception as exc:  # noqa: BLE001 - both providers failed; surface why
+            return Response({"error": str(exc)}, status=502)
+        return Response({
+            "provider": result["provider"],
+            "status": result["status"],
+            "signing_url": result["signing_url"],
+        })
+
+    @action(detail=True, methods=["get"], url_path="notarize-status")
+    def notarize_status(self, request, pk=None):
+        """GET /api/rentshield/notices/<id>/notarize-status/ — refreshes
+        the signing status from whichever provider originally handled
+        the request. Mirrors legacy-v1's GET /api/notices/:id/notarize/status.
+        """
+        notice = self.get_object()
+        try:
+            result = check_notarization_status(notice)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
+        except Exception as exc:  # noqa: BLE001
+            return Response({"error": str(exc)}, status=502)
+        return Response(result)
 
 
 def reasons_view(request):

@@ -21,9 +21,15 @@ class NoticeSerializer(serializers.ModelSerializer):
             "property_type", "unit_no", "building_name", "plot_number",
             "ejari_number", "notice_date", "reason", "reason_label",
             "notice_period_days", "add_notarization", "add_ai_review",
-            "total_price_aed", "consume_task_id", "document_id", "created_at",
+            "total_price_aed", "consume_task_id", "document_id",
+            "esign_provider", "esign_status", "esign_signing_url",
+            "esign_signed_document_url", "created_at",
         ]
-        read_only_fields = ["id", "consume_task_id", "document_id", "created_at"]
+        read_only_fields = [
+            "id", "consume_task_id", "document_id", "esign_provider",
+            "esign_status", "esign_signing_url", "esign_signed_document_url",
+            "created_at",
+        ]
 
     def get_reason_label(self, obj: Notice) -> str:
         reason = ALL_REASONS.get(obj.reason)
