@@ -10,10 +10,13 @@ const cardNumber = ref('');
 const expiry = ref('');
 const cvc = ref('');
 
-const amount = computed(() => (store.tier === 'premium' ? '249.00' : '99.00'));
-const description = computed(() =>
-  store.tier === 'premium' ? 'Dubai Rent Shield — Premium AI-Reviewed Package' : 'Dubai Rent Shield — Notarized PDF'
+const selectedAddOns = computed(() =>
+  Object.entries(store.addOnCatalog)
+    .filter(([key]) => store.addOns[key])
+    .map(([key, addOn]) => ({ key, ...addOn }))
 );
+const optionsTotal = computed(() => selectedAddOns.value.reduce((sum, a) => sum + a.priceAed, 0));
+const amount = computed(() => store.totalPrice.toFixed(2));
 
 function formatCardNumber(e) {
   const digits = e.target.value.replace(/\D/g, '').slice(0, 16);
@@ -63,9 +66,19 @@ watch(
 
         <!-- Form -->
         <div v-if="store.paymentView === 'form'" class="p-6">
-          <div class="flex items-center justify-between mb-5">
-            <p class="text-sm text-slate-500">{{ description }}</p>
-            <p class="text-xl font-extrabold text-slate950">{{ amount }} <span class="text-sm font-semibold text-slate-400">AED</span></p>
+          <div class="mb-5 rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden text-sm">
+            <div class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-slate-500">Bilingual Notice Generator</span>
+              <span class="font-semibold text-slate-800 tabular-nums">{{ store.basePrice.toFixed(2) }} AED</span>
+            </div>
+            <div v-for="a in selectedAddOns" :key="a.key" class="flex items-center justify-between px-4 py-2.5">
+              <span class="text-slate-500">{{ a.label }}</span>
+              <span class="font-semibold text-slate-800 tabular-nums">{{ a.priceAed.toFixed(2) }} AED</span>
+            </div>
+            <div class="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+              <span class="font-bold text-slate-900">Grand Total</span>
+              <span class="text-xl font-extrabold text-slate950 tabular-nums">{{ amount }} <span class="text-sm font-semibold text-slate-400">AED</span></span>
+            </div>
           </div>
 
           <form class="space-y-4" @submit.prevent="submitPayment">

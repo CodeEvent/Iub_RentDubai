@@ -37,20 +37,27 @@ onMounted(checkApi);
     </div>
 
     <div class="bg-white rounded-2xl border border-slate-200 shadow-premium p-5">
-      <h2 class="text-sm font-bold text-slate-800 mb-1">Default Tier</h2>
-      <p class="text-xs text-slate-500 mb-4">Which package new notices start on before you switch it in the builder.</p>
-      <div class="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
-        <button
-          class="flex-1 text-xs font-semibold py-2.5 rounded-lg transition"
-          :class="store.tier === 'standard' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'"
-          @click="store.tier = 'standard'"
-        >Standard &middot; 99 AED</button>
-        <button
-          class="flex-1 text-xs font-semibold py-2.5 rounded-lg transition"
-          :class="store.tier === 'premium' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'"
-          @click="store.tier = 'premium'"
-        >Premium AI &middot; 249 AED</button>
+      <h2 class="text-sm font-bold text-slate-800 mb-1">Service Charges</h2>
+      <p class="text-xs text-slate-500 mb-4">Base generator fee plus optional add-on services, priced individually — not a flat law-firm package.</p>
+      <div class="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden text-sm">
+        <div class="flex items-center justify-between px-4 py-2.5">
+          <span class="text-slate-600">Bilingual Notice Generator</span>
+          <span class="font-semibold text-slate-800 tabular-nums">{{ store.basePrice }} AED</span>
+        </div>
+        <div v-for="(addOn, key) in store.addOnCatalog" :key="key" class="flex items-center justify-between px-4 py-2.5">
+          <span class="text-slate-600">+ {{ addOn.label }}</span>
+          <span class="font-semibold text-slate-800 tabular-nums">{{ addOn.priceAed }} AED</span>
+        </div>
       </div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-premium p-5">
+      <h2 class="text-sm font-bold text-slate-800 mb-1">Default Add-ons</h2>
+      <p class="text-xs text-slate-500 mb-4">Which add-ons new notices start with before you adjust them in the builder.</p>
+      <label v-for="(addOn, key) in store.addOnCatalog" :key="key" class="flex items-center justify-between gap-3 py-2 cursor-pointer">
+        <span class="text-sm text-slate-700">{{ addOn.label }}</span>
+        <input v-model="store.addOns[key]" type="checkbox" class="w-4 h-4 rounded border-slate-300 text-emerald focus:ring-emerald">
+      </label>
     </div>
 
     <div class="bg-white rounded-2xl border border-slate-200 shadow-premium p-5 text-xs text-slate-500 leading-relaxed">

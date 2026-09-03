@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { ALL_REASONS } from '@rentshield/shared';
+import { ALL_REASONS, BASE_PRICE_AED, ADD_ONS } from '@rentshield/shared';
 import { notices } from './routes/notices.js';
 import { documents } from './routes/documents.js';
 
@@ -18,6 +18,11 @@ app.get('/api/health', (req, res) => {
 // app) can render the picker without bundling shared/ directly.
 app.get('/api/reasons', (req, res) => {
   res.json({ reasons: ALL_REASONS });
+});
+
+// Expose pricing so no client hardcodes AED figures separately.
+app.get('/api/pricing', (req, res) => {
+  res.json({ basePriceAed: BASE_PRICE_AED, addOns: ADD_ONS });
 });
 
 app.use('/api/notices', notices);

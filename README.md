@@ -199,12 +199,13 @@ vue/src/components/shell/
 
 vue/src/views/
   DashboardView.vue      Real stat tiles (total / 12-month / 30-day /
-                          premium — computed from saved notices, not fake
-                          numbers) + a recent-notices panel.
+                          AI-reviewed — computed from saved notices, not
+                          fake numbers) + a recent-notices panel.
   NoticeBuilderView.vue  The wizard + live preview (what used to be the
                           whole app) at /notices/new.
   NoticesListView.vue    Every saved notice as a table, at /notices.
-  SettingsView.vue       Live API health check, default tier, and app info.
+  SettingsView.vue       Live API health check, service charges, default
+                          add-ons, and app info.
 ```
 
 `App.vue` is now just the shell (`Sidebar` + `TopBar` + `<router-view>`)
@@ -215,3 +216,30 @@ whichever page is active, exactly as before.
 bundle, which doesn't proxy `/api/*` the way the Vite dev server does — a
 production deployment needs a reverse proxy or a configurable API base URL
 before `docker compose up` is a real one-command deploy.
+
+## Pricing (shared/pricing.js)
+
+A base generator fee plus optional add-on services, priced and selected
+individually — a checkbox cart, not a flat two-tier toggle. Modeled on how
+jurist.ae's Tenant Eviction Notice product structures its checkout (a base
+price plus add-ons like Apostille, MOFA Attestation, and Express Service),
+but priced for what this platform actually is — an instant self-serve
+generator — not what Jurist is selling: a human-lawyer-drafted, physically
+notarized, ID-verified, courier-served document for 3,950 AED base plus
+hundreds-to-thousands in add-ons. This platform doesn't perform that labor,
+so it isn't priced like it does.
+
+```
+Bilingual Notice Generator ............ 95 AED   (base — always included)
++ Add Notarization Service ........... 249 AED   (add-on)
++ Add AI Compliance Review ............ 99 AED   (add-on — auto-selected
+                                                   when the chat's document
+                                                   upload finds something)
+```
+
+`shared/pricing.js` is the single source of truth (`BASE_PRICE_AED`,
+`ADD_ONS`, `calculateTotal()`) — imported by the Pinia store for the
+add-ons checklist and payment-modal breakdown, and by `api/` for
+`GET /api/pricing` and for computing `totalPriceAed` on every saved
+notice. `add_notarization` and `add_ai_review` are separate boolean
+columns on the `notices` table (replacing the old single `tier` column).

@@ -21,7 +21,7 @@ onMounted(() => store.fetchSavedNotices());
         <Inbox class="w-6 h-6 text-slate-400" />
       </div>
       <p class="font-bold text-slate-800">No notices saved yet</p>
-      <p class="text-sm text-slate-500 max-w-sm">Once you save a notice from the builder, it'll show up here with its statutory reason, notice period, and tier.</p>
+      <p class="text-sm text-slate-500 max-w-sm">Once you save a notice from the builder, it'll show up here with its statutory reason, notice period, and any add-ons.</p>
       <router-link to="/notices/new" class="mt-1 inline-flex items-center gap-2 bg-slate950 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition">
         <FilePlus2 class="w-4 h-4" /> Build your first notice
       </router-link>
@@ -37,7 +37,8 @@ onMounted(() => store.fetchSavedNotices());
               <th class="px-5 py-3">Reason</th>
               <th class="px-5 py-3">Period</th>
               <th class="px-5 py-3">Notice Date</th>
-              <th class="px-5 py-3">Tier</th>
+              <th class="px-5 py-3">Add-ons</th>
+              <th class="px-5 py-3 text-right">Total</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
@@ -48,8 +49,13 @@ onMounted(() => store.fetchSavedNotices());
               <td class="px-5 py-3.5 text-slate-600 whitespace-nowrap">{{ n.noticePeriodDays }} days</td>
               <td class="px-5 py-3.5 text-slate-600 whitespace-nowrap">{{ n.noticeDate }}</td>
               <td class="px-5 py-3.5">
-                <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" :class="n.tier === 'premium' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ n.tier }}</span>
+                <div class="flex items-center gap-1.5">
+                  <span v-if="n.addOns?.notarization" class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Notarized</span>
+                  <span v-if="n.addOns?.aiReview" class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">AI-Reviewed</span>
+                  <span v-if="!n.addOns?.notarization && !n.addOns?.aiReview" class="text-xs text-slate-300 italic">None</span>
+                </div>
               </td>
+              <td class="px-5 py-3.5 text-right font-bold text-slate-800 tabular-nums whitespace-nowrap">{{ n.totalPriceAed }} AED</td>
             </tr>
           </tbody>
         </table>

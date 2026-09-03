@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { FileText, DownloadCloud, Sparkles, Save, Loader2, CheckCircle2 } from '@lucide/vue';
+import { FileText, DownloadCloud, Save, Loader2, CheckCircle2 } from '@lucide/vue';
 import { useNoticeStore } from '../stores/notice.js';
 
 const store = useNoticeStore();
@@ -156,18 +156,30 @@ function handleDownloadClick() {
       </div>
     </div>
 
-    <!-- Tier switcher -->
-    <div class="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
-      <button
-        class="tier-btn flex-1 text-xs font-semibold py-3 rounded-lg transition"
-        :class="store.tier === 'standard' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'"
-        @click="store.tier = 'standard'"
-      >Standard <span class="opacity-60">&middot; 99 AED</span></button>
-      <button
-        class="tier-btn flex-1 text-xs font-semibold py-3 rounded-lg transition inline-flex items-center justify-center gap-1"
-        :class="store.tier === 'premium' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'"
-        @click="store.tier = 'premium'"
-      ><Sparkles class="w-3.5 h-3.5" /> Premium AI <span class="opacity-60">&middot; 249 AED</span></button>
+    <!-- Add-on services (base + optional extras, priced individually) -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-premium overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <span class="text-sm font-bold text-slate-800">Bilingual Notice Generator</span>
+        <span class="text-sm font-bold text-slate-900 tabular-nums">{{ store.basePrice }} AED</span>
+      </div>
+      <label
+        v-for="(addOn, key) in store.addOnCatalog"
+        :key="key"
+        class="flex items-start gap-3 px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 transition"
+      >
+        <input v-model="store.addOns[key]" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald focus:ring-emerald">
+        <span class="flex-1 min-w-0">
+          <span class="flex items-center justify-between gap-2">
+            <span class="text-sm font-semibold text-slate-800">Add {{ addOn.label }}</span>
+            <span class="text-xs font-bold text-slate-600 tabular-nums shrink-0">+{{ addOn.priceAed }} AED</span>
+          </span>
+          <span class="block text-xs text-slate-500 mt-0.5">{{ addOn.description }}</span>
+        </span>
+      </label>
+      <div class="flex items-center justify-between px-4 py-3 bg-slate-50">
+        <span class="text-sm font-bold text-slate-900">Grand Total</span>
+        <span class="text-lg font-extrabold text-slate950 tabular-nums">{{ store.totalPrice }} AED</span>
+      </div>
     </div>
 
     <!-- Primary paywall CTA (fake Stripe checkout — see PaymentModal.vue) -->
@@ -176,8 +188,8 @@ function handleDownloadClick() {
       @click="handleDownloadClick"
     >
       <DownloadCloud class="w-5 h-5" />
-      <span>{{ store.tier === 'premium' ? 'Download Premium AI-Reviewed Package' : 'Download DLD-Compliant Notarized PDF' }}</span>
-      <span class="bg-white/20 px-2 py-0.5 rounded-md text-xs font-extrabold tracking-wide">{{ store.tier === 'premium' ? '249 AED' : '99 AED' }}</span>
+      <span>Download Notarized-Format PDF</span>
+      <span class="bg-white/20 px-2 py-0.5 rounded-md text-xs font-extrabold tracking-wide">{{ store.totalPrice }} AED</span>
     </button>
     <p class="text-center text-[11px] text-slate-400 -mt-1">Secure checkout &middot; Instant PDF &middot; Notary-ready formatting</p>
 

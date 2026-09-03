@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
-import { buildNotice, ALL_REASONS, noticePeriodDays } from '@rentshield/shared';
+import { buildNotice, ALL_REASONS, noticePeriodDays, calculateTotal } from '@rentshield/shared';
 
 export const notices = Router();
 
@@ -23,6 +23,7 @@ function rowToInput(row) {
 
 function rowSummary(row) {
   const r = ALL_REASONS[row.reason];
+  const addOns = { notarization: !!row.add_notarization, aiReview: !!row.add_ai_review };
   return {
     id: row.id,
     landlordName: row.landlord_name,
@@ -36,7 +37,8 @@ function rowSummary(row) {
     reason: row.reason,
     reasonLabel: r ? r.label : row.reason,
     noticePeriodDays: noticePeriodDays(row.reason),
-    tier: row.tier,
+    addOns,
+    totalPriceAed: calculateTotal(addOns),
     createdAt: row.created_at
   };
 }
@@ -59,11 +61,11 @@ notices.post('/', (req, res) => {
   }
 
   const id = crypto.randomUUID();
-  const tier = body.tier === 'premium' ? 'premium' : 'standard';
+  const addOns = body.addOns || {};
 
   db.prepare(`
-    INSERT INTO notices (id, landlord_name, tenant_name, property_type, unit_no, building_name, plot_number, ejari_number, notice_date, reason, tier)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notices (id, landlord_name, tenant_name, property_type, unit_no, building_name, plot_number, ejari_number, notice_date, reason, add_notarization, add_ai_review)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     body.landlordName,
@@ -75,7 +77,8 @@ notices.post('/', (req, res) => {
     body.ejariNumber || null,
     body.noticeDate,
     body.reason,
-    tier
+    addOns.notarization ? 1 : 0,
+    addOns.aiReview ? 1 : 0
   );
 
   const row = db.prepare('SELECT * FROM notices WHERE id = ?').get(id);

@@ -12,7 +12,7 @@ const stats = computed(() => {
     total: all.length,
     statutory: all.filter((n) => n.noticePeriodDays === 365).length,
     breach: all.filter((n) => n.noticePeriodDays === 30).length,
-    premium: all.filter((n) => n.tier === 'premium').length
+    aiReviewed: all.filter((n) => n.addOns?.aiReview).length
   };
 });
 const recent = computed(() => store.savedNotices.slice(0, 5));
@@ -45,8 +45,8 @@ const recent = computed(() => store.savedNotices.slice(0, 5));
       </div>
       <div class="bg-white rounded-2xl border border-slate-200 shadow-premium p-5">
         <div class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center mb-3"><Sparkles class="w-4 h-4 text-slate-600" /></div>
-        <p class="text-2xl font-extrabold text-slate950 tabular-nums">{{ stats.premium }}</p>
-        <p class="text-xs text-slate-500 mt-0.5">Premium AI Tier</p>
+        <p class="text-2xl font-extrabold text-slate950 tabular-nums">{{ stats.aiReviewed }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">AI-Reviewed</p>
       </div>
     </div>
 
@@ -62,7 +62,11 @@ const recent = computed(() => store.savedNotices.slice(0, 5));
             <p class="font-semibold text-slate-800 truncate">{{ n.landlordName }} &rarr; {{ n.tenantName }}</p>
             <p class="text-xs text-slate-400">{{ n.reasonLabel }} &middot; {{ n.noticePeriodDays }}-day notice &middot; {{ n.propertyType }} {{ n.unitNo }}</p>
           </div>
-          <span class="shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" :class="n.tier === 'premium' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ n.tier }}</span>
+          <div class="shrink-0 flex items-center gap-1.5">
+            <span class="text-xs font-bold text-slate-700 tabular-nums">{{ n.totalPriceAed }} AED</span>
+            <span v-if="n.addOns?.notarization" class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Notarized</span>
+            <span v-if="n.addOns?.aiReview" class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">AI-Reviewed</span>
+          </div>
         </div>
       </div>
     </div>

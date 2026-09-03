@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { buildNotice, ALL_REASONS, isBreach, noticePeriodDays } from '@rentshield/shared';
+import { buildNotice, ALL_REASONS, isBreach, noticePeriodDays, BASE_PRICE_AED, ADD_ONS, calculateTotal } from '@rentshield/shared';
 
 export const STEPS = [
   { title: 'Parties', icon: 'users' },
@@ -20,7 +20,7 @@ export const useNoticeStore = defineStore('notice', {
     ejariNumber: '',
     noticeDate: new Date().toISOString().slice(0, 10),
     reason: '',
-    tier: 'standard',
+    addOns: { notarization: false, aiReview: false },
     paid: false,
     saving: false,
     saveError: null,
@@ -47,7 +47,10 @@ export const useNoticeStore = defineStore('notice', {
       noticeDate: s.noticeDate,
       reason: s.reason
     }),
-    isReadyToSave: (s) => !!(s.landlordName && s.tenantName && s.noticeDate && s.reason)
+    isReadyToSave: (s) => !!(s.landlordName && s.tenantName && s.noticeDate && s.reason),
+    basePrice: () => BASE_PRICE_AED,
+    addOnCatalog: () => ADD_ONS,
+    totalPrice: (s) => calculateTotal(s.addOns)
   },
 
   actions: {
@@ -74,7 +77,7 @@ export const useNoticeStore = defineStore('notice', {
             ejariNumber: this.ejariNumber,
             noticeDate: this.noticeDate,
             reason: this.reason,
-            tier: this.tier
+            addOns: this.addOns
           })
         });
         if (!res.ok) {

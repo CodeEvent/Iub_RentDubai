@@ -1,7 +1,7 @@
 <script setup>
 import { ref, nextTick } from 'vue';
 import { MessageCircle, X, Bot, Sparkles, Paperclip, Send, UploadCloud, Lock } from '@lucide/vue';
-import { ALL_REASONS, isBreach } from '@rentshield/shared';
+import { ALL_REASONS, isBreach, BASE_PRICE_AED, ADD_ONS } from '@rentshield/shared';
 import { useNoticeStore } from '../stores/notice.js';
 
 const store = useNoticeStore();
@@ -19,7 +19,7 @@ const open = ref(false);
 const messages = ref([]);
 const quickReplies = ref([]);
 const stage = ref('idle'); // idle -> landlord -> tenant -> ejari -> reason -> done
-const tierBannerVisible = ref(false);
+const aiReviewBannerVisible = ref(false);
 const inputText = ref('');
 const chatInput = ref(null);
 const messagesEl = ref(null);
@@ -258,8 +258,8 @@ function renderDocAnalysisCard({ analysis }) {
       </div>`);
   }
 
-  store.tier = 'premium';
-  tierBannerVisible.value = true;
+  store.addOns.aiReview = true;
+  aiReviewBannerVisible.value = true;
 
   let autoFilledNote = '';
   if (!store.ejariNumber && analysis.ejariNumber) {
@@ -275,8 +275,8 @@ function renderDocAnalysisCard({ analysis }) {
       const summary = analysis.hasViolation
         ? `This appears to void the non-compliant clause(s) in favor of the mandatory statutory notice period — this is consistent with RERA guidelines on public policy overriding private contract terms.${autoFilledNote}`
         : `I've cross-referenced the extracted text against Dubai Law No. (33) of 2008 and didn't find anything that conflicts with the statutory notice periods.${autoFilledNote}`;
-      pushAiMessage(`${summary} Your <strong>Premium AI Tier</strong> is now active, including this document review in your downloadable package.`);
-      showToast('✨ Premium AI Tier unlocked');
+      pushAiMessage(`${summary} I've added the <strong>${ADD_ONS.aiReview.label}</strong> (+${ADD_ONS.aiReview.priceAed} AED) to your order, including this document review in your downloadable package.`);
+      showToast('✨ AI Compliance Review added');
     }, 900);
   }, 400);
 }
@@ -374,8 +374,8 @@ defineExpose({ openDrawer, closeDrawer });
       </button>
     </div>
 
-    <div v-if="tierBannerVisible" class="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800 font-semibold flex items-center gap-1.5 shrink-0">
-      <Sparkles class="w-3.5 h-3.5" /> Premium AI Tier unlocked &mdash; document analyzed
+    <div v-if="aiReviewBannerVisible" class="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800 font-semibold flex items-center gap-1.5 shrink-0">
+      <Sparkles class="w-3.5 h-3.5" /> AI Compliance Review added &mdash; document analyzed
     </div>
 
     <div ref="messagesEl" class="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-slate-50">
@@ -392,8 +392,9 @@ defineExpose({ openDrawer, closeDrawer });
           <div class="max-w-[85%] bg-white text-slate-800 border border-slate-200 rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm">
             I have verified your data against RERA compliance. I'm ready to compile your official bilingual (English &amp; Legal Arabic) {{ m.pkgLabel }} package.
             <div class="mt-2.5 space-y-1.5">
-              <div class="text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-2.5"><strong>Standard &mdash; 99 AED:</strong> Instant bilingual notice.</div>
-              <div class="text-[11px] bg-emerald-50 border border-emerald-200 rounded-lg p-2.5"><strong>Premium AI &mdash; 249 AED:</strong> + Ejari contract analysis &amp; custom clause review.</div>
+              <div class="text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-2.5"><strong>Bilingual Notice Generator &mdash; {{ BASE_PRICE_AED }} AED:</strong> Instant bilingual notice.</div>
+              <div class="text-[11px] bg-emerald-50 border border-emerald-200 rounded-lg p-2.5"><strong>+ {{ ADD_ONS.aiReview.label }} &mdash; {{ ADD_ONS.aiReview.priceAed }} AED:</strong> {{ ADD_ONS.aiReview.description }}</div>
+              <div class="text-[11px] bg-amber-50 border border-amber-200 rounded-lg p-2.5"><strong>+ {{ ADD_ONS.notarization.label }} &mdash; {{ ADD_ONS.notarization.priceAed }} AED:</strong> {{ ADD_ONS.notarization.description }}</div>
             </div>
             <button class="mt-3 w-full bg-emerald hover:bg-emerald-600 text-white text-xs font-bold py-2.5 rounded-xl transition" @click="handleGeneratePackage">Generate Package &rarr;</button>
           </div>
