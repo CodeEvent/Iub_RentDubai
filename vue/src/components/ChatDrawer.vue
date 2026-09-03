@@ -114,10 +114,79 @@ function handleSend(raw) {
   }, 650 + Math.random() * 500);
 }
 
+// Keyword routing to mcp/skills/*.md guidance (served via
+// GET /api/legal-skills/:id — same content the MCP server's
+// get_legal_skill tool exposes to external MCP clients). Regex-based,
+// same "no NLP, just pattern matching" approach as the rest of this
+// chat drawer's intake routing — not a claim of true intent detection.
+const SKILL_KEYWORDS = [
+  [/\brdsc\b|dispute (settlement|centre|center)|file (a )?(case|claim)|filing a (case|claim)|sue (the )?tenant/i, 'rdsc-filing-uae'],
+  [/security deposit|deposit (refund|return|dispute|withheld)/i, 'security-deposit-dispute-uae'],
+  [/serve (the |a )?notice|service method|notariz|registered mail|court bailiff|valid(ly)? served/i, 'notice-service-method-uae']
+];
+
+// Light Markdown -> HTML for skill bodies: headers, bold, and lists only
+// (this is a chat bubble, not a full renderer — no need for more).
+function renderSkillMarkdown(md) {
+  return md
+    .split(/\n{2,}/)
+    .map((block) => {
+      const headerMatch = block.match(/^#{2,3}\s+(.+)$/m);
+      if (headerMatch && block.trim().startsWith('#')) {
+        return `<p class="font-bold text-slate-900 mt-2">${escapeHtml(headerMatch[1])}</p>`;
+      }
+      const lines = block.split('\n');
+      if (lines.every((l) => /^(\d+\.|-)\s+/.test(l.trim()))) {
+        const items = lines.map((l) => `<li>${escapeHtml(l.replace(/^(\d+\.|-)\s+/, '')).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</li>`).join('');
+        return `<ul class="list-disc pl-4 space-y-0.5">${items}</ul>`;
+      }
+      return `<p>${escapeHtml(block).replace(/\n/g, ' ').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</p>`;
+    })
+    .join('');
+}
+
+function renderSkillCard(skill) {
+  const bodyHtml = renderSkillMarkdown(skill.body);
+  return `
+    <div class="space-y-2">
+      <p class="font-bold text-slate-900">📖 ${escapeHtml(skill.title)}</p>
+      <div class="text-slate-700 text-[12.5px] leading-relaxed space-y-2">${bodyHtml}</div>
+      <p class="text-[10.5px] text-slate-400 italic border-t border-slate-100 pt-2 mt-2">${escapeHtml(skill.disclaimer || '')}</p>
+    </div>`;
+}
+
+function matchLegalSkillId(text) {
+  const match = SKILL_KEYWORDS.find(([re]) => re.test(text));
+  return match ? match[1] : null;
+}
+
+async function answerLegalSkillQuestion(id) {
+  const typingId = pushTyping();
+  try {
+    const res = await fetch(`/api/legal-skills/${id}`);
+    const data = await res.json().catch(() => ({}));
+    removeMessage(typingId);
+    if (!res.ok) {
+      pushAiMessage(`I couldn't load that guidance right now (${escapeHtml(data.error || String(res.status))}).`);
+    } else {
+      pushAiMessage(renderSkillCard(data.skill));
+    }
+  } catch (err) {
+    removeMessage(typingId);
+    pushAiMessage(`I couldn't reach the legal-skills service: ${escapeHtml(err.message)}`);
+  }
+}
+
 function routeIntake(text) {
   if (OFF_TOPIC_RE.test(text)) {
     pushAiMessage(`I am programmed exclusively to assist with Dubai real estate rental compliance. ${stagePrompt(stage.value === 'idle' ? 'landlord' : stage.value)}`);
     if (stage.value === 'reason') showReasonQuickReplies();
+    return;
+  }
+
+  const skillId = matchLegalSkillId(text);
+  if (skillId) {
+    answerLegalSkillQuestion(skillId);
     return;
   }
 

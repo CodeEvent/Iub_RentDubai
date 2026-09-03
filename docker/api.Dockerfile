@@ -5,6 +5,10 @@ WORKDIR /app
 COPY package.json ./
 COPY shared ./shared
 COPY api ./api
+# api/src/services/legalSkills.js reads mcp/skills/*.md directly rather
+# than duplicating the content — the api image needs just that folder,
+# not the rest of the mcp/ workspace (no MCP server runs in this image).
+COPY mcp/skills ./mcp/skills
 
 RUN npm install --workspace=@rentshield/shared --workspace=@rentshield/api
 

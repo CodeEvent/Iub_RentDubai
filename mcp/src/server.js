@@ -8,10 +8,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ALL_REASONS, isBreach, noticePeriodDays, buildNotice } from '@rentshield/shared';
+import { loadSkills } from './loadSkills.js';
 
 const server = new McpServer({ name: 'rentshield', version: '1.0.0' });
 
 const REASON_KEYS = Object.keys(ALL_REASONS);
+const SKILLS = loadSkills();
+const SKILL_IDS = SKILLS.map((s) => s.id);
 
 server.registerTool(
   'list_statutory_reasons',
@@ -71,6 +74,70 @@ server.registerTool(
   async (input) => {
     const document = buildNotice(input);
     return { content: [{ type: 'text', text: JSON.stringify(document, null, 2) }] };
+  }
+);
+
+// --- Legal skills library (mcp/skills/) — see loadSkills.js for the
+// convention this borrows from legal-skills-open / agentcounsel. This
+// widens RentShield AI beyond notice drafting into adjacent UAE tenancy
+// questions (RDSC filing, deposit disputes, valid service methods)
+// without inventing legal content on the fly — every answer traces back
+// to a reviewable file in the repo.
+server.registerTool(
+  'list_legal_skills',
+  {
+    title: 'List available UAE tenancy legal-guidance skills',
+    description: 'Lists the reference guidance skills available beyond notice drafting — e.g. RDSC filing, security deposit disputes, valid notice service methods — each with a short summary and its practice area.',
+    inputSchema: {}
+  },
+  async () => ({
+    content: [{
+      type: 'text',
+      text: JSON.stringify(SKILLS.map(({ id, title, jurisdiction, practice_area }) => ({ id, title, jurisdiction, practice_area })), null, 2)
+    }]
+  })
+);
+
+server.registerTool(
+  'get_legal_skill',
+  {
+    title: 'Get the full text of a UAE tenancy legal-guidance skill',
+    description: 'Returns the full reference guidance for one skill from list_legal_skills, including its disclaimer.',
+    inputSchema: { id: z.enum(SKILL_IDS) }
+  },
+  async ({ id }) => {
+    const skill = SKILLS.find((s) => s.id === id);
+    return { content: [{ type: 'text', text: JSON.stringify(skill, null, 2) }] };
+  }
+);
+
+const SERVICE_METHODS = {
+  notary_public: { valid: true, label: 'Notary Public' },
+  registered_mail: { valid: true, label: 'Registered mail with acknowledgment of receipt' },
+  court_bailiff: { valid: true, label: 'Court bailiff (محضر)' },
+  whatsapp: { valid: false, label: 'WhatsApp / SMS' },
+  email: { valid: false, label: 'Plain (non-registered) email' },
+  verbal: { valid: false, label: 'Verbal notice' },
+  hand_delivery_unwitnessed: { valid: false, label: 'Hand delivery without notarization or a witnessed receipt' }
+};
+
+server.registerTool(
+  'check_notice_service_method_validity',
+  {
+    title: 'Check whether a notice service method satisfies Article 25(3)',
+    description: 'Given how a landlord served (or intends to serve) a tenancy notice, reports whether that method is one of the three recognized under Article 25(3) of Law No. (33) of 2008 (Notary Public, registered mail, or court bailiff) and briefly why, drawing on the notice-service-method-uae skill.',
+    inputSchema: { method: z.enum(Object.keys(SERVICE_METHODS)).describe('How the notice was/will be served') }
+  },
+  async ({ method }) => {
+    const m = SERVICE_METHODS[method];
+    const result = {
+      method: m.label,
+      isValidUnderArticle25_3: m.valid,
+      note: m.valid
+        ? 'Recognized under Article 25(3) — keep the notarized certificate / registered-mail receipt / bailiff report as proof of service for any later RDSC filing.'
+        : 'Not one of the three methods Article 25(3) recognizes. A notice served this way is likely to be challenged as invalid — re-serve using a Notary Public, registered mail, or a court bailiff.'
+    };
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
 );
 

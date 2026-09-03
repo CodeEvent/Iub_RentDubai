@@ -3,6 +3,7 @@ import cors from 'cors';
 import { ALL_REASONS, BASE_PRICE_AED, ADD_ONS } from '@rentshield/shared';
 import { notices } from './routes/notices.js';
 import { documents } from './routes/documents.js';
+import { legalSkills } from './routes/legalSkills.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -27,6 +28,7 @@ app.get('/api/pricing', (req, res) => {
 
 app.use('/api/notices', notices);
 app.use('/api/documents', documents);
+app.use('/api/legal-skills', legalSkills);
 
 app.use((err, req, res, next) => {
   console.error(err);
