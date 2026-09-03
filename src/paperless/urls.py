@@ -17,6 +17,9 @@ from rest_framework.routers import DefaultRouter
 
 from rentshield.views import NoticeViewSet
 from rentshield.views import analyze_document_view
+from rentshield.views import check_service_method_view
+from rentshield.views import legal_skill_detail_view
+from rentshield.views import legal_skills_view
 from rentshield.views import pricing_view
 from rentshield.views import reasons_view
 
@@ -162,6 +165,21 @@ urlpatterns = [
                     "^rentshield/documents/analyze/",
                     analyze_document_view,
                     name="rentshield-analyze-document",
+                ),
+                re_path(
+                    r"^rentshield/legal-skills/(?P<skill_id>[\w-]+)/$",
+                    legal_skill_detail_view,
+                    name="rentshield-legal-skill-detail",
+                ),
+                re_path(
+                    "^rentshield/legal-skills/$",
+                    legal_skills_view,
+                    name="rentshield-legal-skills",
+                ),
+                re_path(
+                    "^rentshield/check-service-method/",
+                    check_service_method_view,
+                    name="rentshield-check-service-method",
                 ),
                 re_path(
                     "^documents/",

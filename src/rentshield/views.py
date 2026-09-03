@@ -6,6 +6,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from rentshield.citation_graph import build_citation_graph
 from rentshield.constants import ALL_REASONS
 from rentshield.document_analysis import DocumentAnalysisError
 from rentshield.document_analysis import analyze_document
@@ -14,8 +15,11 @@ from rentshield.pricing import ADD_ONS
 from rentshield.pricing import BASE_PRICE_AED
 from rentshield.serializers import NoticeDetailSerializer
 from rentshield.serializers import NoticeSerializer
+from rentshield.service_methods import SERVICE_METHODS
 from rentshield.services import check_consume_status
 from rentshield.services import generate_and_consume
+from rentshield.skills import get_skill
+from rentshield.skills import load_skills
 
 
 class NoticeViewSet(viewsets.ModelViewSet):
@@ -66,11 +70,11 @@ def pricing_view(request):
 def analyze_document_view(request):
     """POST /api/rentshield/documents/analyze/ — structured extraction
     for an uploaded tenancy contract, via docling-service (default) or
-    deepseek-ocr-service (pass use_deepseek_ocr=true for a hard scan).
-    Returns raw extracted text/markdown/tables; running that back through
-    shared/complianceCheck.js- or citationGraph.js-style clause detection
-    is a follow-on (see the root README) — this endpoint's job is real
-    text extraction only.
+    deepseek-ocr-service (pass use_deepseek_ocr=true for a hard scan),
+    plus the citation-graph analysis (citation_graph.py) run directly
+    against the extracted text — clauses linked to the specific Article
+    25 provision they satisfy or violate, same as legacy-v1's
+    /api/documents/analyze response shape.
     """
     upload = request.FILES.get("file")
     if not upload:
@@ -88,4 +92,61 @@ def analyze_document_view(request):
     except DocumentAnalysisError as exc:
         return Response({"error": str(exc)}, status=502)
 
+    result["citation_graph"] = build_citation_graph(result.get("text"))
     return Response(result)
+
+
+@api_view(["GET"])
+def legal_skills_view(request):
+    """GET /api/rentshield/legal-skills/ — summaries only (id, title,
+    jurisdiction, practice_area), for a picker/suggestion list. Mirrors
+    the MCP list_legal_skills tool and legacy-v1's GET /api/legal-skills.
+    """
+    summaries = [
+        {"id": s.get("id"), "title": s.get("title"), "jurisdiction": s.get("jurisdiction"), "practice_area": s.get("practice_area")}
+        for s in load_skills()
+    ]
+    return Response({"skills": summaries})
+
+
+@api_view(["GET"])
+def legal_skill_detail_view(request, skill_id: str):
+    """GET /api/rentshield/legal-skills/<id>/ — full guidance text +
+    disclaimer. Mirrors the MCP get_legal_skill tool and legacy-v1's
+    GET /api/legal-skills/:id.
+    """
+    skill = get_skill(skill_id)
+    if not skill:
+        return Response({"error": "Skill not found"}, status=404)
+    return Response({"skill": skill})
+
+
+@api_view(["POST"])
+def check_service_method_view(request):
+    """POST /api/rentshield/check-service-method/ {"method": "..."} —
+    whether a notice-service method satisfies Article 25(3). Mirrors the
+    MCP check_notice_service_method_validity tool, built on the same
+    SERVICE_METHODS table citation_graph.py uses.
+    """
+    method_key = request.data.get("method")
+    method = SERVICE_METHODS.get(method_key)
+    if not method:
+        return Response(
+            {"error": f'Unknown method "{method_key}". Valid values: {", ".join(SERVICE_METHODS)}'},
+            status=400,
+        )
+
+    return Response({
+        "method": method["label"],
+        "is_valid_under_article_25_3": method["valid"],
+        "note": (
+            "Recognized under Article 25(3) — keep the notarized certificate / registered-mail "
+            "receipt / bailiff report as proof of service for any later RDSC filing."
+            if method["valid"]
+            else (
+                "Not one of the three methods Article 25(3) recognizes. A notice served this way is "
+                "likely to be challenged as invalid — re-serve using a Notary Public, registered mail, "
+                "or a court bailiff."
+            )
+        ),
+    })

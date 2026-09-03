@@ -94,10 +94,38 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
   its own upload API uses), so every generated notice becomes a real,
   OCR'd, full-text-searchable `Document` — **this is the actual payoff of
   the rebase**, not a bolted-on file store.
+- `service_methods.py` — the recognized/unrecognized notice-service
+  methods under Article 25(3) (Notary Public, registered mail, court
+  bailiff vs. WhatsApp, plain email, verbal, unwitnessed hand delivery),
+  ported from `legacy-v1/shared/serviceMethods.js`.
+- `citation_graph.py` — `build_citation_graph()`, an
+  OpenContracts-inspired graph linking each notice-period clause and
+  service-method mention found in a document to the specific Article 25
+  provision it satisfies or violates, ported from
+  `legacy-v1/shared/citationGraph.js`. Run automatically on every
+  `POST /api/rentshield/documents/analyze/` call, against whichever
+  engine (Docling/DeepSeek-OCR) extracted the text.
+- `skills/*.md` + `skills.py` — the three-skill legal-guidance library
+  (RDSC filing, security deposit disputes, valid notice service methods)
+  ported from `legacy-v1/mcp/skills/` — same files, copied verbatim
+  (plain Markdown + YAML frontmatter, no JS-specific content), reparsed
+  with PyYAML instead of gray-matter. Exposed at
+  `/api/rentshield/legal-skills/` (+ `/<id>/`) and
+  `/api/rentshield/check-service-method/`, matching what the MCP server
+  (`list_legal_skills`/`get_legal_skill`/
+  `check_notice_service_method_validity`) exposed in `legacy-v1/`.
 - `views.py` / `serializers.py` — a DRF `ViewSet` at
-  `/api/rentshield/notices/`, plus `/api/rentshield/reasons/` and
-  `/api/rentshield/pricing/`, matching legacy-v1's `/api/notices` /
-  `/api/reasons` / `/api/pricing` behavior.
+  `/api/rentshield/notices/`, plus `/api/rentshield/reasons/`,
+  `/api/rentshield/pricing/`, `/api/rentshield/documents/analyze/`,
+  `/api/rentshield/legal-skills/`, and
+  `/api/rentshield/check-service-method/` — matching legacy-v1's
+  equivalent routes.
+
+**Verified**: `citation_graph.py` reproduces the exact same
+violating/compliant/empty-document test cases used to verify the
+original JS version; the legal-skills endpoints and citation-graph were
+exercised through a real HTTP round trip (Django → docling-service →
+`citation_graph.py` → back), not just unit-level.
 
 ## Document parsing: Docling + DeepSeek-OCR
 
@@ -200,16 +228,13 @@ that feature.
   own auth (django-allauth, DRF token auth, django-guardian object
   permissions) is fully present and unmodified — wiring `rentshield`
   into it is next, not forgotten.
-- **E-signature, legal-skills, citation-graph**: `legacy-v1/`'s DocuSeal +
-  OpenSign integration, `mcp/skills/` library, and citation-graph
-  analyzer are real, working, previously-verified features that have not
-  yet been ported onto this foundation. Their Python ports would live in
-  `rentshield/` alongside what's here, backed by the same `Notice` →
-  `Document` relation. In particular, `POST /api/rentshield/documents/analyze/`
-  (Docling/DeepSeek-OCR, above) currently returns raw extracted
-  text/markdown only — running that back through
-  `citationGraph.js`/`complianceCheck.js`-equivalent clause detection is
-  part of this same not-yet-done item, not a separate gap.
+- **E-signature**: `legacy-v1/api/src/services/esign/`'s DocuSeal + OpenSign
+  integration (the real notarization workflow behind the "Notarization
+  Service" add-on) has not yet been ported onto this foundation. Its
+  Python port would live in `rentshield/` alongside what's here, backed
+  by the same `Notice` → `Document` relation. (Legal-skills and the
+  citation-graph analyzer — the other two items previously listed here —
+  are now ported; see "What's in `rentshield/`" above.)
 - **Frontend**: `src-ui/` is paperless-ngx's own Angular app, unmodified.
   The wizard, live bilingual preview, chat drawer, and dashboard from
   `legacy-v1/vue/` have not been rebuilt as Angular components — this is
