@@ -1,0 +1,62 @@
+<div class="rs-shell" [class.rs-collapsed]="collapsed()">
+  <div
+    class="rs-backdrop d-lg-none"
+    *ngIf="mobileOpen()"
+    (click)="closeMobile()"
+  ></div>
+
+  <aside class="rs-sidebar" [class.rs-mobile-open]="mobileOpen()">
+    <div class="rs-brand">
+      <div class="rs-brand-icon">
+        <i-bs name="shield-check"></i-bs>
+      </div>
+      <div class="rs-brand-text" *ngIf="!collapsed()">
+        <div class="rs-brand-title">Rent Shield</div>
+        <div class="rs-brand-sub">RERA &middot; DLD COMPLIANT</div>
+      </div>
+    </div>
+
+    <nav class="rs-nav">
+      <div class="rs-nav-section" *ngIf="!collapsed()">Notices</div>
+      <a
+        *ngFor="let item of navItems"
+        class="rs-nav-link"
+        [routerLink]="item.path"
+        routerLinkActive="rs-active"
+        [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
+        (click)="closeMobile()"
+        [title]="collapsed() ? item.label : ''"
+      >
+        <i-bs [name]="item.icon"></i-bs>
+        <span *ngIf="!collapsed()">{{ item.label }}</span>
+      </a>
+    </nav>
+
+    <button class="rs-collapse-btn d-none d-lg-flex" (click)="toggleCollapsed()">
+      <i-bs [name]="collapsed() ? 'chevron-double-right' : 'chevron-double-left'"></i-bs>
+      <span *ngIf="!collapsed()">Collapse</span>
+    </button>
+
+    <div class="rs-sidebar-footer" *ngIf="!collapsed()">
+      Document drafting aid &mdash; not legal advice. Verify with a
+      licensed UAE legal counsel or Notary Public.
+    </div>
+  </aside>
+
+  <div class="rs-main">
+    <header class="rs-topbar">
+      <button class="rs-hamburger d-lg-none" (click)="toggleMobile()">
+        <i-bs name="list"></i-bs>
+      </button>
+      <div class="rs-topbar-title">{{ pageTitle() }}</div>
+      <a routerLink="/rentshield/notices/new" class="rs-cta">
+        <i-bs name="file-earmark-plus"></i-bs>
+        <span class="d-none d-sm-inline">New Notice</span>
+      </a>
+    </header>
+
+    <main class="rs-content">
+      <router-outlet></router-outlet>
+    </main>
+  </div>
+</div>

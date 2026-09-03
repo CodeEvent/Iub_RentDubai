@@ -8,11 +8,14 @@ from rest_framework.response import Response
 
 from rentshield.citation_graph import build_citation_graph
 from rentshield.constants import ALL_REASONS
+from rentshield.constants import notice_period_days
 from rentshield.document_analysis import DocumentAnalysisError
 from rentshield.document_analysis import analyze_document
 from rentshield.models import Notice
+from rentshield.notice_builder import build_notice
 from rentshield.pricing import ADD_ONS
 from rentshield.pricing import BASE_PRICE_AED
+from rentshield.pricing import calculate_total
 from rentshield.serializers import NoticeDetailSerializer
 from rentshield.serializers import NoticeSerializer
 from rentshield.service_methods import SERVICE_METHODS
@@ -88,6 +91,42 @@ class NoticeViewSet(viewsets.ModelViewSet):
         except Exception as exc:  # noqa: BLE001
             return Response({"error": str(exc)}, status=502)
         return Response(result)
+
+
+@api_view(["POST"])
+def preview_notice_view(request):
+    """POST /api/rentshield/preview-notice/ — renders the bilingual
+    notice content for the given (unsaved) fields, same builder as
+    Notice creation (notice_builder.build_notice()) and the same total-
+    price math, without persisting anything or touching the document
+    vault. Powers the Angular wizard's live preview — kept server-side
+    so the legal wording has exactly one source of truth instead of
+    being re-implemented in TypeScript.
+    """
+    data = request.data
+    if not data.get("reason") or data["reason"] not in ALL_REASONS:
+        return Response({"error": "A recognized reason is required"}, status=400)
+
+    document = build_notice({
+        "landlord_name": data.get("landlord_name"),
+        "tenant_name": data.get("tenant_name"),
+        "property_type": data.get("property_type"),
+        "unit_no": data.get("unit_no"),
+        "building_name": data.get("building_name"),
+        "plot_number": data.get("plot_number"),
+        "ejari_number": data.get("ejari_number"),
+        "notice_date": data.get("notice_date"),
+        "reason": data.get("reason"),
+    })
+    total_price_aed = calculate_total({
+        "notarization": bool(data.get("add_notarization")),
+        "ai_review": bool(data.get("add_ai_review")),
+    })
+    return Response({
+        "document": document,
+        "notice_period_days": notice_period_days(data["reason"]),
+        "total_price_aed": total_price_aed,
+    })
 
 
 def reasons_view(request):

@@ -1,0 +1,59 @@
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <p class="text-muted small mb-0">Every notice saved to the RentShield API, newest first.</p>
+  <a routerLink="/rentshield/notices/new" class="rs-cta-link">
+    <i-bs name="file-earmark-plus" class="me-1"></i-bs> New Notice
+  </a>
+</div>
+
+<div class="rs-panel" *ngIf="!loading() && !notices().length">
+  <div class="text-center text-muted py-5">
+    <i-bs name="inbox" class="fs-3 mb-2 d-block"></i-bs>
+    No notices saved yet &mdash; build your first one.
+  </div>
+</div>
+
+<div class="rs-panel" *ngIf="notices().length">
+  <div class="table-responsive">
+    <table class="table mb-0 align-middle">
+      <thead>
+        <tr class="small text-muted text-uppercase">
+          <th>Landlord &rarr; Tenant</th>
+          <th>Property</th>
+          <th>Reason</th>
+          <th>Period</th>
+          <th>Notice Date</th>
+          <th>Add-ons</th>
+          <th>Notarization</th>
+          <th class="text-end">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let n of notices()">
+          <td>
+            <div class="fw-semibold">{{ n.landlord_name }} &rarr; {{ n.tenant_name }}</div>
+          </td>
+          <td class="text-muted">{{ n.property_type }} {{ n.unit_no }}</td>
+          <td class="text-muted">{{ n.reason_label }}</td>
+          <td class="text-muted">{{ n.notice_period_days }} days</td>
+          <td class="text-muted">{{ n.notice_date }}</td>
+          <td>
+            <span class="badge rs-badge-ai me-1" *ngIf="n.add_ai_review">AI-Reviewed</span>
+            <span class="text-muted small" *ngIf="!n.add_notarization && !n.add_ai_review">None</span>
+          </td>
+          <td>
+            <span
+              class="badge"
+              *ngIf="n.add_notarization"
+              [class.rs-badge-notarized]="n.esign_status !== 'completed'"
+              [class.rs-badge-ai]="n.esign_status === 'completed'"
+            >
+              {{ n.esign_status ? ('Notarized · ' + n.esign_status) : 'Notarization due' }}
+            </span>
+            <span class="text-muted small" *ngIf="!n.add_notarization">&mdash;</span>
+          </td>
+          <td class="text-end fw-bold">{{ n.total_price_aed }} AED</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

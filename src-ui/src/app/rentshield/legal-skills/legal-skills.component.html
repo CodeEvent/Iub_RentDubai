@@ -1,0 +1,36 @@
+<p class="text-muted small mb-3" style="max-width: 46rem">
+  Reference guidance beyond notice drafting &mdash; RDSC filing, security
+  deposit disputes, and which notice-service methods Article 25(3)
+  actually recognizes. Draft/reference guidance only, not legal advice.
+</p>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="rs-panel">
+      <div class="list-group list-group-flush">
+        <button
+          *ngFor="let s of skills()"
+          type="button"
+          class="list-group-item list-group-item-action"
+          [class.active]="selected()?.id === s.id"
+          (click)="select(s.id)"
+        >
+          <div class="fw-semibold small">{{ s.title }}</div>
+          <div class="small text-muted">{{ s.jurisdiction }}</div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="rs-panel" *ngIf="selected() as skill">
+      <div class="rs-panel-header"><i-bs name="bank" class="me-2"></i-bs>{{ skill.title }}</div>
+      <div class="rs-panel-body">
+        <div class="rs-skill-body" [innerHTML]="selectedHtml()"></div>
+        <div class="rs-disclaimer mt-3">
+          <i-bs name="info-circle" class="me-1"></i-bs>{{ skill.disclaimer }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

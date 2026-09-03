@@ -1,0 +1,17 @@
+@use '../rentshield-shared' as *;
+
+.rs-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  display: inline-block;
+}
+
+.rs-dot-ok {
+  background: #10b981;
+}
+
+.rs-dot-bad {
+  background: #ef4444;
+}

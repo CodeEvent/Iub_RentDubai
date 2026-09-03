@@ -20,6 +20,7 @@ from rentshield.views import analyze_document_view
 from rentshield.views import check_service_method_view
 from rentshield.views import legal_skill_detail_view
 from rentshield.views import legal_skills_view
+from rentshield.views import preview_notice_view
 from rentshield.views import pricing_view
 from rentshield.views import reasons_view
 
@@ -180,6 +181,11 @@ urlpatterns = [
                     "^rentshield/check-service-method/",
                     check_service_method_view,
                     name="rentshield-check-service-method",
+                ),
+                re_path(
+                    "^rentshield/preview-notice/",
+                    preview_notice_view,
+                    name="rentshield-preview-notice",
                 ),
                 re_path(
                     "^documents/",

@@ -40,9 +40,13 @@ src/rentshield/ The tenancy-notice domain logic, added as a first-party
                 citations, same wording) from legacy-v1/shared/ — see
                 "What's in rentshield/" below.
 
-src-ui/         Angular frontend, vendored from paperless-ngx. Currently
-                unmodified — the wizard/preview/chat-drawer/dashboard UI
-                rebuild on top of it is not done yet (see "Not done yet").
+src-ui/         Angular frontend, vendored from paperless-ngx.
+                paperless-ngx's own document-management UI is unmodified;
+                a new `src-ui/src/app/rentshield/` area adds the
+                notice-wizard/dashboard/legal-skills UI as standalone
+                Angular components styled after MintHCM's dashboard layout
+                (dark sidebar + topbar + cards) — see "The Angular
+                frontend" below.
 
 docling-service/       Isolated FastAPI service wrapping Docling — see
                        "Document parsing" below.
@@ -240,14 +244,96 @@ cannot reach `download.pytorch.org`'s wheel host. Re-add them from
 upstream paperless-ngx's `pyproject.toml` for a deployment that wants
 that feature.
 
+## The Angular frontend
+
+`src-ui/src/app/rentshield/` is a MintHCM-styled UI built directly on top
+of paperless-ngx's Angular 22 app (standalone components, zoneless change
+detection, Bootstrap 5 / ng-bootstrap — no separate framework introduced),
+talking to the real `rentshield` DRF API above. This was a deliberate,
+scoped choice over the two alternatives considered (a full rebase onto
+MintHCM's actual PHP/SuiteCRM + Vue codebase, or running MintHCM as a
+second parallel backend) — it keeps the paperless-ngx/Django foundation
+and every ported service (citation graph, legal skills, e-signature)
+completely intact and adds only the missing frontend.
+
+```
+rentshield-frame/       Dark sidebar + topbar shell (MintHCM-style navy
+                        #0f172a / emerald #10b981 palette), collapsible,
+                        mobile-responsive, wraps every rentshield route.
+dashboard/              Stat cards (total/statutory/breach/AI-reviewed
+                        notices) + recent-notices panel.
+notice-wizard/          4-step wizard (Parties → Property → Notice &
+                        Reason → Review) with a live bilingual (EN/AR)
+                        document preview, computed from the same
+                        notice_builder.py the backend uses via a new
+                        POST /api/rentshield/preview-notice/ endpoint —
+                        blurred/watermarked until saved.
+notices-list/           Table of every saved Notice with notarization
+                        status badges.
+legal-skills/           Master-detail browser over the ported
+                        legacy-v1/mcp/skills/ Markdown library.
+rentshield-settings/    API health check, pricing table, about section.
+services/rentshield-api.service.ts   Typed HTTP client for the whole
+                        rentshield DRF API (notices, reasons, pricing,
+                        preview, legal skills, notarization/consume
+                        status polling).
+```
+
+**Verified end-to-end in a real browser** (Playwright against a live
+`ng serve` + `manage.py runserver` + `celery worker`, not just "should
+work"): filled out the full wizard for both a statutory (Sale of
+Property) and confirmed the live preview renders correct bilingual
+content; clicked Save; confirmed a real `Notice` row was created via the
+API; confirmed `generate_and_consume()` dispatched a real Celery
+`consume_file` task that ran the actual Tesseract/pdftotext pipeline and
+produced a real, searchable `documents.Document` row; confirmed
+`GET /api/rentshield/notices/<id>/consume-status/` links `Notice.document`
+back once the task succeeds; and confirmed the Dashboard, Saved Notices,
+Legal Skills, and Settings pages all render real API data with matching
+screenshots.
+
+Non-obvious bugs hit and fixed during that verification (kept here since
+they're easy to reintroduce): a `computed(() => this.form.valid)` never
+re-evaluates because `FormGroup.valid` is a plain getter, not a tracked
+Signal — the wizard's Save button used a real `signal()` kept in sync via
+`form.statusChanges`/`valueChanges` instead; and an uncaught error thrown
+inside a `toSignal()`'d `router.events` subscription (from walking a
+freshly-injected `ActivatedRoute` before its tree was populated) silently
+broke the Router's own child-route activation, leaving nested
+`<router-outlet>` content blank — fixed by reading
+`router.routerState.snapshot.root` instead.
+
+### Running the frontend dev server
+
+`ng serve` (via `pnpm start` in `src-ui/`) runs against Django on a
+different origin (`:4200` vs `:8000`), which needs three things paperless-
+ngx's own dev docs don't call out for this project's auth path:
+
+```bash
+# Django must run with DEBUG on — paperless-ngx only allowlists
+# http://localhost:4200 in CORS_ALLOWED_ORIGINS when DEBUG=True
+export PAPERLESS_DEBUG=true
+
+# At least one is_staff user must exist — paperless's
+# AngularApiAuthenticationOverride (DEBUG-only, Referer-checked dev auth)
+# does `User.objects.filter(is_staff=True).first()` and 500s on None
+uv run manage.py createsuperuser
+
+# Do NOT set PAPERLESS_AUTO_LOGIN_USERNAME for this dev path — it swaps
+# in AutoLoginMiddleware, which establishes a real Django session, which
+# makes DRF's SessionAuthentication the active authenticator, which
+# enforces CSRF — and no CSRF cookie is ever set because Angular is
+# served by vite, not Django's own @ensure_csrf_cookie IndexView.
+
+cd src-ui && pnpm install && pnpm start   # http://localhost:4200
+```
+
 ## Not done yet (named, not silently skipped)
 
 - **Auth wiring**: `NoticeViewSet` is `AllowAny` for now. paperless-ngx's
   own auth (django-allauth, DRF token auth, django-guardian object
   permissions) is fully present and unmodified — wiring `rentshield`
   into it is next, not forgotten.
-- **Frontend**: `src-ui/` is paperless-ngx's own Angular app, unmodified.
-  The wizard, live bilingual preview, chat drawer, and dashboard from
-  `legacy-v1/vue/` have not been rebuilt as Angular components — this is
-  the largest remaining piece of the rebase and needs its own scoped pass
-  rather than being rushed alongside the backend work above.
+- **Notice detail route**: there is a Saved Notices *list* but no
+  per-notice detail page/route yet; the wizard's post-save "View it" link
+  goes to the list rather than a dead-end URL.
