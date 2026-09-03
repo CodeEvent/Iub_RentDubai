@@ -305,12 +305,41 @@ async function processUploadedFile(file) {
   renderDocAnalysisCard(data);
 }
 
-function renderDocAnalysisCard({ analysis }) {
+// Renders the citation graph (shared/citationGraph.js — clauses linked
+// to the specific Article 25 provision they satisfy or violate) as a
+// flat list of citations, since a chat bubble isn't the place for an
+// actual node/edge graph visualization. This is what the AI Compliance
+// Review add-on now delivers beyond the single notice-period regex.
+function renderCitationsCard(citationGraph) {
+  if (!citationGraph || citationGraph.edges.every((e) => e.relation === 'contains' || e.relation === 'has')) return '';
+  const citationEdges = citationGraph.edges.filter((e) => e.relation === 'satisfies' || e.relation === 'violates');
+  if (!citationEdges.length) return '';
+
+  const statuteLabel = (id) => citationGraph.nodes.find((n) => n.id === id)?.label || id;
+  const rows = citationEdges
+    .map((e) => `
+      <div class="flex items-start gap-2 text-[12px] leading-relaxed mb-1.5 last:mb-0">
+        <span>${e.relation === 'satisfies' ? '✅' : '⚠️'}</span>
+        <span class="${e.relation === 'satisfies' ? 'text-slate-700' : 'text-red-800'}">
+          <strong>${escapeHtml(statuteLabel(e.to))}:</strong> ${escapeHtml(e.note)}
+        </span>
+      </div>`)
+    .join('');
+  return `
+    <div class="border-t border-slate-100 pt-2 mt-2">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Citation graph — clauses linked to statute</p>
+      ${rows}
+    </div>`;
+}
+
+function renderDocAnalysisCard({ analysis, citationGraph }) {
+  const citationsHtml = renderCitationsCard(citationGraph);
   if (!analysis.findings.length) {
     pushAiMessage(`
       <div class="space-y-2">
         <p class="font-bold text-slate-900">📁 Document analyzed</p>
         <p class="text-slate-700">🔍 I read the document but didn't find any clause that conflicts with the statutory notice period. This appears consistent with RERA guidelines — though a clean scan isn't proof the document has no other legal issues, only that nothing suspicious showed up in the extracted text.</p>
+        ${citationsHtml}
       </div>`);
   } else {
     const findingsHtml = analysis.findings
@@ -324,6 +353,7 @@ function renderDocAnalysisCard({ analysis }) {
         <p class="font-bold text-slate-900">📁 Document Detected: Tenancy Addendum</p>
         <p class="text-slate-700">🔍 <strong>Key Findings:</strong> ${analysis.findings.length} clause${analysis.findings.length > 1 ? 's' : ''} of concern.</p>
         ${findingsHtml}
+        ${citationsHtml}
       </div>`);
   }
 

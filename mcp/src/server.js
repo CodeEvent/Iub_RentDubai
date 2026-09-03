@@ -7,7 +7,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { ALL_REASONS, isBreach, noticePeriodDays, buildNotice } from '@rentshield/shared';
+import { ALL_REASONS, isBreach, noticePeriodDays, buildNotice, SERVICE_METHODS } from '@rentshield/shared';
 import { loadSkills } from './loadSkills.js';
 
 const server = new McpServer({ name: 'rentshield', version: '1.0.0' });
@@ -110,16 +110,6 @@ server.registerTool(
     return { content: [{ type: 'text', text: JSON.stringify(skill, null, 2) }] };
   }
 );
-
-const SERVICE_METHODS = {
-  notary_public: { valid: true, label: 'Notary Public' },
-  registered_mail: { valid: true, label: 'Registered mail with acknowledgment of receipt' },
-  court_bailiff: { valid: true, label: 'Court bailiff (محضر)' },
-  whatsapp: { valid: false, label: 'WhatsApp / SMS' },
-  email: { valid: false, label: 'Plain (non-registered) email' },
-  verbal: { valid: false, label: 'Verbal notice' },
-  hand_delivery_unwitnessed: { valid: false, label: 'Hand delivery without notarization or a witnessed receipt' }
-};
 
 server.registerTool(
   'check_notice_service_method_validity',

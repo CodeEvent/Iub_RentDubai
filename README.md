@@ -274,3 +274,98 @@ add-ons checklist and payment-modal breakdown, and by `api/` for
 `GET /api/pricing` and for computing `totalPriceAed` on every saved
 notice. `add_notarization` and `add_ai_review` are separate boolean
 columns on the `notices` table (replacing the old single `tier` column).
+
+## Open-source legal-tech integrations
+
+Three integrations evaluated from a set of open-source legal-tech
+repositories, each addressing a gap this project had already identified
+in itself.
+
+### Real notarization: DocuSeal + OpenSign (`api/src/services/esign/`)
+
+The "Notarization Service" add-on used to just charge 249 AED and do
+nothing. It now routes the generated notice through a real self-hosted
+e-signature engine — [DocuSeal](https://github.com/docusealco/docuseal)
+as primary, [OpenSign](https://github.com/opensignlabs/OpenSign) as
+automatic fallback if DocuSeal is unreachable — rather than picking one.
+`docusealClient.js` and `opensignClient.js` call each project's real REST
+API (DocuSeal's `/api/submissions/html`; OpenSign's Parse-Server-based
+`createdocumentfromapp` Cloud Function and `contracts_Contactbook`
+pointer class) — endpoint shapes were read directly out of both projects'
+own source (`docs/openapi.json`, `docs/api/nodejs.md`, and
+`cloud/parsefunction/*.js` respectively), not guessed. `renderPdf.js`
+adds real server-side PDF rendering via Playwright/Chromium (the browser
+previously only had `window.print()`) for OpenSign, which signs an
+uploaded file rather than accepting raw HTML the way DocuSeal does.
+
+Verified against mock HTTP servers shaped exactly like each real API
+(request formatting and response parsing both checked), and the
+orchestrator's primary-fails → fallback-succeeds path was verified
+end-to-end including a real Playwright PDF render. Not verified against
+a live DocuSeal/OpenSign deployment — this sandbox has no Docker
+daemon — so `docker/docker-compose.yml` ships both as real services
+(official images) for anyone standing this up for real; unreachable
+providers degrade gracefully (502 with both providers' actual error
+messages, same pattern as `ocr/`'s failure handling) rather than
+silently.
+
+### Wider legal guidance: a skills library (`mcp/skills/`)
+
+Inspired by two skill libraries evaluated for this platform —
+[ThomasMoreAI/legal-skills-open](https://github.com/ThomasMoreAI/legal-skills-open)
+and [zgbrenner/agentcounsel](https://github.com/zgbrenner/agentcounsel) —
+`mcp/skills/*.md` adds a small library of reference guidance (Markdown +
+YAML frontmatter, explicit human-review disclaimers) covering questions
+adjacent to notice drafting: filing at the RDSC, security deposit
+disputes, and which notice-service methods Article 25(3) actually
+recognizes. The content is written for this platform (no file-level
+access to either repo's exact skill text was available), but the
+"small, disclaimed, reviewable skill" shape and safety framing
+deliberately mirror both.
+
+`mcp/src/server.js` exposes `list_legal_skills` / `get_legal_skill`
+(browsable, like both source projects) plus
+`check_notice_service_method_validity`, an interactive tool built on the
+service-method skill's content — verified via a real MCP
+`Client`/`StdioClientTransport` round trip. `api/src/routes/legalSkills.js`
+reads the same `mcp/skills/` directory (no content duplication) so
+`ChatDrawer.vue` can answer these questions in-app via regex keyword
+routing — consistent with how the rest of that chat drawer already
+works, not an NLP claim. Verified in a live browser session against the
+running dev servers.
+
+### Deeper document analysis: a citation graph (`shared/citationGraph.js`)
+
+[Open-Source-Legal/OpenContracts](https://github.com/Open-Source-Legal/OpenContracts)
+treats a document corpus as a traversable graph — clauses and the legal
+provisions they cite, as nodes and edges — via its own Django + GraphQL +
+Celery + Docling service. This project doesn't run that stack, so
+`buildCitationGraph()` implements the same *idea* natively, in plain JS:
+it scans uploaded document text for notice-period clauses and
+service-method mentions, and links each one as a graph edge to the
+specific Article 25 provision it satisfies or violates — instead of the
+single flat regex `complianceCheck.js` had before. Every legal citation
+it uses (Article 25(1)/(2)/(3)) was already established and
+cross-checked elsewhere in this codebase (`shared/reasons.js`, the
+`notice-service-method-uae` skill); nothing new about UAE law is
+asserted here. `shared/serviceMethods.js` is the single source of truth
+for recognized/unrecognized service methods, shared by this graph, the
+MCP tool, and the skill file.
+
+Same honesty caveat as the rest of this project's text analysis: a
+citation it draws is a real signal, not proof the document has no other
+issues when it draws none. `api/src/routes/documents.js` returns it
+alongside the existing `analysis` on every `/analyze` call, and
+`ChatDrawer.vue` renders it as a flat "citation graph" list under the
+existing compliance findings — verified end-to-end with both a violating
+and a fully compliant sample document, and in a live browser session.
+
+### What wasn't integrated, and why
+
+- **openarsenalspecs/Legal** — AGPL-3.0+, 0 stars/forks, 95 commits,
+  mostly specification documents rather than working software, and about
+  AI-governance frameworks generally rather than tenancy law. Not a fit.
+- **opensource.legal/directory** and **contracts.opensource.legal** — both
+  blocked by this sandbox's network egress policy (same domain), so their
+  contents were never verified directly; treated as a links directory,
+  not something to integrate.

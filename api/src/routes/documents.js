@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { analyzeTenancyText } from '@rentshield/shared';
+import { analyzeTenancyText, buildCitationGraph } from '@rentshield/shared';
 
 export const documents = Router();
 
@@ -36,5 +36,6 @@ documents.post('/analyze', upload.single('file'), async (req, res) => {
   }
 
   const analysis = analyzeTenancyText(ocrResult.text);
-  res.json({ ocr: ocrResult, analysis });
+  const citationGraph = buildCitationGraph(ocrResult.text);
+  res.json({ ocr: ocrResult, analysis, citationGraph });
 });
