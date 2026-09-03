@@ -1,9 +1,13 @@
 <script setup>
 import WizardForm from '../components/WizardForm.vue';
 import DocumentPreview from '../components/DocumentPreview.vue';
+import TrustBadges from '../components/TrustBadges.vue';
+import HowItWorks from '../components/HowItWorks.vue';
 </script>
 
 <template>
+  <TrustBadges />
+
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
     <p class="text-sm text-slate-500 mb-6 max-w-2xl">Generate a bilingual (English &amp; Arabic) notice compliant with Dubai Law No. (33) of 2008, ready for Notary Public service.</p>
 
@@ -19,4 +23,6 @@ import DocumentPreview from '../components/DocumentPreview.vue';
       </section>
     </div>
   </div>
+
+  <HowItWorks />
 </template>

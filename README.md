@@ -92,6 +92,32 @@ Or with Docker (builds all three services, `ocr` included):
 docker compose -f docker/docker-compose.yml up --build
 ```
 
+### Sharing a click-through UI preview (no backend required)
+
+Because this is now a real multi-service app, there's no single file to
+just send someone anymore — seeing it live normally means running `api/`
+and `vue/` (and `ocr/` for the chat's document upload) yourself. For
+sharing the UI itself without any of that:
+
+```bash
+cd vue
+npm run build:preview     # -> dist-preview/index.html (self-contained,
+                           #    JS + CSS inlined, one file)
+```
+
+This is a separate build path (`vite.preview.config.js` +
+`vite-plugin-singlefile`), not the real deployment (`docker/web.Dockerfile`
+still builds the normal multi-file bundle for that). Every backend-
+dependent feature — saving a notice, the chat's document upload, the
+saved-notices list, the Settings API health check — fails exactly as
+gracefully in this build as when the real `api/` is simply offline; none
+of it is mocked. `npm run build:preview` also runs
+`scripts/strip-html-shell.js`, which produces `dist-preview/content-only.html`
+— the page content with the `<!doctype>/<html>/<head>/<body>` wrapper
+tags removed, for pasting into a tool that supplies its own document
+skeleton (e.g. an Artifact-hosting service). Publish `dist-preview/index.html`
+directly instead if the destination wants a complete, self-contained page.
+
 ## What's ported from the prototype vs. not yet
 
 **Ported to the new architecture:** the 4-step wizard, the full bilingual
@@ -216,6 +242,11 @@ whichever page is active, exactly as before.
 bundle, which doesn't proxy `/api/*` the way the Vite dev server does — a
 production deployment needs a reverse proxy or a configurable API base URL
 before `docker compose up` is a real one-command deploy.
+
+The router uses hash history (`/#/notices/new`, not `/notices/new`)
+deliberately — it needs no server-side SPA-rewrite rule to serve a deep
+link or survive a refresh, which matters for a static bundle (Docker,
+`vue/dist` opened directly, or a single-file preview build).
 
 ## Pricing (shared/pricing.js)
 

@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHashHistory } from 'vue-router';
 import DashboardView from './views/DashboardView.vue';
 import NoticeBuilderView from './views/NoticeBuilderView.vue';
 import NoticesListView from './views/NoticesListView.vue';
@@ -12,7 +12,7 @@ const routes = [
 ];
 
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes,
   scrollBehavior() {
     return { top: 0 };

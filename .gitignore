@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-preview/
+vue/artifact-content.html
 api/data/
 *.log
 .env
