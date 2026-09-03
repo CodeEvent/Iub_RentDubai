@@ -4,3 +4,8 @@ api/data/
 *.log
 .env
 .DS_Store
+
+# Python (ocr/)
+.venv/
+__pycache__/
+*.pyc

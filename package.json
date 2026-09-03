@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Dubai Rent Shield — a monorepo platform (api / vue / mcp / shared) laid out after minthcm's module conventions, without its HR domain or AGPL-licensed code.",
+  "description": "Dubai Rent Shield — a monorepo platform (api / vue / mcp / ocr / shared) laid out after minthcm's module conventions, without its HR domain or AGPL-licensed code.",
   "workspaces": [
     "shared",
     "api",
@@ -14,6 +14,7 @@
     "dev:api": "npm run dev -w @rentshield/api",
     "dev:vue": "npm run dev -w @rentshield/vue",
     "dev:mcp": "npm run start -w @rentshield/mcp",
+    "dev:ocr": "cd ocr && uvicorn main:app --host 0.0.0.0 --port 8001 --reload",
     "build:vue": "npm run build -w @rentshield/vue",
     "seed": "node install/seed.js"
   }

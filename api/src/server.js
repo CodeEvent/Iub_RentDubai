@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { ALL_REASONS } from '@rentshield/shared';
 import { notices } from './routes/notices.js';
+import { documents } from './routes/documents.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -20,6 +21,7 @@ app.get('/api/reasons', (req, res) => {
 });
 
 app.use('/api/notices', notices);
+app.use('/api/documents', documents);
 
 app.use((err, req, res, next) => {
   console.error(err);

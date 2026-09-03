@@ -207,43 +207,75 @@ function handleGeneratePackage() {
   store.openPaymentModal();
 }
 
-/* ---------- Document upload (OCR simulation) — click OR drag-and-drop ---------- */
-function processUploadedFile(file) {
+/* ---------- Document upload — real OCR (PaddleOCR via ocr/) + compliance
+   check (shared/complianceCheck.js), not a scripted response. Click or
+   drag-and-drop both land here. ---------- */
+async function processUploadedFile(file) {
   if (!file) return;
   pushUserMessage(`📎 Uploaded: ${file.name}`);
   const typingId = pushAiMessage(`<span class="inline-flex items-center gap-2"><span class="spinner-sm"></span> AI reading tenancy contract addendum&hellip;</span>`).id;
 
-  setTimeout(() => {
+  let data;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/documents/analyze', { method: 'POST', body: formData });
     removeMessage(typingId);
-    renderDocAnalysisCard();
-  }, 2000);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      pushAiMessage(`I wasn't able to read that document (${escapeHtml(err.error || `HTTP ${res.status}`)}). Try a clearer photo, a text-based PDF, or a plain .txt export.`);
+      return;
+    }
+    data = await res.json();
+  } catch (err) {
+    removeMessage(typingId);
+    pushAiMessage(`I couldn't reach the document analysis service just now. Please try again in a moment.`);
+    return;
+  }
+
+  renderDocAnalysisCard(data);
 }
 
-function renderDocAnalysisCard() {
-  pushAiMessage(`
-    <div class="space-y-2">
-      <p class="font-bold text-slate-900">📁 Document Detected: Ejari Tenancy Addendum</p>
-      <p class="text-slate-700">🔍 <strong>Key Findings:</strong> Found a clause stating <em>"60 days notice for vacation."</em></p>
-      <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-red-800 text-[12px] leading-relaxed">
-        ⚠️ <strong>RERA Compliance Alert:</strong> This clause violates Dubai Law No. (33) of 2008. Your notice will be legally invalid at the RDSC unless you serve a full statutory 12-month notice.
-      </div>
-    </div>`);
+function renderDocAnalysisCard({ analysis }) {
+  if (!analysis.findings.length) {
+    pushAiMessage(`
+      <div class="space-y-2">
+        <p class="font-bold text-slate-900">📁 Document analyzed</p>
+        <p class="text-slate-700">🔍 I read the document but didn't find any clause that conflicts with the statutory notice period. This appears consistent with RERA guidelines — though a clean scan isn't proof the document has no other legal issues, only that nothing suspicious showed up in the extracted text.</p>
+      </div>`);
+  } else {
+    const findingsHtml = analysis.findings
+      .map((f) => `
+      <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-red-800 text-[12px] leading-relaxed mb-2 last:mb-0">
+        ⚠️ <strong>RERA Compliance Alert:</strong> ${escapeHtml(f.message)}
+      </div>`)
+      .join('');
+    pushAiMessage(`
+      <div class="space-y-2">
+        <p class="font-bold text-slate-900">📁 Document Detected: Tenancy Addendum</p>
+        <p class="text-slate-700">🔍 <strong>Key Findings:</strong> ${analysis.findings.length} clause${analysis.findings.length > 1 ? 's' : ''} of concern.</p>
+        ${findingsHtml}
+      </div>`);
+  }
 
   store.tier = 'premium';
   tierBannerVisible.value = true;
 
   let autoFilledNote = '';
-  if (!store.ejariNumber) {
-    store.ejariNumber = 'EJR-2024-778193';
+  if (!store.ejariNumber && analysis.ejariNumber) {
+    store.ejariNumber = analysis.ejariNumber;
     showToast('✅ Form updated from AI chat');
-    autoFilledNote = ` I've also auto-filled the Ejari Certificate Number I found in the document (<strong>EJR-2024-778193</strong>) into your notice form.`;
+    autoFilledNote = ` I've also auto-filled the Ejari Certificate Number I found in the document (<strong>${escapeHtml(analysis.ejariNumber)}</strong>) into your notice form.`;
   }
 
   setTimeout(() => {
     const typingId = pushTyping();
     setTimeout(() => {
       removeMessage(typingId);
-      pushAiMessage(`This appears to void the 60-day clause in favor of the mandatory 12-month statutory notice — this is consistent with RERA guidelines on public policy overriding private contract terms.${autoFilledNote} Your <strong>Premium AI Tier</strong> is now active, including this custom clause review in your downloadable package.`);
+      const summary = analysis.hasViolation
+        ? `This appears to void the non-compliant clause(s) in favor of the mandatory statutory notice period — this is consistent with RERA guidelines on public policy overriding private contract terms.${autoFilledNote}`
+        : `I've cross-referenced the extracted text against Dubai Law No. (33) of 2008 and didn't find anything that conflicts with the statutory notice periods.${autoFilledNote}`;
+      pushAiMessage(`${summary} Your <strong>Premium AI Tier</strong> is now active, including this document review in your downloadable package.`);
       showToast('✨ Premium AI Tier unlocked');
     }, 900);
   }, 400);
