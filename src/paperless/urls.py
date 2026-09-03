@@ -16,6 +16,7 @@ from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
 from rentshield.views import NoticeViewSet
+from rentshield.views import analyze_document_view
 from rentshield.views import pricing_view
 from rentshield.views import reasons_view
 
@@ -156,6 +157,11 @@ urlpatterns = [
                     "^rentshield/pricing/",
                     pricing_view,
                     name="rentshield-pricing",
+                ),
+                re_path(
+                    "^rentshield/documents/analyze/",
+                    analyze_document_view,
+                    name="rentshield-analyze-document",
                 ),
                 re_path(
                     "^documents/",

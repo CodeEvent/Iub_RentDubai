@@ -1,0 +1,25 @@
+[project]
+name = "deepseek-ocr-service"
+version = "0.1.0"
+description = "High-accuracy OCR for scanned/low-quality tenancy contract uploads, via DeepSeek-OCR (github.com/deepseek-ai/DeepSeek-OCR)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Pinned to the versions DeepSeek-OCR's own requirements.txt specifies.
+    "transformers==4.46.3",
+    "tokenizers==0.20.3",
+    "torch~=2.6.0",
+    "pymupdf",
+    "img2pdf",
+    "einops",
+    "easydict",
+    "addict",
+    "pillow",
+    "numpy",
+    "fastapi~=0.115.6",
+    "uvicorn[standard]~=0.34.0",
+    "python-multipart~=0.0.20",
+]
+
+[tool.uv]
+package = false

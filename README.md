@@ -44,8 +44,17 @@ src-ui/         Angular frontend, vendored from paperless-ngx. Currently
                 unmodified — the wizard/preview/chat-drawer/dashboard UI
                 rebuild on top of it is not done yet (see "Not done yet").
 
+docling-service/       Isolated FastAPI service wrapping Docling — see
+                       "Document parsing" below.
+
+deepseek-ocr-service/  Isolated FastAPI service wrapping DeepSeek-OCR
+                       (GPU-only) — see "Document parsing" below.
+
 docker/         paperless-ngx's own Docker Compose files (sqlite/postgres/
-                mariadb variants, with/without Tika).
+                mariadb variants, with/without Tika). This fork's own
+                docker-compose.yml (repo root) composes paperless-ngx +
+                docling-service (+ deepseek-ocr-service under the "gpu"
+                profile) instead.
 
 docs/           paperless-ngx's own documentation, including
                 docs/development.md — the dev workflow this project's
@@ -90,6 +99,47 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
   `/api/rentshield/pricing/`, matching legacy-v1's `/api/notices` /
   `/api/reasons` / `/api/pricing` behavior.
 
+## Document parsing: Docling + DeepSeek-OCR
+
+Two more open-source projects, evaluated and implemented as isolated
+services (their own `pyproject.toml`/venv each — same reason `ocr/` was
+its own service in `legacy-v1/`: keeping heavy ML dependency trees out
+of the main paperless-ngx venv):
+
+- **`docling-service/`** — [Docling](https://github.com/docling-project/docling)
+  (IBM / LF AI & Data Foundation, MIT). Primary document parser for the
+  "AI Compliance Review" add-on's upload: structured layout/table
+  extraction to Markdown, not just flat OCR text.
+- **`deepseek-ocr-service/`** — [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR)
+  (DeepSeek AI, MIT). An opt-in, higher-accuracy OCR path for hard scans
+  (handwriting, poor photos of a physical contract) — the caller chooses
+  it explicitly (`use_deepseek_ocr=true`), it is never an automatic
+  fallback.
+
+Both are wired into `rentshield/document_analysis.py` and reachable via
+`POST /api/rentshield/documents/analyze/`.
+
+**What's genuinely verified vs. what isn't, in this dev sandbox:**
+
+- Docling: fully verified for text-native formats (`.txt`, and by the
+  same code path DOCX/PPTX/XLSX/HTML) — a real request through Django →
+  `docling-service` → the actual `docling` library → back, end to end.
+  **PDF/image conversion is not verified here** — Docling's layout and
+  table-structure models are only distributed via Hugging Face, which
+  this sandbox's network policy blocks, and (unlike the OCR-engine
+  ModelScope issue, fixed by pinning Tesseract in `main.py`) there is no
+  pip-bundled alternative for those specific models. The service code is
+  correct and would work wherever Hugging Face is reachable; here it
+  fails cleanly with a clear 502 rather than hanging or crashing —
+  confirmed directly.
+- DeepSeek-OCR: **cannot run at all in this sandbox** — its own reference
+  implementation calls `.cuda()` unconditionally (no CPU fallback), and
+  this environment has no GPU. What's verified: the service starts, its
+  `/health` correctly reports `cuda_available: false`, and `/extract`
+  fails with a clear 503 explaining exactly why, rather than crashing —
+  confirmed directly. Real inference needs a CUDA GPU deployment (see
+  `deepseek-ocr-service/README.md` and the `gpu` Compose profile).
+
 ## Running it locally
 
 No Docker daemon is assumed — this follows paperless-ngx's own
@@ -115,6 +165,12 @@ uv run manage.py createsuperuser
 
 uv run manage.py runserver &
 uv run celery --app paperless worker -l INFO --pool=solo &
+
+# in another shell — docling-service (see "Document parsing" above)
+cd docling-service && uv sync && uv run uvicorn main:app --port 8010 &
+# deepseek-ocr-service needs a real CUDA GPU; start it the same way
+# (cd deepseek-ocr-service && uv sync && uv run uvicorn main:app --port 8011)
+# only on GPU-equipped infrastructure.
 ```
 
 Real document consumption (OCR + PDF/A conversion) additionally needs
@@ -149,7 +205,11 @@ that feature.
   analyzer are real, working, previously-verified features that have not
   yet been ported onto this foundation. Their Python ports would live in
   `rentshield/` alongside what's here, backed by the same `Notice` →
-  `Document` relation.
+  `Document` relation. In particular, `POST /api/rentshield/documents/analyze/`
+  (Docling/DeepSeek-OCR, above) currently returns raw extracted
+  text/markdown only — running that back through
+  `citationGraph.js`/`complianceCheck.js`-equivalent clause detection is
+  part of this same not-yet-done item, not a separate gap.
 - **Frontend**: `src-ui/` is paperless-ngx's own Angular app, unmodified.
   The wizard, live bilingual preview, chat drawer, and dashboard from
   `legacy-v1/vue/` have not been rebuilt as Angular components — this is

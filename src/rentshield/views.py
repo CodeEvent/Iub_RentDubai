@@ -1,9 +1,14 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.decorators import api_view
+from rest_framework.decorators import parser_classes
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from rentshield.constants import ALL_REASONS
+from rentshield.document_analysis import DocumentAnalysisError
+from rentshield.document_analysis import analyze_document
 from rentshield.models import Notice
 from rentshield.pricing import ADD_ONS
 from rentshield.pricing import BASE_PRICE_AED
@@ -54,3 +59,33 @@ def pricing_view(request):
     from django.http import JsonResponse
 
     return JsonResponse({"base_price_aed": BASE_PRICE_AED, "add_ons": ADD_ONS})
+
+
+@api_view(["POST"])
+@parser_classes([MultiPartParser])
+def analyze_document_view(request):
+    """POST /api/rentshield/documents/analyze/ — structured extraction
+    for an uploaded tenancy contract, via docling-service (default) or
+    deepseek-ocr-service (pass use_deepseek_ocr=true for a hard scan).
+    Returns raw extracted text/markdown/tables; running that back through
+    shared/complianceCheck.js- or citationGraph.js-style clause detection
+    is a follow-on (see the root README) — this endpoint's job is real
+    text extraction only.
+    """
+    upload = request.FILES.get("file")
+    if not upload:
+        return Response({"error": "No file uploaded"}, status=400)
+
+    use_deepseek_ocr = str(request.data.get("use_deepseek_ocr", "")).lower() == "true"
+
+    try:
+        result = analyze_document(
+            upload.name,
+            upload.read(),
+            upload.content_type or "application/octet-stream",
+            use_deepseek_ocr=use_deepseek_ocr,
+        )
+    except DocumentAnalysisError as exc:
+        return Response({"error": str(exc)}, status=502)
+
+    return Response(result)

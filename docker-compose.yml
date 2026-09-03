@@ -1,0 +1,63 @@
+# Full-stack compose for this fork: paperless-ngx (built from the
+# vendored ./Dockerfile) + rentshield's two optional document-parsing
+# services. paperless-ngx's own docker/compose/*.yml variants (sqlite/
+# postgres/mariadb, with/without Tika) are untouched — this file is new,
+# specific to this fork, and deliberately simple (sqlite, no Tika).
+services:
+  broker:
+    image: docker.io/valkey/valkey:9-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - broker
+      - docling-service
+    ports:
+      - "8000:8000"
+    volumes:
+      - pgx-data:/usr/src/paperless/data
+      - pgx-media:/usr/src/paperless/media
+      - ./consume:/usr/src/paperless/consume
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBENGINE: sqlite
+      DOCLING_SERVICE_URL: http://docling-service:8010
+      DEEPSEEK_OCR_SERVICE_URL: http://deepseek-ocr-service:8011
+      DEEPSEEK_OCR_ENABLED: ${DEEPSEEK_OCR_ENABLED:-false}
+
+  docling-service:
+    build:
+      context: ./docling-service
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+
+  # GPU-only — see deepseek-ocr-service/README.md. Not started by
+  # `docker compose up` unless the "gpu" profile is enabled
+  # (`docker compose --profile gpu up`), since it fails without a real
+  # CUDA GPU + the NVIDIA Container Toolkit.
+  deepseek-ocr-service:
+    build:
+      context: ./deepseek-ocr-service
+    restart: unless-stopped
+    profiles: ["gpu"]
+    ports:
+      - "8011:8011"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  pgx-data:
+  pgx-media:
+  redisdata:
