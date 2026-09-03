@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { FileText, DownloadCloud, Save, Loader2, CheckCircle2 } from '@lucide/vue';
+import { FileText, DownloadCloud, Save, Loader2, CheckCircle2, Signature, RefreshCw } from '@lucide/vue';
 import { useNoticeStore } from '../stores/notice.js';
 
 const store = useNoticeStore();
@@ -19,6 +19,10 @@ async function handleSave() {
 function handleDownloadClick() {
   if (!store.isReadyToSave) {
     alert('Please complete Landlord, Tenant, Notice Date and Reason before generating your document.');
+    return;
+  }
+  if (store.needsLandlordEmail) {
+    alert('Please add a landlord email in Step 1 — Notarization routes the signed document there.');
     return;
   }
   store.openPaymentModal();
@@ -205,5 +209,35 @@ function handleDownloadClick() {
       <span>{{ store.saving ? 'Saving…' : store.savedId ? 'Saved — Save Another' : 'Save Notice to Your Account' }}</span>
     </button>
     <p v-if="store.saveError" class="text-center text-[11px] text-red-600">{{ store.saveError }}</p>
+
+    <!-- Real notarization status — routed through DocuSeal/OpenSign, see
+         api/src/services/esign/. Only appears once a signing request has
+         actually been made. -->
+    <div
+      v-if="store.esignStatus || store.requestingSignature || store.esignError"
+      class="bg-white rounded-2xl border border-slate-200 shadow-premium px-4 py-3 flex items-center justify-between gap-3"
+    >
+      <div class="flex items-center gap-2.5 min-w-0">
+        <Loader2 v-if="store.requestingSignature" class="w-4 h-4 text-slate-400 animate-spin shrink-0" />
+        <Signature v-else class="w-4 h-4 text-emerald-600 shrink-0" />
+        <div class="min-w-0">
+          <p class="text-xs font-bold text-slate-800">
+            {{ store.requestingSignature ? 'Sending for signature…' : `Notarization: ${store.esignStatus || 'pending'}` }}
+          </p>
+          <p v-if="store.esignError" class="text-[11px] text-red-600 truncate">{{ store.esignError }}</p>
+          <a v-else-if="store.esignSigningUrl" :href="store.esignSigningUrl" target="_blank" rel="noopener" class="text-[11px] text-emerald-700 hover:underline">
+            View signing request →
+          </a>
+        </div>
+      </div>
+      <button
+        v-if="store.esignStatus && store.esignStatus !== 'completed'"
+        class="shrink-0 p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"
+        title="Refresh status"
+        @click="store.refreshSigningStatus"
+      >
+        <RefreshCw class="w-3.5 h-3.5" />
+      </button>
+    </div>
   </div>
 </template>

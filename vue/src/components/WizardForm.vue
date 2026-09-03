@@ -40,6 +40,13 @@ function reviewValue(v) {
           <input v-model="store.landlordName" type="text" placeholder="e.g. Ahmed Khalifa Al Suwaidi" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
         </div>
         <div>
+          <label class="text-xs font-semibold text-slate-600 mb-1.5 block">
+            Landlord Email
+            <span class="font-normal text-slate-400">(required only if you add Notarization)</span>
+          </label>
+          <input v-model="store.landlordEmail" type="email" placeholder="e.g. ahmed@example.com" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
+        </div>
+        <div>
           <label class="text-xs font-semibold text-slate-600 mb-1.5 block">Tenant Full Name</label>
           <input v-model="store.tenantName" type="text" placeholder="e.g. John Michael Smith" class="field-input w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm">
         </div>

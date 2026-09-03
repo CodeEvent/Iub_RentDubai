@@ -50,7 +50,12 @@ onMounted(() => store.fetchSavedNotices());
               <td class="px-5 py-3.5 text-slate-600 whitespace-nowrap">{{ n.noticeDate }}</td>
               <td class="px-5 py-3.5">
                 <div class="flex items-center gap-1.5">
-                  <span v-if="n.addOns?.notarization" class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Notarized</span>
+                  <span
+                    v-if="n.addOns?.notarization"
+                    class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                    :class="n.esign?.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : n.esign?.status ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'"
+                    :title="n.esign?.provider ? `via ${n.esign.provider}` : 'Not yet sent for signature'"
+                  >{{ n.esign?.status ? `Notarized · ${n.esign.status}` : 'Notarization due' }}</span>
                   <span v-if="n.addOns?.aiReview" class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">AI-Reviewed</span>
                   <span v-if="!n.addOns?.notarization && !n.addOns?.aiReview" class="text-xs text-slate-300 italic">None</span>
                 </div>

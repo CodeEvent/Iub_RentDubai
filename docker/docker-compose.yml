@@ -8,6 +8,39 @@ services:
     volumes:
       - ocr-models:/root/.paddlex
 
+  # Self-hosted e-signature engines behind the "Notarization Service"
+  # add-on (api/src/services/esign/) — DocuSeal is the primary provider,
+  # OpenSign the automatic fallback if DocuSeal is unreachable.
+  docuseal:
+    image: docuseal/docuseal:latest
+    ports:
+      - "3010:3000"
+    volumes:
+      - docuseal-data:/data
+    environment:
+      - FORCE_SSL=false
+
+  opensign-mongo:
+    image: mongo:latest
+    volumes:
+      - opensign-mongo-data:/data/db
+
+  opensign:
+    image: opensign/opensignserver:main
+    ports:
+      - "8081:8080"
+    volumes:
+      - opensign-files:/usr/src/app/files
+    environment:
+      - NODE_ENV=production
+      - APP_ID=rentshield
+      - MASTER_KEY=${OPENSIGN_MASTER_KEY:-change-me-in-prod}
+      - MONGODB_URI=mongodb://opensign-mongo:27017/opensign
+      - SERVER_URL=http://localhost:8081/app
+      - PUBLIC_URL=http://localhost:8081
+    depends_on:
+      - opensign-mongo
+
   api:
     build:
       context: ..
@@ -19,8 +52,18 @@ services:
     environment:
       - PORT=4000
       - OCR_SERVICE_URL=http://ocr:8001
+      - ESIGN_PRIMARY=docuseal
+      - ESIGN_FALLBACK=opensign
+      - DOCUSEAL_URL=http://docuseal:3000
+      - DOCUSEAL_API_TOKEN=${DOCUSEAL_API_TOKEN:-}
+      - OPENSIGN_URL=http://opensign:8080
+      - OPENSIGN_APP_ID=rentshield
+      - OPENSIGN_MASTER_KEY=${OPENSIGN_MASTER_KEY:-change-me-in-prod}
+      - OPENSIGN_SERVICE_USER_ID=${OPENSIGN_SERVICE_USER_ID:-}
     depends_on:
       - ocr
+      - docuseal
+      - opensign
 
   web:
     build:
@@ -34,3 +77,6 @@ services:
 volumes:
   api-data:
   ocr-models:
+  docuseal-data:
+  opensign-mongo-data:
+  opensign-files:

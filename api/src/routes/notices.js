@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { buildNotice, ALL_REASONS, noticePeriodDays, calculateTotal } from '@rentshield/shared';
+import { requestSigning, checkSigningStatus } from '../services/esign/index.js';
 
 export const notices = Router();
 
@@ -39,6 +40,13 @@ function rowSummary(row) {
     noticePeriodDays: noticePeriodDays(row.reason),
     addOns,
     totalPriceAed: calculateTotal(addOns),
+    landlordEmail: row.landlord_email,
+    esign: {
+      provider: row.esign_provider,
+      status: row.esign_status,
+      signingUrl: row.esign_signing_url,
+      signedDocumentUrl: row.esign_signed_document_url
+    },
     createdAt: row.created_at
   };
 }
@@ -64,11 +72,12 @@ notices.post('/', (req, res) => {
   const addOns = body.addOns || {};
 
   db.prepare(`
-    INSERT INTO notices (id, landlord_name, tenant_name, property_type, unit_no, building_name, plot_number, ejari_number, notice_date, reason, add_notarization, add_ai_review)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notices (id, landlord_name, landlord_email, tenant_name, property_type, unit_no, building_name, plot_number, ejari_number, notice_date, reason, add_notarization, add_ai_review)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     body.landlordName,
+    body.landlordEmail || null,
     body.tenantName,
     body.propertyType || 'Apartment',
     body.unitNo || null,
@@ -90,6 +99,67 @@ notices.get('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM notices WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Notice not found' });
   res.json({ notice: rowSummary(row), document: buildNotice(rowToInput(row)) });
+});
+
+// POST /api/notices/:id/notarize — routes the saved notice through a real
+// e-signature workflow (DocuSeal primary, OpenSign fallback). Requires
+// the notarization add-on to have been selected and a landlord email to
+// route the signing request to.
+notices.post('/:id/notarize', async (req, res) => {
+  const row = db.prepare('SELECT * FROM notices WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Notice not found' });
+  if (!row.add_notarization) {
+    return res.status(400).json({ error: 'Notarization add-on was not selected for this notice' });
+  }
+  if (!row.landlord_email) {
+    return res.status(400).json({ error: 'A landlord email is required to route the notarization request' });
+  }
+
+  const document = buildNotice(rowToInput(row));
+  const reason = ALL_REASONS[row.reason];
+
+  let result;
+  try {
+    result = await requestSigning(document, {
+      landlordName: row.landlord_name,
+      landlordEmail: row.landlord_email,
+      tenantName: row.tenant_name,
+      reasonLabel: reason ? reason.label : row.reason
+    });
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+
+  db.prepare(`
+    UPDATE notices
+    SET esign_provider = ?, esign_external_id = ?, esign_signing_url = ?, esign_status = ?, esign_requested_at = datetime('now')
+    WHERE id = ?
+  `).run(result.provider, result.externalId, result.signingUrl, result.status, row.id);
+
+  res.json({ provider: result.provider, status: result.status, signingUrl: result.signingUrl });
+});
+
+// GET /api/notices/:id/notarize/status — refreshes the signing status
+// from whichever provider originally handled the request.
+notices.get('/:id/notarize/status', async (req, res) => {
+  const row = db.prepare('SELECT * FROM notices WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Notice not found' });
+  if (!row.esign_provider || !row.esign_external_id) {
+    return res.status(400).json({ error: 'No notarization request has been made for this notice yet' });
+  }
+
+  let status;
+  try {
+    status = await checkSigningStatus(row.esign_provider, row.esign_external_id);
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+
+  db.prepare(`
+    UPDATE notices SET esign_status = ?, esign_signed_document_url = ? WHERE id = ?
+  `).run(status.status, status.signedDocumentUrl, row.id);
+
+  res.json({ provider: row.esign_provider, status: status.status, signedDocumentUrl: status.signedDocumentUrl });
 });
 
 // DELETE /api/notices/:id

@@ -12,6 +12,7 @@ export const useNoticeStore = defineStore('notice', {
   state: () => ({
     step: 0,
     landlordName: '',
+    landlordEmail: '',
     tenantName: '',
     propertyType: 'Apartment',
     unitNo: '',
@@ -26,6 +27,14 @@ export const useNoticeStore = defineStore('notice', {
     saveError: null,
     savedId: null,
     savedNotices: [],
+
+    // Real e-signature routing (DocuSeal primary, OpenSign fallback —
+    // see api/src/services/esign/). Populated after saveNotice() when
+    // the notarization add-on is selected.
+    esignStatus: null,
+    esignSigningUrl: null,
+    esignError: null,
+    requestingSignature: false,
 
     // Paywall simulation modal
     showPaymentModal: false,
@@ -48,6 +57,7 @@ export const useNoticeStore = defineStore('notice', {
       reason: s.reason
     }),
     isReadyToSave: (s) => !!(s.landlordName && s.tenantName && s.noticeDate && s.reason),
+    needsLandlordEmail: (s) => s.addOns.notarization && !s.landlordEmail,
     basePrice: () => BASE_PRICE_AED,
     addOnCatalog: () => ADD_ONS,
     totalPrice: (s) => calculateTotal(s.addOns)
@@ -69,6 +79,7 @@ export const useNoticeStore = defineStore('notice', {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             landlordName: this.landlordName,
+            landlordEmail: this.landlordEmail,
             tenantName: this.tenantName,
             propertyType: this.propertyType,
             unitNo: this.unitNo,
@@ -107,6 +118,35 @@ export const useNoticeStore = defineStore('notice', {
       }
     },
 
+    async requestNotarization() {
+      if (!this.savedId) return;
+      this.requestingSignature = true;
+      this.esignError = null;
+      try {
+        const res = await fetch(`/api/notices/${this.savedId}/notarize`, { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Notarization request failed (${res.status})`);
+        this.esignStatus = data.status;
+        this.esignSigningUrl = data.signingUrl;
+      } catch (err) {
+        this.esignError = err.message;
+      } finally {
+        this.requestingSignature = false;
+      }
+    },
+
+    async refreshSigningStatus() {
+      if (!this.savedId) return;
+      try {
+        const res = await fetch(`/api/notices/${this.savedId}/notarize/status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        this.esignStatus = data.status;
+      } catch {
+        // Status polling is a convenience — fail quietly, the user can retry.
+      }
+    },
+
     openPaymentModal() {
       this.paymentView = 'form';
       this.showPaymentModal = true;
@@ -125,6 +165,16 @@ export const useNoticeStore = defineStore('notice', {
       this.paid = true;
       await new Promise((r) => setTimeout(r, 1400));
       this.closePaymentModal();
+      if (this.addOns.notarization) {
+        if (!this.savedId) {
+          try {
+            await this.saveNotice();
+          } catch {
+            this.esignError = 'Could not save the notice, so notarization could not be requested.';
+          }
+        }
+        if (this.savedId) await this.requestNotarization();
+      }
       window.print();
     }
   }
