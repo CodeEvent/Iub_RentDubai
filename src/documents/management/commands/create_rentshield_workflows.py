@@ -12,7 +12,10 @@ from documents.models import WorkflowAction
 from documents.models import WorkflowActionEmail
 from documents.models import WorkflowActionWebhook
 from documents.models import WorkflowTrigger
+from documents.rentshield.custom_fields import AI_REVIEWED_TAG_NAME
+from documents.rentshield.custom_fields import NEEDS_AI_REVIEW_TAG_NAME
 from documents.rentshield.custom_fields import RENTSHIELD_TAG_NAME
+from documents.rentshield.custom_fields import TENANCY_CONTRACT_TAG_NAME
 from documents.rentshield.custom_fields import key_to_id_map
 
 STATUTORY_REASONS = ["sale", "personal", "demolition", "renovation"]
@@ -68,8 +71,16 @@ class Command(BaseCommand):
             defaults={"color": "#10b981"},
         )
         needs_ai_review_tag, _ = Tag.objects.get_or_create(
-            name="Needs AI Review",
+            name=NEEDS_AI_REVIEW_TAG_NAME,
             defaults={"color": "#f59e0b"},
+        )
+        Tag.objects.get_or_create(
+            name=AI_REVIEWED_TAG_NAME,
+            defaults={"color": "#059669"},
+        )
+        tenancy_contract_tag, _ = Tag.objects.get_or_create(
+            name=TENANCY_CONTRACT_TAG_NAME,
+            defaults={"color": "#6366f1"},
         )
         statutory_type, _ = DocumentType.objects.get_or_create(
             name="12-Month Statutory Notice",
@@ -280,6 +291,36 @@ class Command(BaseCommand):
             enabled=False,
         )
 
+        analyze_uploaded_url = f"{settings.RENTSHIELD_INTERNAL_URL}/api/documents/notice/analyze-uploaded/"
+        ai_review_webhook_kwargs = {
+            "url": analyze_uploaded_url,
+            "use_params": True,
+            "as_json": True,
+            "params": {"doc_id": "{{ doc_id }}"},
+            "include_document": False,
+        }
+
+        self._create_workflow(
+            name="RentShield: AI review uploaded contracts (by filename)",
+            order=11,
+            trigger_kwargs={
+                "type": WorkflowTrigger.WorkflowTriggerType.DOCUMENT_ADDED,
+                "filter_filename": "*contract*",
+            },
+            trigger_not_tags=[rentshield_tag],
+            action_kwargs={"type": WorkflowAction.WorkflowActionType.WEBHOOK},
+            webhook_kwargs=ai_review_webhook_kwargs,
+        )
+
+        self._create_workflow(
+            name="RentShield: AI review uploaded contracts (by tag)",
+            order=12,
+            trigger_kwargs={"type": WorkflowTrigger.WorkflowTriggerType.DOCUMENT_ADDED},
+            trigger_tags=[tenancy_contract_tag],
+            action_kwargs={"type": WorkflowAction.WorkflowActionType.WEBHOOK},
+            webhook_kwargs=ai_review_webhook_kwargs,
+        )
+
         self._create_workflow(
             name="RentShield: restrict sensitive notices",
             order=10,
@@ -311,7 +352,13 @@ class Command(BaseCommand):
                 "filename) -- custom field values (landlord name, reason, "
                 "etc.) are NOT available in those templates. The receiving "
                 "webhook endpoint should fetch full details via "
-                "GET /api/documents/<doc_id>/ using the id it's given.",
+                "GET /api/documents/<doc_id>/ using the id it's given.\n"
+                "  - Workflows #11/#12 (AI review on upload) call back into "
+                f"this same server at {analyze_uploaded_url} -- if this "
+                "Django process isn't reachable at that address from its own "
+                "Celery worker (e.g. in a docker-compose/production "
+                "topology), set PAPERLESS_RENTSHIELD_INTERNAL_URL and "
+                "re-run this command.",
             ),
         )
 
@@ -323,6 +370,7 @@ class Command(BaseCommand):
         trigger_kwargs,
         action_kwargs,
         trigger_tags=None,
+        trigger_not_tags=None,
         email_kwargs=None,
         webhook_kwargs=None,
         action_tags=None,
@@ -337,6 +385,8 @@ class Command(BaseCommand):
         trigger = WorkflowTrigger.objects.create(**trigger_kwargs)
         if trigger_tags:
             trigger.filter_has_tags.set(trigger_tags)
+        if trigger_not_tags:
+            trigger.filter_has_not_tags.set(trigger_not_tags)
 
         if email_kwargs:
             action_kwargs = {**action_kwargs, "email": WorkflowActionEmail.objects.create(**email_kwargs)}

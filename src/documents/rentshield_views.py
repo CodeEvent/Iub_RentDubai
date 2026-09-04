@@ -196,6 +196,33 @@ def notarize_view(request, document_id: int):
     )
 
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def analyze_uploaded_view(request):
+    """POST /api/documents/notice/analyze-uploaded/ {"doc_id": <id>} --
+    dispatches the AI compliance-review pipeline for an EXISTING
+    paperless-ngx Document (already uploaded through paperless-ngx's own
+    native uploader -- no file in this request) and returns immediately
+    with a Celery task id. This is what the "AI suggestions on uploaded
+    contracts" Workflow's webhook action calls (see
+    manage.py create_rentshield_workflows); paperless-ngx's own Workflow
+    webhooks time out after 5 seconds, so this must not do the actual
+    docling-service call inline -- see documents.tasks.run_ai_review_task.
+    """
+    from documents.tasks import run_ai_review_task
+
+    doc_id = request.data.get("doc_id") or request.data.get("document_id")
+    if not doc_id:
+        return Response({"error": "doc_id is required"}, status=400)
+    get_object_or_404(Document, id=doc_id)  # 404 early rather than queuing a task for nothing
+
+    use_deepseek_ocr = str(request.data.get("use_deepseek_ocr", "")).lower() == "true"
+    async_task = run_ai_review_task.apply_async(
+        kwargs={"document_id": int(doc_id), "use_deepseek_ocr": use_deepseek_ocr},
+    )
+    return Response({"task_id": async_task.id})
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def notarize_status_view(request, document_id: int):

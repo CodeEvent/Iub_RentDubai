@@ -143,6 +143,65 @@ def _set_custom_field_value(document: Document, key: str, value: object) -> None
     )
 
 
+def run_ai_review(document: Document, use_deepseek_ocr: bool = False) -> dict:
+    """Runs the AI compliance-review pipeline against `document`'s own
+    file: extracts text (docling-service, or deepseek-ocr-service for a
+    hard scan), builds the Article-25 citation graph against it
+    (documents.rentshield.citation_graph), and writes the result back
+    onto that same Document's own CustomFieldInstance rows -- a
+    human-readable summary plus a findings count -- then swaps its
+    "Needs AI Review" tag for "AI-Reviewed".
+
+    Runs synchronously; callers on a request/response path (e.g. a
+    Workflow webhook, which paperless-ngx gives only 5 seconds) must
+    dispatch this via a Celery task instead of calling it directly --
+    see documents.tasks.run_ai_review_task.
+    """
+    from documents.rentshield.custom_fields import AI_REVIEWED_TAG_NAME
+    from documents.rentshield.custom_fields import NEEDS_AI_REVIEW_TAG_NAME
+    from documents.rentshield.document_analysis import analyze_document
+    from documents.rentshield.citation_graph import build_citation_graph
+
+    content = document.source_path.read_bytes()
+    result = analyze_document(
+        document.original_filename or document.filename or "document",
+        content,
+        document.mime_type,
+        use_deepseek_ocr=use_deepseek_ocr,
+    )
+    graph = build_citation_graph(result.get("text"))
+
+    findings = [edge for edge in graph["edges"] if edge["relation"] in ("satisfies", "violates")]
+    if findings:
+        lines = [
+            f"{'✓' if edge['relation'] == 'satisfies' else '✗'} {edge.get('note', edge['to'])}"
+            for edge in findings
+        ]
+        summary = "\n".join(lines)
+    else:
+        summary = "No notice-period or service-method clauses were detected in this document."
+    if graph.get("ejari_number"):
+        summary += f"\n\nEjari No. found: {graph['ejari_number']}"
+
+    _set_custom_field_value(document, "ai_review_summary", summary)
+    _set_custom_field_value(document, "ai_review_findings_count", graph["violation_count"])
+
+    needs_review_tag = Tag.objects.filter(name=NEEDS_AI_REVIEW_TAG_NAME).first()
+    if needs_review_tag:
+        document.tags.remove(needs_review_tag)
+    reviewed_tag, _ = Tag.objects.get_or_create(
+        name=AI_REVIEWED_TAG_NAME,
+        defaults={"color": "#059669"},
+    )
+    document.tags.add(reviewed_tag)
+
+    return {
+        "summary": summary,
+        "violation_count": graph["violation_count"],
+        "has_violation": graph["has_violation"],
+    }
+
+
 def read_notice_fields(document: Document) -> dict:
     """Reads a Document's RentShield CustomFieldInstance values back into
     a plain dict keyed by the same short field names generate_and_consume()

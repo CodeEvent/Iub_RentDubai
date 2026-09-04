@@ -16,6 +16,9 @@ from __future__ import annotations
 from documents.models import CustomField
 
 RENTSHIELD_TAG_NAME = "RentShield Notice"
+TENANCY_CONTRACT_TAG_NAME = "Tenancy Contract"
+AI_REVIEWED_TAG_NAME = "AI-Reviewed"
+NEEDS_AI_REVIEW_TAG_NAME = "Needs AI Review"
 
 PROPERTY_TYPE_OPTIONS = [
     {"id": "Apartment", "label": "Apartment"},
@@ -63,6 +66,8 @@ CUSTOM_FIELD_DEFS: dict[str, tuple[str, dict | None]] = {
     "RentShield: E-Sign Signing URL": (CustomField.FieldDataType.URL, None),
     "RentShield: E-Sign Status": (CustomField.FieldDataType.STRING, None),
     "RentShield: E-Sign Signed Document URL": (CustomField.FieldDataType.URL, None),
+    "RentShield: AI Review Summary": (CustomField.FieldDataType.LONG_TEXT, None),
+    "RentShield: AI Review Findings Count": (CustomField.FieldDataType.INT, None),
 }
 
 # Short keys used everywhere in Python/TypeScript code that isn't the
@@ -89,6 +94,8 @@ FIELD_KEYS: dict[str, str] = {
     "esign_signing_url": "RentShield: E-Sign Signing URL",
     "esign_status": "RentShield: E-Sign Status",
     "esign_signed_document_url": "RentShield: E-Sign Signed Document URL",
+    "ai_review_summary": "RentShield: AI Review Summary",
+    "ai_review_findings_count": "RentShield: AI Review Findings Count",
 }
 
 

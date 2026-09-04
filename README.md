@@ -267,6 +267,61 @@ reachable via `POST /api/documents/notice/analyze/`.
   confirmed directly. Real inference needs a CUDA GPU deployment (see
   `deepseek-ocr-service/README.md` and the `gpu` Compose profile).
 
+## AI Compliance Review — now actually wired up, not just a price toggle
+
+Before this, "Add AI Compliance Review" in the notice form was a real
+`CustomField` and a real line on the price total — with **nothing behind
+it**. `documents/rentshield/document_analysis.py`'s `analyze_document()`
+and `citation_graph.py`'s `build_citation_graph()` existed and were unit-
+verified, but nothing in the actual notice-creation flow ever called
+them, and nothing persisted a result anywhere. That gap is now closed:
+
+1. Upload a tenancy contract through paperless-ngx's **own native
+   uploader** — no new frontend was built for this. Either name the file
+   with "contract" in it, or tag it `Tenancy Contract` after upload.
+2. Two Workflows created by `manage.py create_rentshield_workflows`
+   (#11/#12, one trigger on filename, one on tag) fire automatically on
+   `Document Added` and call a webhook back into this same Django
+   process at `/api/documents/notice/analyze-uploaded/`.
+3. That endpoint (`documents/rentshield_views.py::analyze_uploaded_view`)
+   only dispatches a Celery task and returns — paperless-ngx's own
+   Workflow webhooks time out after 5 seconds, and the actual analysis
+   (a docling-service HTTP call plus the citation graph) takes longer
+   than that.
+4. `documents.tasks.run_ai_review_task` → `documents/rentshield/service.py`'s
+   `run_ai_review()` does the real work: reads the document's own file
+   (`document.source_path`), calls `analyze_document()`, runs
+   `build_citation_graph()` against the extracted text, and writes the
+   result back onto **that same Document's own CustomFieldInstance
+   rows** — `RentShield: AI Review Summary` (a human-readable ✓/✗ list
+   citing the specific Article 25 provision each clause satisfies or
+   violates) and `RentShield: AI Review Findings Count` — then swaps its
+   `Needs AI Review` tag for `AI-Reviewed`.
+
+**Verified end-to-end, not just unit-level**: uploaded a real test
+document via `POST /api/documents/post_document/` (the same endpoint
+paperless-ngx's own UI upload button hits) containing a deliberately
+non-compliant 30-day clause, a WhatsApp service-of-notice clause, a valid
+Notary Public clause, and an Ejari number; confirmed via the Celery log
+that the filename-based Workflow trigger matched and fired the webhook;
+confirmed the webhook hit `analyze-uploaded` and dispatched the Celery
+task; and confirmed via `GET /api/documents/<id>/` that the resulting
+custom fields correctly flagged both violations, correctly credited the
+valid clause, and correctly extracted the Ejari number — all with zero
+manual intervention after the initial upload.
+
+One real bug surfaced during this verification and is worth knowing
+about, not just a passing curiosity: the **first** `run_ai_review_task`
+run inside a freshly-started Celery worker took far longer than a direct
+synchronous call of the same function (which returned near-instantly) —
+almost certainly an httpx/connection-pool cold-start cost specific to a
+freshly-forked prefork worker's first outbound HTTP call. Every
+subsequent run on the same warmed-up worker completed promptly. Not a
+logic bug (confirmed by running `run_ai_review()` directly in
+`manage.py shell`, which worked immediately and correctly on the first
+document too) — just a first-request latency spike to expect after a
+worker restart, not a stall to debug.
+
 ## Running it locally
 
 No Docker daemon is assumed — this follows paperless-ngx's own
@@ -440,7 +495,7 @@ cd src-ui && pnpm install && pnpm start   # http://localhost:4200
 
 ## Workflows
 
-`manage.py create_rentshield_workflows` idempotently creates 10 paperless-ngx
+`manage.py create_rentshield_workflows` idempotently creates 12 paperless-ngx
 native Workflows (`documents/management/commands/create_rentshield_workflows.py`)
 built entirely on paperless-ngx's own Workflow engine (Manage > Workflows) —
 no custom trigger code. Safe to re-run; skips anything already created by
@@ -467,6 +522,10 @@ name, so edits made afterward in the UI aren't clobbered.
 10. **Restrict sensitive notices** — Personal Use/Recovery and Demolition/
     Renovation notices (real legal exposure if mishandled) get view/change
     permissions limited to a `Lawyer` group.
+11/12. **AI review on upload** — fires the real AI Compliance Review
+    pipeline (see below) automatically on any document uploaded through
+    paperless-ngx's own uploader with "contract" in the filename or
+    tagged `Tenancy Contract` — no custom UI needed for this one at all.
 
 **Real, load-bearing limitations, not glossed over:**
 - Workflows #1, #2, #3, #4, and #9 are created **disabled**, with
@@ -489,6 +548,15 @@ name, so edits made afterward in the UI aren't clobbered.
   object-level permissions configured beyond what the workflow itself
   grants — it's a minimal placeholder for the role-based permissions work
   described below, not a finished access-control setup.
+- Workflows #11/#12's webhook is `settings.RENTSHIELD_INTERNAL_URL`
+  (default `http://localhost:8000`, env var
+  `PAPERLESS_RENTSHIELD_INTERNAL_URL`) — this Django process calling
+  *itself* from its own Celery worker. Correct for a single-host dev
+  setup; in docker-compose/production, where the worker and web process
+  may not both resolve `localhost` to the same container, set that env
+  var and re-run `create_rentshield_workflows` (it only creates
+  workflows that don't already exist by name — delete the two AI-review
+  ones first if you need to change an already-created URL).
 
 ## Not done yet (named, not silently skipped)
 

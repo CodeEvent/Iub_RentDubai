@@ -16,6 +16,7 @@ from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
 from documents.rentshield_views import analyze_document_view
+from documents.rentshield_views import analyze_uploaded_view
 from documents.rentshield_views import check_service_method_view
 from documents.rentshield_views import create_notice_view
 from documents.rentshield_views import legal_skill_detail_view
@@ -184,6 +185,11 @@ urlpatterns = [
                                 "^notice/analyze/",
                                 analyze_document_view,
                                 name="rentshield-analyze-document",
+                            ),
+                            re_path(
+                                "^notice/analyze-uploaded/",
+                                analyze_uploaded_view,
+                                name="rentshield-analyze-uploaded",
                             ),
                             re_path(
                                 r"^notice/legal-skills/(?P<skill_id>[\w-]+)/$",

@@ -1203,6 +1203,21 @@ WEBHOOKS_ALLOW_INTERNAL_REQUESTS = get_bool_from_env(
     "true",
 )
 
+# The base URL this Django process is reachable at, from its OWN Celery
+# worker -- used only to build the self-referential webhook URL for
+# manage.py create_rentshield_workflows' AI-review-on-upload workflows
+# (documents/rentshield/service.py's run_ai_review() runs too long for a
+# Workflow's own 5s webhook timeout, so the webhook calls back into this
+# same server to dispatch it as an async Celery task instead). Cannot be
+# derived from PAPERLESS_URL, which is often unset in a single-host dev
+# setup and would produce a relative path a webhook can't actually POST
+# to. Override for docker-compose/production topologies where the
+# process isn't reachable at localhost from its own worker.
+RENTSHIELD_INTERNAL_URL = os.getenv(
+    "PAPERLESS_RENTSHIELD_INTERNAL_URL",
+    "http://localhost:8000",
+).rstrip("/")
+
 ###############################################################################
 # Remote Parser                                                               #
 ###############################################################################
