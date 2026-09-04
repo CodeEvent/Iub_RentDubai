@@ -558,6 +558,68 @@ name, so edits made afterward in the UI aren't clobbered.
   workflows that don't already exist by name — delete the two AI-review
   ones first if you need to change an already-created URL).
 
+## Dashboards
+
+`manage.py create_rentshield_dashboards` idempotently creates 8 paperless-ngx
+native Saved Views (`documents/management/commands/create_rentshield_dashboards.py`)
+and pins them to show on the Dashboard (and in the sidebar) for every existing
+superuser — paperless-ngx's own dashboard-widget mechanism (Manage > Saved
+Views), no custom dashboard UI or bespoke stats endpoint. Each one is a real,
+live filter over the same custom fields and tags the notice form and
+workflows already write, so the numbers move as notices/contracts come in —
+not a static count.
+
+1. **All Notices** — every document tagged `RentShield Notice`. The top-level
+   "how many notices exist" view.
+2. **Statutory Notices (365-day)** — reason in sale/personal/demolition/
+   renovation, the notices with the 12-month legal runway.
+3. **Breach Notices (30-day)** — reason in nonpayment/sublease, the ones on
+   the tight legal clock.
+4. **Notarization Pending** — notarization add-on requested but no e-sign
+   status recorded yet; the queue of requests that haven't actually been
+   dispatched.
+5. **Sensitive Notices (Legal Review)** — personal use/demolition/
+   renovation, the same set Workflow #10 restricts to the `Lawyer` group;
+   surfaced here so legal staff have one place to see what they're
+   responsible for.
+6. **Needs AI Review** — tagged `Needs AI Review` by Workflow #6; the queue
+   the AI Compliance Review pipeline hasn't processed yet.
+7. **Contracts Under Review** — tagged `Tenancy Contract` but not yet
+   `AI-Reviewed`; uploaded contracts still waiting on Workflows #11/#12 to
+   pick them up.
+8. **Non-Compliant Contracts** — `RentShield: AI Review Findings Count` >= 1;
+   the actual output of the AI review pipeline, not just that it ran.
+
+Verified end-to-end, not just unit-level: created all 8 via the management
+command, confirmed each view's stored `filter_rules` produces the correct,
+distinct document set by replaying the equivalent `custom_field_query`
+directly against `/api/documents/`, then loaded paperless-ngx's own
+`/dashboard` page in a real browser and confirmed all 8 widgets render with
+the correct titles, tags, and counts (screenshot: All Notices 4, Breach
+Notices 1, Non-Compliant Contracts 2 with the two actually-flagged test
+contracts, Statutory Notices 3, Sensitive Notices 2).
+
+**Real, load-bearing limitations, not glossed over:**
+- Dashboard/sidebar visibility is a **per-user preference**
+  (`UiSettings.settings.saved_views.dashboard_views_visible_ids`/
+  `sidebar_views_visible_ids`), not a field on the Saved View itself —
+  confirmed by reading the `SavedViewSerializer`, where
+  `show_on_dashboard`/`show_in_sidebar` are only populated for legacy API
+  versions (< 10); the real, current source of truth is
+  `GET /api/ui_settings/`. The command only pins these 8 views for accounts
+  that are already superusers at the time it runs — any account created
+  later (including the tenant/notary/lawyer/owner roles from the
+  permissions work below) needs the same pinning done for it, or a user can
+  star/unstar any Saved View themselves from the sidebar.
+- There is no `?view_id=` document-filtering parameter in the backend —
+  paperless-ngx's Angular UI resolves a Saved View into the equivalent
+  direct query params (`custom_field_query`, `tags__id__in`, etc.)
+  client-side. Verifying a view's correctness means replaying that
+  equivalent query directly, not querying by view id.
+- Re-running the command is safe: it skips any view that already exists by
+  name, and only *adds* newly-created view ids to a user's dashboard/sidebar
+  list — it won't re-add a view a user deliberately unpinned.
+
 ## Not done yet (named, not silently skipped)
 
 - **Auth wiring**: every `documents/rentshield_views.py` endpoint is
