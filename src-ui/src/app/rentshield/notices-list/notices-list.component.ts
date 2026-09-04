@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common'
 import { Component, computed, inject, signal } from '@angular/core'
 import { RouterModule } from '@angular/router'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
+import { TourNgBootstrap } from 'ngx-ui-tour-ng-bootstrap'
 import {
   Notice,
   RentshieldApiService,
@@ -10,7 +11,7 @@ import {
 @Component({
   selector: 'app-notices-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, NgxBootstrapIconsModule],
+  imports: [CommonModule, RouterModule, NgxBootstrapIconsModule, TourNgBootstrap],
   templateUrl: './notices-list.component.html',
   styleUrl: './notices-list.component.scss',
 })

@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common'
 import { Component, inject, signal } from '@angular/core'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
+import { TourNgBootstrap } from 'ngx-ui-tour-ng-bootstrap'
 import {
   LegalSkill,
   LegalSkillSummary,
@@ -42,7 +43,7 @@ function renderSkillMarkdown(md: string): string {
 @Component({
   selector: 'app-legal-skills',
   standalone: true,
-  imports: [CommonModule, NgxBootstrapIconsModule],
+  imports: [CommonModule, NgxBootstrapIconsModule, TourNgBootstrap],
   templateUrl: './legal-skills.component.html',
   styleUrl: './legal-skills.component.scss',
 })

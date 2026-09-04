@@ -8,6 +8,7 @@ import {
 } from '@angular/forms'
 import { RouterModule } from '@angular/router'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
+import { TourNgBootstrap } from 'ngx-ui-tour-ng-bootstrap'
 import {
   AddOn,
   Reason,
@@ -17,7 +18,7 @@ import {
 @Component({
   selector: 'app-notice-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule, NgxBootstrapIconsModule],
+  imports: [CommonModule, ReactiveFormsModule, RouterModule, NgxBootstrapIconsModule, TourNgBootstrap],
   templateUrl: './notice-form.component.html',
   styleUrl: './notice-form.component.scss',
 })

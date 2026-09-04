@@ -838,4 +838,71 @@ above.
   — pricing/reasons update automatically if `pricing.py`/`constants.py`
   change, but nothing on it reflects a specific user's account.
 
+## Interactive Product Tour
+
+RentShield's onboarding walkthrough extends paperless-ngx's own existing
+guided tour (`ngx-ui-tour-ng-bootstrap`, already a dependency, already
+wired up in `app.component.ts`/`.html` for the stock app) rather than
+adding a second tour mechanism. It's one continuous, 20-step tour: Dashboard
+→ RentShield's dashboard widgets → generate a notice (reason picker,
+add-ons) → the Notices list (stats, table) → Legal Skills → then straight
+into paperless-ngx's own stock steps (Documents, filters, Saved Views,
+Tags, Mail, Workflows, Tasks, Settings) → outro. Same "Start tour" entry
+points as stock paperless-ngx: the welcome widget on an empty dashboard, or
+the permanent button under Settings.
+
+Each step is a real popover (`ngb-popover-window`) anchored to a real
+element via the `tourAnchor` directive, with a spotlight cutout in a
+backdrop over the rest of the page — not a custom overlay of our own.
+RentShield's new anchors live in `app-frame.component.html` (the "New
+Notice"/"Notices"/"Legal Skills" nav items, on the `<li>` wrapper, matching
+the stock nav-item anchors) and inside `notice-form`, `notices-list`, and
+`legal-skills` components' own templates (the reason picker, add-ons
+section, stat cards, notice table, skills list). The new steps themselves
+live in the same array as the stock ones, in `app.component.ts`.
+
+**Bugs found and fixed while building this** (both real, both would have
+made new anchors silently non-functional or broken the *whole* tour):
+- The 3 new page-level components (`notice-form`, `notices-list`,
+  `legal-skills`) are standalone Angular components that never imported
+  anything tour-related — `tourAnchor` was inert on them: the attribute
+  rendered in the DOM (confirmed via a direct DOM check) but
+  `TourAnchorNgBootstrapDirective` was never actually applied, so the
+  anchor never registered with `TourService` at all. Fixed by adding
+  `TourNgBootstrap` (the directive bundle export, same as `app.component.ts`
+  already uses) to each component's own `imports` array.
+- The first version of the 3 new nav-item anchors was placed on the `<a>`
+  tag itself — which already carries its own `ngbPopover` for the
+  slim-sidebar hover tooltip. Every *existing* stock nav-item anchor
+  (`tour.tags`, `tour.mail`, `tour.workflows`, `tour.settings`,
+  `tour.file-tasks`) is on the parent `<li>`, specifically avoiding that
+  same element. Because `ngx-ui-tour-core`'s anchor registry throws on a
+  genuinely duplicate `anchorId` but silently does nothing useful when a
+  tour step's target anchor is present-but-non-interactive this way, the
+  step just... never showed a popover, and because it wasn't marked
+  `isOptional`, the *entire tour silently ended* the moment it reached that
+  step — found by reading `ngx-ui-tour-core`'s actual `showStep()`/
+  `register()` source in `node_modules` after black-box testing gave no
+  console error to go on. Fixed by moving the anchor to the `<li>`, matching
+  the stock pattern exactly.
+
+Verified end-to-end: a real Playwright run started the tour, clicked
+"Next" through all 20 steps, and logged each step's URL and popover text —
+every RentShield step landed on the right page with the right content, in
+order, with zero anchor-registration warnings, flowing seamlessly into the
+unmodified stock steps through to the outro.
+
+**Real, load-bearing limitations, not glossed over:**
+- Several RentShield steps are `isOptional: true` (skipped, not shown, if
+  their anchor isn't in the DOM) — the "New Notice" nav item only exists
+  for a user with `add_document` permission (see Roles & Permissions
+  above), so a Tenant or Notary taking the tour won't see that step; this
+  is intentional, not a bug, and mirrors how the stock tour already treats
+  `tour.tags`/`tour.mail`/etc. as effectively permission-gated (their
+  anchors are behind the same `*pngxIfPermissions` checks).
+- The tour doesn't adapt its *wording* per role — a Tenant who reaches the
+  notarization add-on step reads copy written from a Property Owner's
+  perspective. Role-aware tour copy is a real, separate enhancement, not
+  attempted here.
+
 ## Not done yet (named, not silently skipped)
