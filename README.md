@@ -438,6 +438,58 @@ uv run manage.py createsuperuser
 cd src-ui && pnpm install && pnpm start   # http://localhost:4200
 ```
 
+## Workflows
+
+`manage.py create_rentshield_workflows` idempotently creates 10 paperless-ngx
+native Workflows (`documents/management/commands/create_rentshield_workflows.py`)
+built entirely on paperless-ngx's own Workflow engine (Manage > Workflows) —
+no custom trigger code. Safe to re-run; skips anything already created by
+name, so edits made afterward in the UI aren't clobbered.
+
+1. **Statutory expiry reminder** — scheduled off `RentShield: Notice Date`
+   + 335 days, statutory reasons only. Alerts staff that a 12-month notice's
+   legal period is closing.
+2. **Breach deadline reminder** — same idea, +25 days, breach reasons only.
+3. **Notarization requested, not dispatched** — fires on notice creation
+   when the notarization add-on is set but no e-sign status exists yet.
+4. **Notarization stalled** — same condition, recurring every 2 days, so a
+   stuck request keeps getting flagged instead of alerting once and going
+   quiet.
+5. **File into a Tenancy Notices storage path** — keeps generated notices
+   out of the general document inbox.
+6. **AI-review queue tag** — tags notices that requested the AI Compliance
+   Review add-on with `Needs AI Review`, turning a buried boolean field into
+   an actual filterable queue.
+7/8. **Document-type split** — tags statutory vs. breach notices with a real
+   paperless-ngx Document Type, so the built-in type filter is useful here.
+9. **Notify an external tool** — webhook on every new notice, for syncing
+   into a CRM or other external system (see Twenty CRM integration below).
+10. **Restrict sensitive notices** — Personal Use/Recovery and Demolition/
+    Renovation notices (real legal exposure if mishandled) get view/change
+    permissions limited to a `Lawyer` group.
+
+**Real, load-bearing limitations, not glossed over:**
+- Workflows #1, #2, #3, #4, and #9 are created **disabled**, with
+  placeholder values (`changeme@example.com`, `https://example.com/rentshield-webhook`)
+  — confirmed this via a real round trip through `GET /api/workflow_triggers/`
+  and `/api/workflow_actions/`, not assumed. Edit them with real values under
+  Manage > Workflows, then enable.
+- paperless-ngx's own Workflow email/webhook templates only expose a fixed
+  placeholder set (`title`, `doc_url`, `doc_id`, `added`, `created`,
+  `correspondent`, `document_type`, `owner_username`, `filename` —
+  `documents/templating/workflows.py`'s `_known_placeholder_names`) —
+  **custom field values are not available in those templates.** A workflow
+  can't put the landlord's name or the actual reason into an email body
+  directly; the receiving system should call
+  `GET /api/documents/<doc_id>/` with the id the webhook/email gives it to
+  get the full RentShield custom-field data.
+- Email workflows do nothing until paperless-ngx's own `PAPERLESS_EMAIL_*`
+  settings are configured (`settings.EMAIL_ENABLED` gates it entirely).
+- Workflow #10's `Lawyer` group is created with no members and no
+  object-level permissions configured beyond what the workflow itself
+  grants — it's a minimal placeholder for the role-based permissions work
+  described below, not a finished access-control setup.
+
 ## Not done yet (named, not silently skipped)
 
 - **Auth wiring**: every `documents/rentshield_views.py` endpoint is
