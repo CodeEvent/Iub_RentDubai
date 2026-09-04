@@ -22,7 +22,6 @@ from documents.rentshield_views import legal_skill_detail_view
 from documents.rentshield_views import legal_skills_view
 from documents.rentshield_views import notarize_status_view
 from documents.rentshield_views import notarize_view
-from documents.rentshield_views import preview_notice_view
 from documents.rentshield_views import pricing_view
 from documents.rentshield_views import reasons_view
 from documents.views import BulkDownloadView
@@ -175,11 +174,6 @@ urlpatterns = [
                                 "^notice/pricing/",
                                 pricing_view,
                                 name="rentshield-pricing",
-                            ),
-                            re_path(
-                                "^notice/preview/",
-                                preview_notice_view,
-                                name="rentshield-preview-notice",
                             ),
                             re_path(
                                 "^notice/create/",

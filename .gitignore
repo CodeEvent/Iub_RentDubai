@@ -85,3 +85,4 @@ legacy-v1/**/*.pyc
 # --- shared ---
 .DS_Store
 .env
+dump.rdb

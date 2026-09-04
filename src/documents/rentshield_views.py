@@ -23,13 +23,10 @@ from rest_framework.response import Response
 from documents.models import Document
 from documents.rentshield.citation_graph import build_citation_graph
 from documents.rentshield.constants import ALL_REASONS
-from documents.rentshield.constants import notice_period_days
 from documents.rentshield.document_analysis import DocumentAnalysisError
 from documents.rentshield.document_analysis import analyze_document
-from documents.rentshield.notice_builder import build_notice
 from documents.rentshield.pricing import ADD_ONS
 from documents.rentshield.pricing import BASE_PRICE_AED
-from documents.rentshield.pricing import calculate_total
 from documents.rentshield.service import check_notarization_status
 from documents.rentshield.service import generate_and_consume
 from documents.rentshield.service import request_notarization
@@ -41,45 +38,6 @@ from documents.rentshield.skills_lib import load_skills
 # rentshield app): paperless-ngx's own auth (django-allauth / DRF token
 # auth) governs the rest of the app; wiring these into it is Phase 2,
 # not silently skipped.
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def preview_notice_view(request):
-    """POST /api/documents/notice/preview/ -- renders the bilingual
-    notice content for the given (unsaved) fields, same builder as
-    notice creation and the same total-price math, without persisting
-    anything. Powers the Angular wizard's live preview -- kept
-    server-side so the legal wording has exactly one source of truth
-    instead of being re-implemented in TypeScript.
-    """
-    data = request.data
-    if not data.get("reason") or data["reason"] not in ALL_REASONS:
-        return Response({"error": "A recognized reason is required"}, status=400)
-
-    document = build_notice(
-        {
-            "landlord_name": data.get("landlord_name"),
-            "tenant_name": data.get("tenant_name"),
-            "property_type": data.get("property_type"),
-            "unit_no": data.get("unit_no"),
-            "building_name": data.get("building_name"),
-            "plot_number": data.get("plot_number"),
-            "ejari_number": data.get("ejari_number"),
-            "notice_date": data.get("notice_date"),
-            "reason": data.get("reason"),
-        },
-    )
-    total_price_aed = calculate_total(
-        {"notarization": bool(data.get("add_notarization")), "ai_review": bool(data.get("add_ai_review"))},
-    )
-    return Response(
-        {
-            "document": document,
-            "notice_period_days": notice_period_days(data["reason"]),
-            "total_price_aed": total_price_aed,
-        },
-    )
 
 
 @api_view(["POST"])

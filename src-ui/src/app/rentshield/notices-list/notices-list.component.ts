@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common'
-import { Component, inject, signal } from '@angular/core'
+import { Component, computed, inject, signal } from '@angular/core'
 import { RouterModule } from '@angular/router'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
 import {
@@ -19,6 +19,17 @@ export class NoticesListComponent {
 
   notices = signal<Notice[]>([])
   loading = signal(true)
+
+  total = computed(() => this.notices().length)
+  statutory = computed(
+    () => this.notices().filter((n) => n.notice_period_days === 365).length
+  )
+  breach = computed(
+    () => this.notices().filter((n) => n.notice_period_days === 30).length
+  )
+  aiReviewed = computed(
+    () => this.notices().filter((n) => n.add_ai_review).length
+  )
 
   constructor() {
     this.api.listNotices().subscribe({

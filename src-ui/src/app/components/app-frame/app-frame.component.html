@@ -104,6 +104,35 @@
           </li>
         </ul>
 
+        <div class="nav-group mt-3 mb-1">
+          <h6 class="sidebar-heading px-3 text-muted">
+            <span i18n>Notices</span>
+          </h6>
+          <ul class="nav flex-column mb-2">
+            <li class="nav-item app-link">
+              <a class="nav-link" routerLink="notice/new" routerLinkActive="active" (click)="closeMenu()"
+                ngbPopover="New Notice" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
+                container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
+                <i-bs class="me-2" name="file-earmark-plus"></i-bs><span class="nav-link-label"><ng-container i18n>New Notice</ng-container></span>
+              </a>
+            </li>
+            <li class="nav-item app-link">
+              <a class="nav-link" routerLink="notices" routerLinkActive="active" (click)="closeMenu()"
+                ngbPopover="Notices" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
+                container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
+                <i-bs class="me-2" name="journals"></i-bs><span class="nav-link-label"><ng-container i18n>Notices</ng-container></span>
+              </a>
+            </li>
+            <li class="nav-item app-link">
+              <a class="nav-link" routerLink="legal-skills" routerLinkActive="active" (click)="closeMenu()"
+                ngbPopover="Legal Skills" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
+                container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
+                <i-bs class="me-2" name="bank"></i-bs><span class="nav-link-label"><ng-container i18n>Legal Skills</ng-container></span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
         <div class="nav-group mt-3 mb-1" *pngxIfPermissions="{ action: PermissionAction.View, type: PermissionType.SavedView }">
           @if (savedViewService.sidebarViews?.length > 0) {
             <h6 class="sidebar-heading px-3 text-muted">

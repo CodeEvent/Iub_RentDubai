@@ -4,34 +4,6 @@ import { Observable, forkJoin, interval, of } from 'rxjs'
 import { filter, map, shareReplay, switchMap, take } from 'rxjs/operators'
 import { environment } from 'src/environments/environment'
 
-export interface NoticeSide {
-  kicker: string
-  title: string
-  subtitle: string
-  date_label: string
-  date_value: string
-  deadline_label: string
-  deadline_value: string
-  to: string
-  ejari_line: string
-  property_line: string
-  from: string
-  paragraphs: string[]
-  reason_label: string
-  reason_text: string
-  closing: string
-  footer: string
-  landlord_name: string
-  sign_date: string
-}
-
-export interface NoticeDocument {
-  type: 'statutory' | 'breach'
-  days: number
-  en: NoticeSide
-  ar: NoticeSide
-}
-
 export interface Reason {
   label: string
   label_ar: string
@@ -74,7 +46,6 @@ export interface Notice {
   esign_signing_url: string | null
   esign_signed_document_url: string | null
   created_at: string
-  document?: NoticeDocument
 }
 
 export interface LegalSkillSummary {
@@ -255,18 +226,6 @@ export class RentshieldApiService {
     return this.http.get<{ base_price_aed: number; add_ons: Record<string, AddOn> }>(
       `${this.base}documents/notice/pricing/`
     )
-  }
-
-  previewNotice(payload: Partial<Notice>): Observable<{
-    document: NoticeDocument
-    notice_period_days: number
-    total_price_aed: number
-  }> {
-    return this.http.post<{
-      document: NoticeDocument
-      notice_period_days: number
-      total_price_aed: number
-    }>(`${this.base}documents/notice/preview/`, payload)
   }
 
   // Lists every RentShield notice by querying paperless-ngx's own stock

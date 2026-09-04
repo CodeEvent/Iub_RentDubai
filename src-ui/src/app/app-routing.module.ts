@@ -20,51 +20,16 @@ import { DirtyDocGuard } from './guards/dirty-doc.guard'
 import { DirtyFormGuard } from './guards/dirty-form.guard'
 import { DirtySavedViewGuard } from './guards/dirty-saved-view.guard'
 import { PermissionsGuard } from './guards/permissions.guard'
-import { RentshieldDashboardComponent } from './rentshield/dashboard/dashboard.component'
 import { LegalSkillsComponent } from './rentshield/legal-skills/legal-skills.component'
-import { NoticeWizardComponent } from './rentshield/notice-wizard/notice-wizard.component'
+import { NoticeFormComponent } from './rentshield/notice-form/notice-form.component'
 import { NoticesListComponent } from './rentshield/notices-list/notices-list.component'
-import { RentshieldFrameComponent } from './rentshield/rentshield-frame/rentshield-frame.component'
-import { RentshieldSettingsComponent } from './rentshield/rentshield-settings/rentshield-settings.component'
 import {
   PermissionAction,
   PermissionType,
 } from './services/permissions.service'
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'rentshield/dashboard', pathMatch: 'full' },
-  {
-    path: 'rentshield',
-    component: RentshieldFrameComponent,
-    children: [
-      {
-        path: 'dashboard',
-        component: RentshieldDashboardComponent,
-        data: { title: 'Dashboard' },
-      },
-      {
-        path: 'notices/new',
-        component: NoticeWizardComponent,
-        data: { title: 'New Notice' },
-      },
-      {
-        path: 'notices',
-        component: NoticesListComponent,
-        data: { title: 'Saved Notices' },
-      },
-      {
-        path: 'legal-skills',
-        component: LegalSkillsComponent,
-        data: { title: 'Legal Skills' },
-      },
-      {
-        path: 'settings',
-        component: RentshieldSettingsComponent,
-        data: { title: 'Settings' },
-      },
-      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-    ],
-  },
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
   {
     path: '',
     component: AppFrameComponent,
@@ -76,6 +41,21 @@ export const routes: Routes = [
         data: {
           componentName: 'AppFrameComponent',
         },
+      },
+      {
+        path: 'notice/new',
+        component: NoticeFormComponent,
+        data: { componentName: 'NoticeFormComponent' },
+      },
+      {
+        path: 'notices',
+        component: NoticesListComponent,
+        data: { componentName: 'NoticesListComponent' },
+      },
+      {
+        path: 'legal-skills',
+        component: LegalSkillsComponent,
+        data: { componentName: 'LegalSkillsComponent' },
       },
       {
         path: 'documents',

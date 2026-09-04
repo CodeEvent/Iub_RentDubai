@@ -1,6 +1,37 @@
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="rs-stat-card">
+      <div class="rs-stat-icon rs-icon-slate"><i-bs name="file-text"></i-bs></div>
+      <div class="rs-stat-value">{{ total() }}</div>
+      <div class="rs-stat-label">Total Notices</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="rs-stat-card">
+      <div class="rs-stat-icon rs-icon-emerald"><i-bs name="calendar-event"></i-bs></div>
+      <div class="rs-stat-value">{{ statutory() }}</div>
+      <div class="rs-stat-label">12-Month Statutory</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="rs-stat-card">
+      <div class="rs-stat-icon rs-icon-amber"><i-bs name="exclamation-triangle"></i-bs></div>
+      <div class="rs-stat-value">{{ breach() }}</div>
+      <div class="rs-stat-label">30-Day Breach</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="rs-stat-card">
+      <div class="rs-stat-icon rs-icon-emerald"><i-bs name="check-circle"></i-bs></div>
+      <div class="rs-stat-value">{{ aiReviewed() }}</div>
+      <div class="rs-stat-label">AI-Reviewed</div>
+    </div>
+  </div>
+</div>
+
 <div class="d-flex align-items-center justify-content-between mb-3">
-  <p class="text-muted small mb-0">Every notice saved to the RentShield API, newest first.</p>
-  <a routerLink="/rentshield/notices/new" class="rs-cta-link">
+  <p class="text-muted small mb-0">Every RentShield notice, newest first &mdash; real paperless-ngx Documents.</p>
+  <a routerLink="/notice/new" class="rs-cta-link">
     <i-bs name="file-earmark-plus" class="me-1"></i-bs> New Notice
   </a>
 </div>

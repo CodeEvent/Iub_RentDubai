@@ -7,7 +7,7 @@ lease-breach notices (Article 25(1)).
 
 ## History and current foundation
 
-This platform went through four architectures:
+This platform went through five architectures:
 
 1. A single-file HTML/CSS/JS prototype (`legacy/`).
 2. A Node monorepo — Vue 3 + Express + `node:sqlite` + a real MCP server +
@@ -24,25 +24,35 @@ This platform went through four architectures:
    `rentshield` Django app alongside paperless-ngx's own `documents` app,
    with its own `Notice` database table carrying a foreign key to
    paperless-ngx's `Document`.
-4. **The current foundation**: `rentshield` as a Django app — with its own
-   database table — was removed entirely. Every notice is now a real
-   paperless-ngx `Document`, and every notice field (landlord, tenant,
-   reason, e-sign status, ...) is a paperless-ngx `CustomField` value on
-   that Document — see "What's in `documents/rentshield/`" below. This was
-   an explicit choice, again offered and confirmed rather than assumed:
-   paperless-ngx itself is now the sole system of record for RentShield
-   data, and `src-ui/`'s `rentshield/` UI area talks only to paperless-ngx's
-   own stock REST API (`/api/documents/`, `/api/tags/`,
-   `/api/custom_fields/`, `/api/tasks/`) plus a handful of plain functions
-   mounted directly inside the `documents` app (bilingual PDF rendering,
-   pricing/notice-period math, e-signature orchestration — the pieces
-   paperless-ngx has no native equivalent for). There is no
-   `rentshield.apps.RentshieldConfig` in `INSTALLED_APPS` any more.
+4. `rentshield` as a Django app — with its own database table — was
+   removed entirely. Every notice became a real paperless-ngx `Document`,
+   and every notice field (landlord, tenant, reason, e-sign status, ...)
+   a paperless-ngx `CustomField` value on that Document — see "What's in
+   `documents/rentshield/`" below. paperless-ngx itself became the sole
+   system of record for RentShield data. The Angular frontend at this
+   point still had its own separate branded shell (a dark "Rent Shield /
+   RERA · DLD Compliant" sidebar, a 4-step wizard with a live preview
+   panel) sitting alongside paperless-ngx's own UI, talking only to
+   paperless-ngx's stock REST API underneath.
+5. **The current foundation**: that separate branded shell was removed
+   too. There is no "Rent Shield" product identity in the UI any more —
+   `RentshieldFrameComponent` is deleted, and "New Notice"/"Notices"/
+   "Legal Skills" are plain entries in paperless-ngx's own sidebar
+   (`AppFrameComponent`), rendered inside paperless-ngx's own shell with
+   paperless-ngx's own branding. The 4-step wizard with its live preview
+   panel is gone too, replaced by a single-page "Generate Notice" form —
+   still the same backend call, still auto-generating the real bilingual
+   PDF, just without a bespoke multi-step UX. A generated notice now opens
+   directly in paperless-ngx's own document detail view, where every
+   RentShield field is a native, editable custom field alongside the
+   rendered PDF — indistinguishable from any other document paperless-ngx
+   manages. See "The Angular frontend" below for exactly what remains.
 
-None of the three prior architectures are deleted — `legacy/` and
-`legacy-v1/` are kept intact for reference, and the Phase-3 `rentshield`
-Django app's history is preserved in git even though the app itself is
-gone from the working tree.
+None of the four prior architectures are deleted — `legacy/` and
+`legacy-v1/` are kept intact for reference, and every removed component's
+history (the Phase-3 `rentshield` Django app, the Phase-4 branded shell
+and wizard) is preserved in git even though none of it is in the working
+tree any more.
 
 **This repository is GPL-3.0-licensed** (`LICENSE`, paperless-ngx's own
 license) as a direct consequence of that choice. This is a real, material
@@ -68,12 +78,14 @@ src/documents/rentshield_views.py  The handful of endpoints paperless-ngx
                 paperless/urls.py rather than a separate API prefix.
 
 src-ui/         Angular frontend, vendored from paperless-ngx.
-                paperless-ngx's own document-management UI is unmodified;
-                a new `src-ui/src/app/rentshield/` area adds the
-                notice-wizard/dashboard/legal-skills UI as standalone
-                Angular components styled after MintHCM's dashboard layout
-                (dark sidebar + topbar + cards) — see "The Angular
-                frontend" below. It talks only to paperless-ngx's own
+                paperless-ngx's own UI shell (AppFrameComponent, its own
+                sidebar/topbar/branding) is unmodified except for one new
+                "Notices" nav-group added to its sidebar; a
+                `src-ui/src/app/rentshield/` area holds the plain page
+                components those links route to (notice-form, notices-list,
+                legal-skills) as children of paperless-ngx's own frame
+                route — not a separate branded shell — see "The Angular
+                frontend" below. They talk only to paperless-ngx's own
                 stock REST API plus the endpoints above; there is no
                 separate rentshield API to maintain a parallel contract
                 for.
@@ -311,46 +323,43 @@ that feature.
 
 ## The Angular frontend
 
-`src-ui/src/app/rentshield/` is a MintHCM-styled UI built directly on top
-of paperless-ngx's Angular 22 app (standalone components, zoneless change
-detection, Bootstrap 5 / ng-bootstrap — no separate framework introduced).
-It talks **only to paperless-ngx's own stock REST API** — `/api/documents/`,
-`/api/tags/`, `/api/custom_fields/`, `/api/tasks/` — plus the thin
-`documents/notice/*` endpoints described above; there is no rentshield-
-specific data API to keep in sync with a separate backend contract. This
-was a deliberate, scoped choice over the alternatives considered (a full
-rebase onto MintHCM's actual PHP/SuiteCRM + Vue codebase; running MintHCM
-as a second parallel backend; keeping a separate rentshield DRF API
-backed by its own database table) — it keeps the paperless-ngx/Django
-foundation and every ported service (citation graph, legal skills,
-e-signature) completely intact and makes paperless-ngx itself, not a
-sibling app, the one thing both the notice-generation logic and the
-frontend depend on.
+There is no separate "RentShield" product shell any more. `New Notice`,
+`Notices`, and `Legal Skills` are plain entries in paperless-ngx's **own**
+sidebar (`src-ui/src/app/components/app-frame/app-frame.component.html`,
+a new "Notices" `nav-group` next to its existing "Manage"/"Administration"
+groups), rendered inside paperless-ngx's own shell — its own branding,
+its own dark-navy top bar, its own collapse/slim-sidebar behavior. The
+`src-ui/src/app/rentshield/` directory that remains holds only the page
+*components* those sidebar links route to, as plain children of
+paperless-ngx's own `AppFrameComponent` route (not a separate route tree
+with its own frame). They talk **only to paperless-ngx's own stock REST
+API** — `/api/documents/`, `/api/tags/`, `/api/custom_fields/`,
+`/api/tasks/` — plus the thin `documents/notice/*` endpoints described
+above; there is no rentshield-specific data API to keep in sync with a
+separate backend contract.
 
 ```
-rentshield-frame/       Dark sidebar + topbar shell (MintHCM-style navy
-                        #0f172a / emerald #10b981 palette), collapsible,
-                        mobile-responsive, wraps every rentshield route.
-dashboard/              Stat cards (total/statutory/breach/AI-reviewed
-                        notices) + recent-notices panel.
-notice-wizard/          4-step wizard (Parties → Property → Notice &
-                        Reason → Review) with a live bilingual (EN/AR)
-                        document preview, computed via
-                        POST /api/documents/notice/preview/ — blurred/
-                        watermarked until saved. Save renders a real PDF
-                        and dispatches it into paperless-ngx's async
-                        consumption pipeline (POST .../notice/create/
-                        returns a Celery task id), then polls
-                        paperless-ngx's own GET /api/tasks/?task_id=...
-                        until it resolves into the created Document's id.
-notices-list/           Table of every saved notice, listed via
-                        paperless-ngx's own
+notice-form/            Single-page "Generate Notice" form — fields +
+                        a Generate button, no step indicator, no live
+                        preview panel, no watermark. Submitting renders
+                        a real PDF and dispatches it into paperless-ngx's
+                        async consumption pipeline (POST .../notice/create/
+                        returns a Celery task id), then polls paperless-
+                        ngx's own GET /api/tasks/?task_id=... until it
+                        resolves into the created Document's id. On
+                        success, links straight to that Document's own
+                        paperless-ngx detail page (/documents/<id>) —
+                        there is no separate RentShield notice-detail page.
+notices-list/           Table of every saved notice (with total/
+                        statutory/breach/AI-reviewed stat cards above it),
+                        listed via paperless-ngx's own
                         GET /api/documents/?tags__id__in=<tag_id> and
                         mapped from each Document's custom_fields array
                         — not a RentShield-specific list endpoint.
 legal-skills/           Master-detail browser over the ported
-                        legacy-v1/mcp/skills/ Markdown library.
-rentshield-settings/    API health check, pricing table, about section.
+                        legacy-v1/mcp/skills/ Markdown library — the one
+                        piece of UI with no paperless-ngx equivalent to
+                        fold into.
 services/rentshield-api.service.ts   Typed HTTP client wrapping
                         paperless-ngx's stock documents/tags/custom_fields/
                         tasks endpoints plus the documents/notice/*
@@ -359,35 +368,43 @@ services/rentshield-api.service.ts   Typed HTTP client wrapping
                         client-side view model every component reads.
 ```
 
+A generated notice is, deliberately, not distinguishable in the UI from
+any other paperless-ngx document: open it from the Notices table or from
+`/documents/<id>` directly and you get paperless-ngx's own document
+detail page — the real rendered PDF, the `RentShield Notice` tag, and
+every notice field as a native, editable paperless-ngx custom field
+(`RentShield: Landlord Name`, `RentShield: Reason`, ...) right there
+alongside paperless-ngx's own Title/Correspondent/Document type/Tags
+fields, editable the same way.
+
 **Verified end-to-end in a real browser** (Playwright against a live
 `ng serve` + `manage.py runserver` + `celery worker`, not just "should
-work"), specifically re-verified after the move onto paperless-ngx's own
-CustomFields (this wasn't just carried over from the pre-refactor
-verification): filled out the full wizard for both a statutory (Personal
-Use/Recovery) and a 30-day breach (Non-payment of Rent) notice and
-confirmed the live preview renders correct bilingual content; clicked
-Save and confirmed the button correctly waits through the real async
-create → Celery consume → poll-until-resolved sequence before showing
-"Saved"; confirmed the resulting paperless-ngx `Document` carries every
-field as a real `CustomField` value plus the `RentShield Notice` tag, via
-a direct `GET /api/documents/<id>/` call; confirmed the e-signature
-orchestrator correctly reads those fields back off the Document (not a
-separate row) and degrades gracefully with no DocuSeal/OpenSign running;
-and confirmed the Dashboard and Saved Notices pages both render real data
-sourced entirely from paperless-ngx's stock document-list and tag-filter
-endpoints, with matching screenshots.
+work"): confirmed the root URL redirects to paperless-ngx's own
+`/dashboard` (not a RentShield-branded landing page); confirmed the
+sidebar's new "Notices" group renders inside paperless-ngx's real shell
+with no leftover "Rent Shield"/"RERA · DLD Compliant" branding anywhere;
+filled out the single-page form for a statutory (Demolition) notice and
+confirmed Generate correctly waits through the real async create → Celery
+consume → poll-until-resolved sequence before showing "Notice #N
+generated"; followed its "Open in Documents" link and confirmed
+paperless-ngx's own document detail page shows the real rendered PDF plus
+every RentShield field as a native, editable custom field; and confirmed
+Notices and Legal Skills both render correctly inside paperless-ngx's
+shell with matching screenshots.
 
-Non-obvious bugs hit and fixed during verification (kept here since
-they're easy to reintroduce):
+Non-obvious bugs hit and fixed along the way (kept here since they're
+easy to reintroduce):
 - A `computed(() => this.form.valid)` never re-evaluates because
-  `FormGroup.valid` is a plain getter, not a tracked Signal — the
-  wizard's Save button uses a real `signal()` kept in sync via
+  `FormGroup.valid` is a plain getter, not a tracked Signal — both the
+  old wizard and the current form use a real `signal()` kept in sync via
   `form.statusChanges`/`valueChanges` instead.
 - An uncaught error thrown inside a `toSignal()`'d `router.events`
   subscription (from walking a freshly-injected `ActivatedRoute` before
   its tree was populated) silently broke the Router's own child-route
   activation, leaving nested `<router-outlet>` content blank — fixed by
-  reading `router.routerState.snapshot.root` instead.
+  reading `router.routerState.snapshot.root` instead. (This was in the
+  now-deleted `RentshieldFrameComponent`; recorded here as a general
+  Angular Signals/Router gotcha, not because that component still exists.)
 - A filename-sanitization bug in `documents/rentshield/service.py`:
   `DocumentMetadataOverrides.filename` was built from an unsanitized
   reason label, so a reason containing `/` ("Personal Use / Recovery")
@@ -427,10 +444,3 @@ cd src-ui && pnpm install && pnpm start   # http://localhost:4200
   `AllowAny` for now. paperless-ngx's own auth (django-allauth, DRF token
   auth, django-guardian object permissions) is fully present and
   unmodified — wiring these endpoints into it is next, not forgotten.
-- **Notice detail route in the RentShield UI**: the Angular `rentshield/`
-  area has a Saved Notices *list* but no per-notice detail page of its
-  own; the wizard's post-save "View it" link goes to that list rather
-  than a dead-end URL. paperless-ngx's own `/documents/<id>` detail view
-  already works for any RentShield notice (it's a real Document with the
-  RentShield custom fields visible there) — a RentShield-styled detail
-  page is a nice-to-have on top of that, not a missing capability.
