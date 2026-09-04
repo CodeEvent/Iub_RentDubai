@@ -4,6 +4,8 @@ from django.conf import settings
 from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand
 from documents.models import CustomField
+from documents.models import CustomFieldInstance
+from documents.models import Document
 from documents.models import DocumentType
 from documents.models import StoragePath
 from documents.models import Tag
@@ -12,6 +14,8 @@ from documents.models import WorkflowAction
 from documents.models import WorkflowActionEmail
 from documents.models import WorkflowActionWebhook
 from documents.models import WorkflowTrigger
+from documents.permissions import get_groups_with_only_permission
+from documents.permissions import set_permissions_for_object
 from documents.rentshield.custom_fields import AI_REVIEWED_TAG_NAME
 from documents.rentshield.custom_fields import NEEDS_AI_REVIEW_TAG_NAME
 from documents.rentshield.custom_fields import RENTSHIELD_TAG_NAME
@@ -22,6 +26,7 @@ from documents.rentshield.roles import NOTARY_GROUP_NAME
 
 STATUTORY_REASONS = ["sale", "personal", "demolition", "renovation"]
 BREACH_REASONS = ["nonpayment", "sublease"]
+SENSITIVE_REASONS = ["personal", "demolition", "renovation"]
 
 # Deliberately fake -- there is no way to know the real recipient here,
 # and this repo must never carry a hardcoded personal address. Edit the
@@ -353,9 +358,7 @@ class Command(BaseCommand):
             order=10,
             trigger_kwargs={
                 "type": WorkflowTrigger.WorkflowTriggerType.DOCUMENT_ADDED,
-                "filter_custom_field_query": reason_query(
-                    ["personal", "demolition", "renovation"],
-                ),
+                "filter_custom_field_query": reason_query(SENSITIVE_REASONS),
             },
             trigger_tags=[rentshield_tag],
             action_kwargs={"type": WorkflowAction.WorkflowActionType.ASSIGNMENT},
@@ -383,6 +386,23 @@ class Command(BaseCommand):
             ],
             old_query=old_buggy_notarization_pending_query(),
             new_query=notarization_pending_query(),
+        )
+
+        self._backfill_object_permissions(
+            group=lawyer_group,
+            document_ids=CustomFieldInstance.objects.filter(
+                field_id=reason_field,
+                value_select__in=SENSITIVE_REASONS,
+            ).values_list("document_id", flat=True),
+            label="sensitive-reason notices -> Lawyer",
+        )
+        self._backfill_object_permissions(
+            group=notary_group,
+            document_ids=CustomFieldInstance.objects.filter(
+                field_id=notarization_field,
+                value_bool=True,
+            ).values_list("document_id", flat=True),
+            label="notarization-requested notices -> Notary",
         )
 
         self.stdout.write(self.style.SUCCESS("RentShield workflows created/verified."))
@@ -428,6 +448,35 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.SUCCESS(f"Repaired notarization-pending query on: {name}"),
                 )
+
+    def _backfill_object_permissions(self, *, group, document_ids, label):
+        """Workflows #10/#13 only grant view/change access at DOCUMENT_ADDED
+        time -- a document consumed before that Workflow existed (or before
+        its group had the right permissions) never got the grant, and
+        never will retroactively just because the Workflow exists now.
+        This closes that gap for whatever already matches today, using the
+        exact same set_permissions_for_object() mechanism the Workflow
+        action itself calls -- not a separate, parallel permission scheme.
+        merge=True only ever adds the grant; it never revokes one, so this
+        is always safe to re-run and never clobbers a manual edit."""
+        granted = 0
+        for document in Document.objects.filter(id__in=set(document_ids)):
+            existing_groups = get_groups_with_only_permission(document, "view_document")
+            if group in existing_groups:
+                continue
+            set_permissions_for_object(
+                {
+                    "view": {"groups": [group.id]},
+                    "change": {"groups": [group.id]},
+                },
+                document,
+                merge=True,
+            )
+            granted += 1
+        if granted:
+            self.stdout.write(
+                self.style.SUCCESS(f"Backfilled {granted} document(s), {label}"),
+            )
 
     def _create_workflow(
         self,

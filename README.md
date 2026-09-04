@@ -797,14 +797,36 @@ booting the Angular app as one of these roles. Fixed by adding
 role group alongside its Document permissions — and re-verified via a real
 logged-in request to `/api/ui_settings/` returning `200` instead of `403`.
 
+**Third bug found and fixed, same way**: after fixing the above, a real
+Lawyer-group account logging in still saw zero notices under "Notices" —
+including ones with a sensitive reason, which should have been visible.
+Root cause: Workflow #10's object-level grant only ever fires at
+`DOCUMENT_ADDED` time, so any sensitive-reason notice consumed *before*
+that Workflow existed (or before the Lawyer group had its permissions
+fixed) never got the grant, and never will just because the Workflow
+exists now — confirmed directly in this project's own sandbox, where
+documents created early in this project had no Lawyer grant while ones
+created later did. `create_rentshield_workflows` now also backfills this:
+after creating/repairing the workflows themselves, it scans every
+already-existing document for a sensitive reason or a notarization
+request and grants the matching group's access via the exact same
+`set_permissions_for_object()` call the Workflow action itself uses (see
+`_backfill_object_permissions()`) — `merge=True`, so it only ever adds a
+grant, never revokes one, and is safe to re-run. Re-running it in this
+project's sandbox correctly backfilled the 2 sensitive-reason documents
+that were missing it and left the rest untouched (0 backfilled on a
+second run), and a real Lawyer-group API request went from seeing 0
+sensitive notices to seeing all of them.
+
 **Real, load-bearing limitations, not glossed over:**
 - No user is a member of any role group by default — an admin has to
   assign real users to Tenant/Property Owner/Notary/Lawyer under
   Settings > Users & Groups, based on who they actually are.
-- Object-level grants only apply going forward: Workflow triggers fire on
-  `DOCUMENT_ADDED`, not retroactively, so notices created before both
-  `create_rentshield_roles` and `create_rentshield_workflows` have run need
-  their permissions set by hand if they should be restricted.
+- The backfill only covers what `create_rentshield_workflows` already
+  knows to grant (sensitive-reason → Lawyer, notarization-requested →
+  Notary) — it's not a general "recompute every permission" tool. If you
+  add a new Workflow-driven grant later, give it the same backfill
+  treatment rather than assuming existing documents will pick it up.
 - `reasons_view`/`pricing_view` (static reference data: the list of
   reasons, the price table) are intentionally left as plain, ungated Django
   views — no document data, nothing role-specific to protect.
