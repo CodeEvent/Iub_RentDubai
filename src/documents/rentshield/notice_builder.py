@@ -5,14 +5,14 @@
 # below is ported 1:1 from that file.
 from __future__ import annotations
 
-from rentshield.constants import BREACH_REASONS
-from rentshield.constants import STATUTORY_REASONS
-from rentshield.constants import is_breach
-from rentshield.dates import fallback
-from rentshield.dates import format_date_ar
-from rentshield.dates import format_date_en
-from rentshield.dates import format_expiry_ar
-from rentshield.dates import format_expiry_en
+from documents.rentshield.constants import BREACH_REASONS
+from documents.rentshield.constants import STATUTORY_REASONS
+from documents.rentshield.constants import is_breach
+from documents.rentshield.dates import fallback
+from documents.rentshield.dates import format_date_ar
+from documents.rentshield.dates import format_date_en
+from documents.rentshield.dates import format_expiry_ar
+from documents.rentshield.dates import format_expiry_en
 
 
 def _party_block(input_data: dict) -> dict:

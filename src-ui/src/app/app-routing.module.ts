@@ -20,6 +20,9 @@ import { DirtyDocGuard } from './guards/dirty-doc.guard'
 import { DirtyFormGuard } from './guards/dirty-form.guard'
 import { DirtySavedViewGuard } from './guards/dirty-saved-view.guard'
 import { PermissionsGuard } from './guards/permissions.guard'
+import { LegalSkillsComponent } from './rentshield/legal-skills/legal-skills.component'
+import { NoticeFormComponent } from './rentshield/notice-form/notice-form.component'
+import { NoticesListComponent } from './rentshield/notices-list/notices-list.component'
 import {
   PermissionAction,
   PermissionType,
@@ -38,6 +41,35 @@ export const routes: Routes = [
         data: {
           componentName: 'AppFrameComponent',
         },
+      },
+      {
+        path: 'notice/new',
+        component: NoticeFormComponent,
+        canActivate: [PermissionsGuard],
+        data: {
+          requiredPermission: {
+            action: PermissionAction.Add,
+            type: PermissionType.Document,
+          },
+          componentName: 'NoticeFormComponent',
+        },
+      },
+      {
+        path: 'notices',
+        component: NoticesListComponent,
+        canActivate: [PermissionsGuard],
+        data: {
+          requiredPermission: {
+            action: PermissionAction.View,
+            type: PermissionType.Document,
+          },
+          componentName: 'NoticesListComponent',
+        },
+      },
+      {
+        path: 'legal-skills',
+        component: LegalSkillsComponent,
+        data: { componentName: 'LegalSkillsComponent' },
       },
       {
         path: 'documents',

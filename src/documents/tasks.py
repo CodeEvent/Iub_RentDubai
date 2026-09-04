@@ -876,3 +876,26 @@ def cleanup_expired_share_link_bundles() -> None:
             )
     if count:
         logger.info("Deleted %s expired share link bundle(s)", count)
+
+
+@shared_task
+def run_ai_review_task(document_id: int, use_deepseek_ocr: bool = False) -> dict:
+    """Async wrapper around documents.rentshield.service.run_ai_review() --
+    dispatched from documents/rentshield_views.py's analyze_uploaded_view
+    (a Workflow webhook action, which paperless-ngx only allows 5 seconds
+    to respond) and from a scheduled Workflow that auto-fires it on any
+    document tagged "Tenancy Contract" or whose filename contains
+    "contract" (see manage.py create_rentshield_workflows). Imports done
+    inside the task body to avoid a documents.tasks <-> documents.rentshield
+    circular import at module load time.
+    """
+    from documents.models import Document
+    from documents.rentshield.service import run_ai_review
+
+    try:
+        document = Document.objects.get(id=document_id)
+    except Document.DoesNotExist:
+        logger.warning("run_ai_review_task: no such document %s", document_id)
+        return {"error": f"Document {document_id} does not exist"}
+
+    return run_ai_review(document, use_deepseek_ocr=use_deepseek_ocr)

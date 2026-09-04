@@ -15,14 +15,17 @@ from drf_spectacular.views import SpectacularAPIView
 from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
-from rentshield.views import NoticeViewSet
-from rentshield.views import analyze_document_view
-from rentshield.views import check_service_method_view
-from rentshield.views import legal_skill_detail_view
-from rentshield.views import legal_skills_view
-from rentshield.views import pricing_view
-from rentshield.views import reasons_view
-
+from documents.rentshield_views import analyze_document_view
+from documents.rentshield_views import analyze_uploaded_view
+from documents.rentshield_views import check_service_method_view
+from documents.rentshield_views import create_notice_view
+from documents.rentshield_views import landing_view
+from documents.rentshield_views import legal_skill_detail_view
+from documents.rentshield_views import legal_skills_view
+from documents.rentshield_views import notarize_status_view
+from documents.rentshield_views import notarize_view
+from documents.rentshield_views import pricing_view
+from documents.rentshield_views import reasons_view
 from documents.views import BulkDownloadView
 from documents.views import BulkEditObjectsView
 from documents.views import BulkEditView
@@ -97,10 +100,6 @@ api_router.register(r"workflows", WorkflowViewSet)
 api_router.register(r"custom_fields", CustomFieldViewSet)
 api_router.register(r"config", ApplicationConfigurationViewSet)
 api_router.register(r"processed_mail", ProcessedMailViewSet)
-# rentshield: Dubai tenancy-notice generation, rebased onto this
-# platform (see src/rentshield/). Every generated notice becomes a real
-# Document above (documents/) via rentshield.services.generate_and_consume().
-api_router.register(r"rentshield/notices", NoticeViewSet, basename="rentshield-notice")
 
 
 urlpatterns = [
@@ -152,36 +151,6 @@ urlpatterns = [
                     name="statistics",
                 ),
                 re_path(
-                    "^rentshield/reasons/",
-                    reasons_view,
-                    name="rentshield-reasons",
-                ),
-                re_path(
-                    "^rentshield/pricing/",
-                    pricing_view,
-                    name="rentshield-pricing",
-                ),
-                re_path(
-                    "^rentshield/documents/analyze/",
-                    analyze_document_view,
-                    name="rentshield-analyze-document",
-                ),
-                re_path(
-                    r"^rentshield/legal-skills/(?P<skill_id>[\w-]+)/$",
-                    legal_skill_detail_view,
-                    name="rentshield-legal-skill-detail",
-                ),
-                re_path(
-                    "^rentshield/legal-skills/$",
-                    legal_skills_view,
-                    name="rentshield-legal-skills",
-                ),
-                re_path(
-                    "^rentshield/check-service-method/",
-                    check_service_method_view,
-                    name="rentshield-check-service-method",
-                ),
-                re_path(
                     "^documents/",
                     include(
                         [
@@ -189,6 +158,64 @@ urlpatterns = [
                                 "^post_document/",
                                 PostDocumentView.as_view(),
                                 name="post_document",
+                            ),
+                            # RentShield notice generation -- plumbing
+                            # paperless-ngx doesn't have natively (bilingual
+                            # PDF rendering, pricing/notice-period math,
+                            # e-signature orchestration). Every notice is a
+                            # real Document with CustomField values (see
+                            # documents/rentshield/); listing and consume-
+                            # status polling use paperless-ngx's own stock
+                            # GET /api/documents/ and GET /api/tasks/.
+                            re_path(
+                                "^notice/reasons/",
+                                reasons_view,
+                                name="rentshield-reasons",
+                            ),
+                            re_path(
+                                "^notice/pricing/",
+                                pricing_view,
+                                name="rentshield-pricing",
+                            ),
+                            re_path(
+                                "^notice/create/",
+                                create_notice_view,
+                                name="rentshield-create-notice",
+                            ),
+                            re_path(
+                                "^notice/analyze/",
+                                analyze_document_view,
+                                name="rentshield-analyze-document",
+                            ),
+                            re_path(
+                                "^notice/analyze-uploaded/",
+                                analyze_uploaded_view,
+                                name="rentshield-analyze-uploaded",
+                            ),
+                            re_path(
+                                r"^notice/legal-skills/(?P<skill_id>[\w-]+)/$",
+                                legal_skill_detail_view,
+                                name="rentshield-legal-skill-detail",
+                            ),
+                            re_path(
+                                "^notice/legal-skills/$",
+                                legal_skills_view,
+                                name="rentshield-legal-skills",
+                            ),
+                            re_path(
+                                "^notice/check-service-method/",
+                                check_service_method_view,
+                                name="rentshield-check-service-method",
+                            ),
+                            re_path(
+                                r"^notice/(?P<document_id>\d+)/notarize/$",
+                                notarize_view,
+                                name="rentshield-notarize",
+                            ),
+                            re_path(
+                                r"^notice/(?P<document_id>\d+)/notarize-status/$",
+                                notarize_status_view,
+                                name="rentshield-notarize-status",
                             ),
                             re_path(
                                 "^bulk_edit/",
@@ -455,6 +482,17 @@ urlpatterns = [
                 ),
             ],
         ),
+    ),
+    # Public landing page -- the one URL in this project deliberately
+    # NOT behind login_required (see documents/rentshield_views.py's
+    # landing_view docstring for why: it has to render for a visitor who
+    # hasn't signed in yet, so it can't be an Angular route -- Angular's
+    # entire index.html is gated below). Must be registered before the
+    # catch-all "Root of the Frontend" pattern so it isn't shadowed.
+    re_path(
+        r"^welcome/?$",
+        landing_view,
+        name="rentshield-landing",
     ),
     # Root of the Frontend
     re_path(

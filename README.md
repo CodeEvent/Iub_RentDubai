@@ -7,22 +7,52 @@ lease-breach notices (Article 25(1)).
 
 ## History and current foundation
 
-This platform went through three architectures:
+This platform went through five architectures:
 
 1. A single-file HTML/CSS/JS prototype (`legacy/`).
 2. A Node monorepo — Vue 3 + Express + `node:sqlite` + a real MCP server +
    a Python OCR microservice, with real DocuSeal/OpenSign e-signature
    integration, an `mcp/skills/` legal-guidance library, and an
    OpenContracts-inspired citation graph (`legacy-v1/`).
-3. **The current foundation**: rebased onto
-   [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx)
+3. Rebased onto [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx)
    (vendored at upstream commit `a3851c157a4591cd0e213296f632432f05daa7c8`,
    `main` branch) — a Django 5.2 + DRF + Celery/Redis + Angular document
    management system. This was an explicit choice to discard the Node
    stack and use paperless-ngx's actual codebase as the base, not just a
    bolt-on service or an architecture reference (both were offered and
-   declined). Neither prior architecture is deleted — both are kept
-   intact under `legacy/` and `legacy-v1/` for reference.
+   declined). The tenancy-notice domain logic was added as a first-party
+   `rentshield` Django app alongside paperless-ngx's own `documents` app,
+   with its own `Notice` database table carrying a foreign key to
+   paperless-ngx's `Document`.
+4. `rentshield` as a Django app — with its own database table — was
+   removed entirely. Every notice became a real paperless-ngx `Document`,
+   and every notice field (landlord, tenant, reason, e-sign status, ...)
+   a paperless-ngx `CustomField` value on that Document — see "What's in
+   `documents/rentshield/`" below. paperless-ngx itself became the sole
+   system of record for RentShield data. The Angular frontend at this
+   point still had its own separate branded shell (a dark "Rent Shield /
+   RERA · DLD Compliant" sidebar, a 4-step wizard with a live preview
+   panel) sitting alongside paperless-ngx's own UI, talking only to
+   paperless-ngx's stock REST API underneath.
+5. **The current foundation**: that separate branded shell was removed
+   too. There is no "Rent Shield" product identity in the UI any more —
+   `RentshieldFrameComponent` is deleted, and "New Notice"/"Notices"/
+   "Legal Skills" are plain entries in paperless-ngx's own sidebar
+   (`AppFrameComponent`), rendered inside paperless-ngx's own shell with
+   paperless-ngx's own branding. The 4-step wizard with its live preview
+   panel is gone too, replaced by a single-page "Generate Notice" form —
+   still the same backend call, still auto-generating the real bilingual
+   PDF, just without a bespoke multi-step UX. A generated notice now opens
+   directly in paperless-ngx's own document detail view, where every
+   RentShield field is a native, editable custom field alongside the
+   rendered PDF — indistinguishable from any other document paperless-ngx
+   manages. See "The Angular frontend" below for exactly what remains.
+
+None of the four prior architectures are deleted — `legacy/` and
+`legacy-v1/` are kept intact for reference, and every removed component's
+history (the Phase-3 `rentshield` Django app, the Phase-4 branded shell
+and wizard) is preserved in git even though none of it is in the working
+tree any more.
 
 **This repository is GPL-3.0-licensed** (`LICENSE`, paperless-ngx's own
 license) as a direct consequence of that choice. This is a real, material
@@ -34,15 +64,31 @@ src/            Django 5.2 + DRF backend, vendored from paperless-ngx —
                 document management, OCR ingestion, tagging, full-text
                 search (tantivy), Celery task queue.
 
-src/rentshield/ The tenancy-notice domain logic, added as a first-party
-                Django app alongside paperless-ngx's own `documents` and
-                `paperless_mail` apps. Ported 1:1 (same statutory
+src/documents/rentshield/  The tenancy-notice domain logic — a plain
+                Python subpackage inside paperless-ngx's own `documents`
+                app, not a separate installed Django app and not a
+                separate database table. Ported 1:1 (same statutory
                 citations, same wording) from legacy-v1/shared/ — see
-                "What's in rentshield/" below.
+                "What's in `documents/rentshield/`" below.
 
-src-ui/         Angular frontend, vendored from paperless-ngx. Currently
-                unmodified — the wizard/preview/chat-drawer/dashboard UI
-                rebuild on top of it is not done yet (see "Not done yet").
+src/documents/rentshield_views.py  The handful of endpoints paperless-ngx
+                has no native equivalent for (bilingual PDF rendering,
+                pricing/notice-period math, e-signature orchestration),
+                mounted directly under the documents/ URL namespace in
+                paperless/urls.py rather than a separate API prefix.
+
+src-ui/         Angular frontend, vendored from paperless-ngx.
+                paperless-ngx's own UI shell (AppFrameComponent, its own
+                sidebar/topbar/branding) is unmodified except for one new
+                "Notices" nav-group added to its sidebar; a
+                `src-ui/src/app/rentshield/` area holds the plain page
+                components those links route to (notice-form, notices-list,
+                legal-skills) as children of paperless-ngx's own frame
+                route — not a separate branded shell — see "The Angular
+                frontend" below. They talk only to paperless-ngx's own
+                stock REST API plus the endpoints above; there is no
+                separate rentshield API to maintain a parallel contract
+                for.
 
 docling-service/       Isolated FastAPI service wrapping Docling — see
                        "Document parsing" below.
@@ -71,8 +117,24 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
                 reference; not part of either subsequent build.
 ```
 
-## What's in `rentshield/`
+## What's in `documents/rentshield/`
 
+There is no `rentshield` database table. A RentShield notice is a real
+paperless-ngx `Document`; every notice field lives as a paperless-ngx
+`CustomField` value on that Document (bootstrapped by the data migration
+`documents/migrations/0026_rentshield_custom_fields.py` — 18 fields plus
+a `RentShield Notice` tag, all `get_or_create`'d by name so it's safe to
+re-run). This is what "paperless-ngx is the system of record" means
+concretely: open any generated notice in paperless-ngx's own Documents
+view and every field the wizard collected — landlord, tenant, reason,
+e-sign status — is right there as a custom field, full-text search finds
+the OCR'd notice text, and the notice is tagged, versioned, and
+permissioned exactly like any other document paperless-ngx manages.
+
+- `custom_fields.py` — the field-name/data-type table the bootstrap
+  migration reads, plus `key_to_id_map()`/`id_to_key_map()` helpers used
+  by every other module here to translate between short Python keys
+  (`landlord_name`) and live `CustomField.id`s.
 - `constants.py` — the six statutory/breach grounds (sale, personal use,
   demolition, renovation; non-payment, unauthorized subleasing), ported
   from `legacy-v1/shared/reasons.js`.
@@ -86,14 +148,16 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
   Chromium (Playwright for Python), a port of
   `legacy-v1/api/src/services/esign/renderNoticeHtml.js` +
   `renderPdf.js`.
-- `models.py` — a `Notice` model (same fields as legacy-v1's `notices`
-  SQLite table) with a `document` FK to paperless-ngx's own
-  `documents.Document`.
-- `services.py` — `generate_and_consume()` renders the PDF and hands it to
-  paperless-ngx's own `documents.tasks.consume_file` task (the same one
-  its own upload API uses), so every generated notice becomes a real,
-  OCR'd, full-text-searchable `Document` — **this is the actual payoff of
-  the rebase**, not a bolted-on file store.
+- `service.py` — `generate_and_consume(fields, owner_id)` renders the PDF
+  and hands it to paperless-ngx's own `documents.tasks.consume_file` task
+  (the same one its own upload API uses) with every field passed through
+  as a `CustomField` value and the `RentShield Notice` tag applied, via
+  `DocumentMetadataOverrides.custom_fields`/`tag_ids` — paperless-ngx's
+  own upload API (`POST /api/documents/post_document/`) supports exactly
+  this same mechanism, confirmed by reading its serializer before relying
+  on it. `read_notice_fields(document)`, `request_notarization(document)`,
+  and `check_notarization_status(document)` read/write those
+  `CustomFieldInstance` rows directly — no separate row to keep in sync.
 - `service_methods.py` — the recognized/unrecognized notice-service
   methods under Article 25(3) (Notary Public, registered mail, court
   bailiff vs. WhatsApp, plain email, verbal, unwitnessed hand delivery),
@@ -103,16 +167,16 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
   service-method mention found in a document to the specific Article 25
   provision it satisfies or violates, ported from
   `legacy-v1/shared/citationGraph.js`. Run automatically on every
-  `POST /api/rentshield/documents/analyze/` call, against whichever
-  engine (Docling/DeepSeek-OCR) extracted the text.
-- `skills/*.md` + `skills.py` — the three-skill legal-guidance library
+  `POST /api/documents/notice/analyze/` call, against whichever engine
+  (Docling/DeepSeek-OCR) extracted the text.
+- `skills/*.md` + `skills_lib.py` — the three-skill legal-guidance library
   (RDSC filing, security deposit disputes, valid notice service methods)
   ported from `legacy-v1/mcp/skills/` — same files, copied verbatim
   (plain Markdown + YAML frontmatter, no JS-specific content), reparsed
   with PyYAML instead of gray-matter. Exposed at
-  `/api/rentshield/legal-skills/` (+ `/<id>/`) and
-  `/api/rentshield/check-service-method/`, matching what the MCP server
-  (`list_legal_skills`/`get_legal_skill`/
+  `/api/documents/notice/legal-skills/` (+ `/<id>/`) and
+  `/api/documents/notice/check-service-method/`, matching what the MCP
+  server (`list_legal_skills`/`get_legal_skill`/
   `check_notice_service_method_validity`) exposed in `legacy-v1/`.
 - `esign/` — `docuseal_client.py`, `opensign_client.py`,
   `orchestrator.py`: real notarization via a self-hosted
@@ -121,15 +185,23 @@ legacy/         The original single-file HTML/CSS/JS prototype. Kept for
   ported 1:1 from `legacy-v1/api/src/services/esign/` — same endpoint
   shapes (DocuSeal's `/api/submissions/html`, OpenSign's Parse-Server
   `createdocumentfromapp` Cloud Function), same primary/fallback
-  behavior. Triggered via `POST /api/rentshield/notices/<id>/notarize/`
-  and polled via `GET .../notarize-status/`, matching legacy-v1's
-  `/api/notices/:id/notarize[/status]`.
-- `views.py` / `serializers.py` — a DRF `ViewSet` at
-  `/api/rentshield/notices/`, plus `/api/rentshield/reasons/`,
-  `/api/rentshield/pricing/`, `/api/rentshield/documents/analyze/`,
-  `/api/rentshield/legal-skills/`, and
-  `/api/rentshield/check-service-method/` — matching legacy-v1's
-  equivalent routes.
+  behavior. Triggered via
+  `POST /api/documents/notice/<document_id>/notarize/` and polled via
+  `GET .../notarize-status/`, operating on the Document's own
+  `CustomFieldInstance` rows.
+
+`documents/rentshield_views.py` (one level up, not inside the
+subpackage — it's the URL-facing layer) wires all of the above to HTTP:
+`/api/documents/notice/reasons/`, `/pricing/`, `/preview/`, `/create/`,
+`/analyze/`, `/legal-skills/[<id>/]`, `/check-service-method/`,
+`/<document_id>/notarize/`, `/<document_id>/notarize-status/` — all
+mounted inside the same `documents/` URL include block as paperless-ngx's
+own `post_document`/`bulk_edit`/etc. endpoints in `paperless/urls.py`, not
+under a separate `rentshield/` prefix. **Listing** notices and **polling
+consumption status** use paperless-ngx's own stock endpoints directly —
+`GET /api/documents/?tags__id__in=<rentshield_tag_id>` and
+`GET /api/tasks/?task_id=<id>` (the same endpoint paperless-ngx's own
+Tasks page uses) — with no RentShield-specific endpoint for either.
 
 **Verified**: `citation_graph.py` reproduces the exact same
 violating/compliant/empty-document test cases used to verify the
@@ -139,11 +211,20 @@ exercised through a real HTTP round trip (Django → docling-service →
 were verified against mock HTTP servers shaped like each real API
 (including the primary-fails → fallback-succeeds path, with a real
 Playwright PDF render in the loop for OpenSign), and
-`POST /api/rentshield/notices/<id>/notarize/` was exercised over real
-HTTP with no live DocuSeal/OpenSign running — confirmed it degrades
-gracefully (502 with both providers' actual error messages) exactly like
-the original Node version did, plus the `add_notarization`-not-selected
-and no-landlord-email 400 validation paths.
+`POST /api/documents/notice/<id>/notarize/` was exercised over real HTTP
+with no live DocuSeal/OpenSign running — confirmed it degrades gracefully
+(502 with both providers' actual error messages) exactly like the
+original Node version did, plus the `add_notarization`-not-selected and
+no-landlord-email 400 validation paths. The full create → consume →
+custom-fields → list → notarize round trip was also exercised end to end
+after the move onto CustomFields specifically: creating a notice with a
+reason label containing a literal `/` ("Personal Use / Recovery") caught
+a real, previously-latent filename-sanitization bug (the temp file
+written to disk was sanitized but the `DocumentMetadataOverrides.filename`
+passed to paperless-ngx's consumer wasn't, so the consumer's own working-
+copy path build failed on the raw `/`) — fixed by sanitizing once and
+reusing the sanitized name everywhere, not two independently-maintained
+copies.
 
 ## Document parsing: Docling + DeepSeek-OCR
 
@@ -162,8 +243,8 @@ of the main paperless-ngx venv):
   it explicitly (`use_deepseek_ocr=true`), it is never an automatic
   fallback.
 
-Both are wired into `rentshield/document_analysis.py` and reachable via
-`POST /api/rentshield/documents/analyze/`.
+Both are wired into `documents/rentshield/document_analysis.py` and
+reachable via `POST /api/documents/notice/analyze/`.
 
 **What's genuinely verified vs. what isn't, in this dev sandbox:**
 
@@ -185,6 +266,61 @@ Both are wired into `rentshield/document_analysis.py` and reachable via
   fails with a clear 503 explaining exactly why, rather than crashing —
   confirmed directly. Real inference needs a CUDA GPU deployment (see
   `deepseek-ocr-service/README.md` and the `gpu` Compose profile).
+
+## AI Compliance Review — now actually wired up, not just a price toggle
+
+Before this, "Add AI Compliance Review" in the notice form was a real
+`CustomField` and a real line on the price total — with **nothing behind
+it**. `documents/rentshield/document_analysis.py`'s `analyze_document()`
+and `citation_graph.py`'s `build_citation_graph()` existed and were unit-
+verified, but nothing in the actual notice-creation flow ever called
+them, and nothing persisted a result anywhere. That gap is now closed:
+
+1. Upload a tenancy contract through paperless-ngx's **own native
+   uploader** — no new frontend was built for this. Either name the file
+   with "contract" in it, or tag it `Tenancy Contract` after upload.
+2. Two Workflows created by `manage.py create_rentshield_workflows`
+   (#11/#12, one trigger on filename, one on tag) fire automatically on
+   `Document Added` and call a webhook back into this same Django
+   process at `/api/documents/notice/analyze-uploaded/`.
+3. That endpoint (`documents/rentshield_views.py::analyze_uploaded_view`)
+   only dispatches a Celery task and returns — paperless-ngx's own
+   Workflow webhooks time out after 5 seconds, and the actual analysis
+   (a docling-service HTTP call plus the citation graph) takes longer
+   than that.
+4. `documents.tasks.run_ai_review_task` → `documents/rentshield/service.py`'s
+   `run_ai_review()` does the real work: reads the document's own file
+   (`document.source_path`), calls `analyze_document()`, runs
+   `build_citation_graph()` against the extracted text, and writes the
+   result back onto **that same Document's own CustomFieldInstance
+   rows** — `RentShield: AI Review Summary` (a human-readable ✓/✗ list
+   citing the specific Article 25 provision each clause satisfies or
+   violates) and `RentShield: AI Review Findings Count` — then swaps its
+   `Needs AI Review` tag for `AI-Reviewed`.
+
+**Verified end-to-end, not just unit-level**: uploaded a real test
+document via `POST /api/documents/post_document/` (the same endpoint
+paperless-ngx's own UI upload button hits) containing a deliberately
+non-compliant 30-day clause, a WhatsApp service-of-notice clause, a valid
+Notary Public clause, and an Ejari number; confirmed via the Celery log
+that the filename-based Workflow trigger matched and fired the webhook;
+confirmed the webhook hit `analyze-uploaded` and dispatched the Celery
+task; and confirmed via `GET /api/documents/<id>/` that the resulting
+custom fields correctly flagged both violations, correctly credited the
+valid clause, and correctly extracted the Ejari number — all with zero
+manual intervention after the initial upload.
+
+One real bug surfaced during this verification and is worth knowing
+about, not just a passing curiosity: the **first** `run_ai_review_task`
+run inside a freshly-started Celery worker took far longer than a direct
+synchronous call of the same function (which returned near-instantly) —
+almost certainly an httpx/connection-pool cold-start cost specific to a
+freshly-forked prefork worker's first outbound HTTP call. Every
+subsequent run on the same warmed-up worker completed promptly. Not a
+logic bug (confirmed by running `run_ai_review()` directly in
+`manage.py shell`, which worked immediately and correctly on the first
+document too) — just a first-request latency spike to expect after a
+worker restart, not a stall to debug.
 
 ## Running it locally
 
@@ -225,13 +361,13 @@ Real document consumption (OCR + PDF/A conversion) additionally needs
 this project's dev sandbox via `apt-get install`.
 
 **Verified end-to-end** (not just "should work"): creating a notice via
-`POST /api/rentshield/notices/` renders a real PDF, hands it to
-paperless-ngx's real consumption pipeline, produces a real OCR'd
-`documents.Document` row, and that document is found by paperless-ngx's
-own full-text search (`GET /api/documents/?query=...`) — both the
-365-day statutory path and the 30-day breach path were tested this way,
-including confirming the correct expiry-date math landed in the OCR'd
-text.
+`POST /api/documents/notice/create/` renders a real PDF, hands it to
+paperless-ngx's real consumption pipeline with every field attached as a
+`CustomField` value, produces a real OCR'd `documents.Document` row, and
+that document is found by paperless-ngx's own full-text search
+(`GET /api/documents/?query=...`) — both the 365-day statutory path and
+the 30-day breach path were tested this way, including confirming the
+correct expiry-date math landed in the OCR'd text.
 
 `uv sync` deliberately excludes `torch`/`sentence-transformers`/
 `llama-index-*` (paperless-ngx's `paperless_ai` semantic-search feature,
@@ -240,14 +376,655 @@ cannot reach `download.pytorch.org`'s wheel host. Re-add them from
 upstream paperless-ngx's `pyproject.toml` for a deployment that wants
 that feature.
 
-## Not done yet (named, not silently skipped)
+## The Angular frontend
 
-- **Auth wiring**: `NoticeViewSet` is `AllowAny` for now. paperless-ngx's
-  own auth (django-allauth, DRF token auth, django-guardian object
-  permissions) is fully present and unmodified — wiring `rentshield`
-  into it is next, not forgotten.
-- **Frontend**: `src-ui/` is paperless-ngx's own Angular app, unmodified.
-  The wizard, live bilingual preview, chat drawer, and dashboard from
-  `legacy-v1/vue/` have not been rebuilt as Angular components — this is
-  the largest remaining piece of the rebase and needs its own scoped pass
-  rather than being rushed alongside the backend work above.
+There is no separate "RentShield" product shell any more. `New Notice`,
+`Notices`, and `Legal Skills` are plain entries in paperless-ngx's **own**
+sidebar (`src-ui/src/app/components/app-frame/app-frame.component.html`,
+a new "Notices" `nav-group` next to its existing "Manage"/"Administration"
+groups), rendered inside paperless-ngx's own shell — its own branding,
+its own dark-navy top bar, its own collapse/slim-sidebar behavior. The
+`src-ui/src/app/rentshield/` directory that remains holds only the page
+*components* those sidebar links route to, as plain children of
+paperless-ngx's own `AppFrameComponent` route (not a separate route tree
+with its own frame). They talk **only to paperless-ngx's own stock REST
+API** — `/api/documents/`, `/api/tags/`, `/api/custom_fields/`,
+`/api/tasks/` — plus the thin `documents/notice/*` endpoints described
+above; there is no rentshield-specific data API to keep in sync with a
+separate backend contract.
+
+```
+notice-form/            Single-page "Generate Notice" form — fields +
+                        a Generate button, no step indicator, no live
+                        preview panel, no watermark. Submitting renders
+                        a real PDF and dispatches it into paperless-ngx's
+                        async consumption pipeline (POST .../notice/create/
+                        returns a Celery task id), then polls paperless-
+                        ngx's own GET /api/tasks/?task_id=... until it
+                        resolves into the created Document's id. On
+                        success, links straight to that Document's own
+                        paperless-ngx detail page (/documents/<id>) —
+                        there is no separate RentShield notice-detail page.
+notices-list/           Table of every saved notice (with total/
+                        statutory/breach/AI-reviewed stat cards above it),
+                        listed via paperless-ngx's own
+                        GET /api/documents/?tags__id__in=<tag_id> and
+                        mapped from each Document's custom_fields array
+                        — not a RentShield-specific list endpoint.
+legal-skills/           Master-detail browser over the ported
+                        legacy-v1/mcp/skills/ Markdown library — the one
+                        piece of UI with no paperless-ngx equivalent to
+                        fold into.
+services/rentshield-api.service.ts   Typed HTTP client wrapping
+                        paperless-ngx's stock documents/tags/custom_fields/
+                        tasks endpoints plus the documents/notice/*
+                        endpoints — including the CustomField id ↔ short-
+                        key mapping and the Document → Notice-shaped
+                        client-side view model every component reads.
+```
+
+A generated notice is, deliberately, not distinguishable in the UI from
+any other paperless-ngx document: open it from the Notices table or from
+`/documents/<id>` directly and you get paperless-ngx's own document
+detail page — the real rendered PDF, the `RentShield Notice` tag, and
+every notice field as a native, editable paperless-ngx custom field
+(`RentShield: Landlord Name`, `RentShield: Reason`, ...) right there
+alongside paperless-ngx's own Title/Correspondent/Document type/Tags
+fields, editable the same way.
+
+**Verified end-to-end in a real browser** (Playwright against a live
+`ng serve` + `manage.py runserver` + `celery worker`, not just "should
+work"): confirmed the root URL redirects to paperless-ngx's own
+`/dashboard` (not a RentShield-branded landing page); confirmed the
+sidebar's new "Notices" group renders inside paperless-ngx's real shell
+with no leftover "Rent Shield"/"RERA · DLD Compliant" branding anywhere;
+filled out the single-page form for a statutory (Demolition) notice and
+confirmed Generate correctly waits through the real async create → Celery
+consume → poll-until-resolved sequence before showing "Notice #N
+generated"; followed its "Open in Documents" link and confirmed
+paperless-ngx's own document detail page shows the real rendered PDF plus
+every RentShield field as a native, editable custom field; and confirmed
+Notices and Legal Skills both render correctly inside paperless-ngx's
+shell with matching screenshots.
+
+Non-obvious bugs hit and fixed along the way (kept here since they're
+easy to reintroduce):
+- A `computed(() => this.form.valid)` never re-evaluates because
+  `FormGroup.valid` is a plain getter, not a tracked Signal — both the
+  old wizard and the current form use a real `signal()` kept in sync via
+  `form.statusChanges`/`valueChanges` instead.
+- An uncaught error thrown inside a `toSignal()`'d `router.events`
+  subscription (from walking a freshly-injected `ActivatedRoute` before
+  its tree was populated) silently broke the Router's own child-route
+  activation, leaving nested `<router-outlet>` content blank — fixed by
+  reading `router.routerState.snapshot.root` instead. (This was in the
+  now-deleted `RentshieldFrameComponent`; recorded here as a general
+  Angular Signals/Router gotcha, not because that component still exists.)
+- A filename-sanitization bug in `documents/rentshield/service.py`:
+  `DocumentMetadataOverrides.filename` was built from an unsanitized
+  reason label, so a reason containing `/` ("Personal Use / Recovery")
+  broke paperless-ngx's own consumer when it tried to build a working-
+  copy path from that raw filename — fixed by sanitizing once, before
+  the name is used anywhere, not sanitizing only the temp file's own
+  path and reusing the raw string for `DocumentMetadataOverrides`.
+
+### Running the frontend dev server
+
+`ng serve` (via `pnpm start` in `src-ui/`) runs against Django on a
+different origin (`:4200` vs `:8000`), which needs three things paperless-
+ngx's own dev docs don't call out for this project's auth path:
+
+```bash
+# Django must run with DEBUG on — paperless-ngx only allowlists
+# http://localhost:4200 in CORS_ALLOWED_ORIGINS when DEBUG=True
+export PAPERLESS_DEBUG=true
+
+# At least one is_staff user must exist — paperless's
+# AngularApiAuthenticationOverride (DEBUG-only, Referer-checked dev auth)
+# does `User.objects.filter(is_staff=True).first()` and 500s on None
+uv run manage.py createsuperuser
+
+# Do NOT set PAPERLESS_AUTO_LOGIN_USERNAME for this dev path — it swaps
+# in AutoLoginMiddleware, which establishes a real Django session, which
+# makes DRF's SessionAuthentication the active authenticator, which
+# enforces CSRF — and no CSRF cookie is ever set because Angular is
+# served by vite, not Django's own @ensure_csrf_cookie IndexView.
+
+cd src-ui && pnpm install && pnpm start   # http://localhost:4200
+```
+
+## Workflows
+
+`manage.py create_rentshield_workflows` idempotently creates 12 paperless-ngx
+native Workflows (`documents/management/commands/create_rentshield_workflows.py`)
+built entirely on paperless-ngx's own Workflow engine (Manage > Workflows) —
+no custom trigger code. Safe to re-run; skips anything already created by
+name, so edits made afterward in the UI aren't clobbered.
+
+1. **Statutory expiry reminder** — scheduled off `RentShield: Notice Date`
+   + 335 days, statutory reasons only. Alerts staff that a 12-month notice's
+   legal period is closing.
+2. **Breach deadline reminder** — same idea, +25 days, breach reasons only.
+3. **Notarization requested, not dispatched** — fires on notice creation
+   when the notarization add-on is set but no e-sign status exists yet.
+4. **Notarization stalled** — same condition, recurring every 2 days, so a
+   stuck request keeps getting flagged instead of alerting once and going
+   quiet.
+5. **File into a Tenancy Notices storage path** — keeps generated notices
+   out of the general document inbox.
+6. **AI-review queue tag** — tags notices that requested the AI Compliance
+   Review add-on with `Needs AI Review`, turning a buried boolean field into
+   an actual filterable queue.
+7/8. **Document-type split** — tags statutory vs. breach notices with a real
+   paperless-ngx Document Type, so the built-in type filter is useful here.
+9. **Notify an external tool** — webhook on every new notice, for syncing
+   into a CRM or other external system (see Twenty CRM integration below).
+10. **Restrict sensitive notices** — Personal Use/Recovery and Demolition/
+    Renovation notices (real legal exposure if mishandled) get view/change
+    permissions limited to a `Lawyer` group.
+11/12. **AI review on upload** — fires the real AI Compliance Review
+    pipeline (see below) automatically on any document uploaded through
+    paperless-ngx's own uploader with "contract" in the filename or
+    tagged `Tenancy Contract` — no custom UI needed for this one at all.
+
+**Real, load-bearing limitations, not glossed over:**
+- Workflows #1, #2, #3, #4, and #9 are created **disabled**, with
+  placeholder values (`changeme@example.com`, `https://example.com/rentshield-webhook`)
+  — confirmed this via a real round trip through `GET /api/workflow_triggers/`
+  and `/api/workflow_actions/`, not assumed. Edit them with real values under
+  Manage > Workflows, then enable.
+- paperless-ngx's own Workflow email/webhook templates only expose a fixed
+  placeholder set (`title`, `doc_url`, `doc_id`, `added`, `created`,
+  `correspondent`, `document_type`, `owner_username`, `filename` —
+  `documents/templating/workflows.py`'s `_known_placeholder_names`) —
+  **custom field values are not available in those templates.** A workflow
+  can't put the landlord's name or the actual reason into an email body
+  directly; the receiving system should call
+  `GET /api/documents/<doc_id>/` with the id the webhook/email gives it to
+  get the full RentShield custom-field data.
+- Email workflows do nothing until paperless-ngx's own `PAPERLESS_EMAIL_*`
+  settings are configured (`settings.EMAIL_ENABLED` gates it entirely).
+- Workflow #10's `Lawyer` group is created with no members and no
+  object-level permissions configured beyond what the workflow itself
+  grants — it's a minimal placeholder for the role-based permissions work
+  described below, not a finished access-control setup.
+- Workflows #11/#12's webhook is `settings.RENTSHIELD_INTERNAL_URL`
+  (default `http://localhost:8000`, env var
+  `PAPERLESS_RENTSHIELD_INTERNAL_URL`) — this Django process calling
+  *itself* from its own Celery worker. Correct for a single-host dev
+  setup; in docker-compose/production, where the worker and web process
+  may not both resolve `localhost` to the same container, set that env
+  var and re-run `create_rentshield_workflows` (it only creates
+  workflows that don't already exist by name — delete the two AI-review
+  ones first if you need to change an already-created URL).
+- **Bug found and fixed while building demo data**: workflows #3/#4's
+  "notarization requested, not dispatched" condition originally used
+  `esign_status: isnull True` to mean "notarization was requested but no
+  e-sign status exists yet." That's not what `isnull` means in
+  paperless-ngx's custom-field-query DSL — it only matches a
+  `CustomFieldInstance` row whose value column is SQL NULL, which
+  `request_notarization()` never produces (it only ever writes a real
+  status string). A notice that never had notarization requested has no
+  `esign_status` instance row *at all*, so the query silently matched
+  zero documents, always — confirmed by creating a real un-notarized demo
+  notice and getting 0 back instead of 1. Fixed to use `exists: False`
+  (`documents/filters.py`'s `CustomFieldQueryParser`, `"basic"` category),
+  which correctly means "this custom field was never set on this
+  document." Re-running `create_rentshield_workflows` now also repairs
+  any already-created workflow whose trigger still carries the old,
+  broken query (matches by exact old value, so a real edit made
+  afterward in the UI is left alone).
+
+## Dashboards
+
+`manage.py create_rentshield_dashboards` idempotently creates 8 paperless-ngx
+native Saved Views (`documents/management/commands/create_rentshield_dashboards.py`)
+and pins them to show on the Dashboard (and in the sidebar) for every existing
+superuser — paperless-ngx's own dashboard-widget mechanism (Manage > Saved
+Views), no custom dashboard UI or bespoke stats endpoint. Each one is a real,
+live filter over the same custom fields and tags the notice form and
+workflows already write, so the numbers move as notices/contracts come in —
+not a static count.
+
+1. **All Notices** — every document tagged `RentShield Notice`. The top-level
+   "how many notices exist" view.
+2. **Statutory Notices (365-day)** — reason in sale/personal/demolition/
+   renovation, the notices with the 12-month legal runway.
+3. **Breach Notices (30-day)** — reason in nonpayment/sublease, the ones on
+   the tight legal clock.
+4. **Notarization Pending** — notarization add-on requested but no e-sign
+   status recorded yet; the queue of requests that haven't actually been
+   dispatched.
+5. **Sensitive Notices (Legal Review)** — personal use/demolition/
+   renovation, the same set Workflow #10 restricts to the `Lawyer` group;
+   surfaced here so legal staff have one place to see what they're
+   responsible for.
+6. **Needs AI Review** — tagged `Needs AI Review` by Workflow #6; the queue
+   the AI Compliance Review pipeline hasn't processed yet.
+7. **Contracts Under Review** — tagged `Tenancy Contract` but not yet
+   `AI-Reviewed`; uploaded contracts still waiting on Workflows #11/#12 to
+   pick them up.
+8. **Non-Compliant Contracts** — `RentShield: AI Review Findings Count` >= 1;
+   the actual output of the AI review pipeline, not just that it ran.
+
+Verified end-to-end, not just unit-level: created all 8 via the management
+command, confirmed each view's stored `filter_rules` produces the correct,
+distinct document set by replaying the equivalent `custom_field_query`
+directly against `/api/documents/`, then loaded paperless-ngx's own
+`/dashboard` page in a real browser and confirmed all 8 widgets render with
+the correct titles, tags, and counts (screenshot: All Notices 4, Breach
+Notices 1, Non-Compliant Contracts 2 with the two actually-flagged test
+contracts, Statutory Notices 3, Sensitive Notices 2).
+
+**Real, load-bearing limitations, not glossed over:**
+- Dashboard/sidebar visibility is a **per-user preference**
+  (`UiSettings.settings.saved_views.dashboard_views_visible_ids`/
+  `sidebar_views_visible_ids`), not a field on the Saved View itself —
+  confirmed by reading the `SavedViewSerializer`, where
+  `show_on_dashboard`/`show_in_sidebar` are only populated for legacy API
+  versions (< 10); the real, current source of truth is
+  `GET /api/ui_settings/`. The command only pins these 8 views for accounts
+  that are already superusers at the time it runs — any account created
+  later (including the tenant/notary/lawyer/owner roles from the
+  permissions work below) needs the same pinning done for it, or a user can
+  star/unstar any Saved View themselves from the sidebar.
+- There is no `?view_id=` document-filtering parameter in the backend —
+  paperless-ngx's Angular UI resolves a Saved View into the equivalent
+  direct query params (`custom_field_query`, `tags__id__in`, etc.)
+  client-side. Verifying a view's correctness means replaying that
+  equivalent query directly, not querying by view id.
+- Re-running the command is safe: it skips any view that already exists by
+  name, and only *adds* newly-created view ids to a user's dashboard/sidebar
+  list — it won't re-add a view a user deliberately unpinned.
+- "Notarization Pending" shared the `isnull`-vs-`exists` bug described in
+  the Workflows section above (it used the same query helper) — it showed
+  0 in the original screenshot only because there was no genuinely-pending
+  notice to test against yet. Fixed the same way; re-running
+  `create_rentshield_dashboards` also repairs an already-created view's
+  filter rule if it still carries the old, broken query.
+
+## Demo Data
+
+`manage.py create_rentshield_demo_data` idempotently seeds 8 realistic
+(fictitious) notices and 3 uploaded tenancy contracts
+(`documents/management/commands/create_rentshield_demo_data.py`) — so a new
+install, or a prospective user clicking through the self-guided tour, sees a
+platform that already has real data in it instead of an empty shell. Every
+document is created through the same code real usage goes through
+(`documents.rentshield.service.generate_and_consume`/`run_ai_review`,
+paperless-ngx's own consumption pipeline) — there is no seed-only shortcut
+that writes rows directly, so the demo data also exercises the Workflow
+engine's `DOCUMENT_ADDED` triggers exactly like a real upload would.
+
+The 8 notices span every statutory and breach reason, with a deliberate mix
+of add-ons so every dashboard widget has something to show: 3 have the
+notarization add-on requested but not yet dispatched, 2 are tagged `Needs AI
+Review`. Of the 3 contracts, one is written to fail AI review (a 7-day
+notice-period clause, well short of the 365-day statutory minimum, plus a
+verbal-notice service-method mention), one is written to pass cleanly (a
+365-day clause via registered mail), and the third is deliberately left
+un-reviewed — its filename avoids "contract" and its `Tenancy Contract` tag
+is applied only after consumption, so neither AI-review-on-upload workflow's
+`DOCUMENT_ADDED` trigger catches it — to show a genuine, non-empty
+"Contracts Under Review" queue.
+
+Verified end-to-end: ran the command against the real dev stack (Django +
+Celery + docling-service all live), confirmed the correct tags/custom-field
+values landed on every document, and re-loaded the Dashboard in a real
+browser — all 8 widgets showed correct, non-zero, mutually-consistent counts
+(this is also how the `isnull`/`exists` bug above was actually found: a
+demo notice with notarization requested and no e-sign status yet was the
+first real "genuinely pending" case this project had ever created).
+
+**Real, load-bearing limitations, not glossed over:**
+- Building the notices calls `generate_and_consume(..., synchronous=True)`
+  — a new parameter added specifically for this command
+  (`documents/rentshield/service.py`) that calls paperless-ngx's own
+  `consume_file` task in-process instead of dispatching it through Celery,
+  so the command works even with no worker running and gets the created
+  `Document` back immediately instead of a task id to poll. The API view
+  used by the real notice-generation form is unaffected — it still
+  dispatches via Celery, as it always has.
+- AI-reviewing the 2 contracts calls `run_ai_review()` directly and
+  requires docling-service to be reachable; if it isn't, the command
+  degrades gracefully (creates the documents, prints a warning, leaves
+  them tagged `Tenancy Contract` only) rather than failing outright.
+- Idempotency here is coarser than the other commands: it checks for the
+  existence of a `Demo Data` tag at all, not per-document. Re-running after
+  a partial failure without first deleting anything tagged `Demo Data`
+  will skip entirely rather than filling in what's missing.
+- If a Celery worker is running when this command runs, the real
+  `DOCUMENT_ADDED` workflows (storage path assignment, document-type
+  tagging, the notarization-pending webhook, etc.) also fire on these
+  documents asynchronously, same as any real upload — the two contracts
+  meant to demonstrate the AI-review pipeline get reviewed twice (once
+  synchronously by this command, once again by the async webhook); both
+  writes are idempotent so this is harmless, just redundant.
+
+## Roles & Permissions
+
+`manage.py create_rentshield_roles` idempotently creates 4 role Groups —
+Tenant, Property Owner, Notary, Lawyer — with real, model-level Django
+Document permissions (`documents/rentshield/roles.py`,
+`documents/management/commands/create_rentshield_roles.py`). There is no
+custom roles/permissions framework: these are plain `django.contrib.auth.
+Group` objects, the exact same mechanism paperless-ngx's own Settings >
+Users & Groups admin UI already manages, given real permissions instead of
+being left as an empty placeholder. The 5th role, full-access Admin, is
+just Django's own `is_staff`/`is_superuser` — not a group at all, since
+paperless-ngx (and Django itself) already treats a superuser as
+unrestricted everywhere; a separate "Admin" group would only be a second,
+weaker notion of admin alongside the real one.
+
+Every `documents/rentshield_views.py` endpoint that creates or dispatches a
+real legal document now requires real auth instead of `AllowAny`:
+- `create_notice_view` / `analyze_document_view`: require `CanManageNotices`
+  (`documents/rentshield/roles.py`) — Django's own `documents.add_document`
+  permission, i.e. the same "Add" checkbox under Document in Settings >
+  Users & Groups (or on an individual user) that an admin already sees and
+  edits — not a hidden rule checking group membership by name. A notice's
+  `owner` is now always the authenticated requester (paperless-ngx's own
+  `Document.owner` field), never `None`.
+- `notarize_view`: requires `CanActOnDocument` — Django's own
+  `documents.change_document` permission, since dispatching notarization
+  modifies an existing document rather than creating a new one.
+- `notarize_status_view`: any authenticated user who can already *see* the
+  document (owns it, or has a Workflow-granted object permission, or is
+  Admin) — read-only, so not limited to `CanManageNotices`.
+- `legal_skills_view` / `legal_skill_detail_view` / `check_service_method_view`:
+  any authenticated user — informational reference content, not gated by
+  role.
+- `analyze_uploaded_view` stays `AllowAny`, on purpose: it's the internal
+  server-to-server webhook callback Workflows #11/#12 hit
+  (`settings.RENTSHIELD_INTERNAL_URL`), not a human-facing endpoint — see
+  its own docstring.
+
+**Which specific documents a role's members see is narrowed per-document,
+not just per-model**, reusing paperless-ngx's existing guardian-backed
+object permissions (`documents/permissions.py`) rather than anything new:
+- **Property Owner**: sees the notices they personally generated
+  (`Document.owner`, paperless-ngx's own ownership model) — one Property
+  Owner cannot see another's notices, verified directly (a second Property
+  Owner account got `404` on the first owner's notice, `200` creating
+  their own).
+- **Notary**: sees a notice only once notarization is actually requested
+  on it — granted by the new Workflow #13, "RentShield: grant Notary
+  access on notarization request" (`DOCUMENT_ADDED`, `add_notarization`
+  exact `True` → `assign_view_groups`/`assign_change_groups` on the Notary
+  group), the exact same mechanism Workflow #10 already used for Lawyer.
+- **Lawyer**: sees only sensitive-reason notices (personal use, demolition,
+  renovation) — Workflow #10, unchanged, now paired with real model-level
+  permissions on the Lawyer group (see the bug note below).
+- **Tenant**: gets `view_document` at the model level, but **no automatic
+  per-notice visibility** — `tenant_name` on a notice is free text, not a
+  link to a real user account, so there's no way to know which Tenant user
+  a given notice belongs to without a bigger schema change (named here, not
+  silently skipped). A Tenant sees nothing until an admin manually grants
+  them view access to their specific notice(s) (Documents > select > Edit
+  permissions in paperless-ngx's own UI).
+
+Verified end-to-end with 4 real test users (one per role, `force_login`'d
+through Django's real request/response cycle, not mocked) plus a second
+Property Owner account: `create_notice_view` returned `200` only for the
+Property Owner and `403` for Tenant/Notary/Lawyer; after the Property Owner
+created a notarization-requested notice and a sensitive-reason notice, the
+Notary could `GET` the former (`200`) but not the latter (`404`), the
+Lawyer the reverse, and the Tenant neither — exactly the intended matrix.
+
+The Angular frontend gates on the same real permissions, not a separate
+check: "New Notice" (`app-frame.component.html`) and its route
+(`app-routing.module.ts`) require `Add`/`Document`; "Notices" and "Legal
+Skills" require `View`/`Document` — both via paperless-ngx's own existing
+`*pngxIfPermissions` directive and `PermissionsGuard`, the same mechanism
+already gating every other nav item, not a bespoke role check.
+
+**Bug found and fixed while verifying this**: the `Lawyer` group (created
+as an empty placeholder by `create_rentshield_workflows.py` back in task
+1) had never been given model-level Document permissions — only the
+object-level grant from Workflow #10. `create_rentshield_roles` fixes this
+(and will heal it again if the group's permissions are ever edited into an
+inconsistent state, since it always sets the group's permission set to
+exactly what's defined in `roles.py` rather than only adding on first
+creation).
+
+**Second bug found and fixed, this time via real browser testing, not just
+API-level automated checks**: every role group 403'd on `GET
+/api/ui_settings/` — the very first API call paperless-ngx's own Angular
+app makes on every single page load, before it even knows what permissions
+the logged-in user has (so it can't itself be gated behind a permission
+check). It requires the plain Django model-level `view_uisettings`/
+`change_uisettings` permissions, which `create_rentshield_roles` only ever
+granted for Document, never for `UiSettings` — meaning the app shell never
+even finished loading for a Tenant/Property Owner/Notary/Lawyer account. The
+automated verification described above never caught this because it drove
+specific endpoints directly via Django's test client rather than actually
+booting the Angular app as one of these roles. Fixed by adding
+`BASELINE_PERMISSIONS` (`documents/rentshield/roles.py`) — granted to every
+role group alongside its Document permissions — and re-verified via a real
+logged-in request to `/api/ui_settings/` returning `200` instead of `403`.
+
+**Third bug found and fixed, same way**: after fixing the above, a real
+Lawyer-group account logging in still saw zero notices under "Notices" —
+including ones with a sensitive reason, which should have been visible.
+Root cause: Workflow #10's object-level grant only ever fires at
+`DOCUMENT_ADDED` time, so any sensitive-reason notice consumed *before*
+that Workflow existed (or before the Lawyer group had its permissions
+fixed) never got the grant, and never will just because the Workflow
+exists now — confirmed directly in this project's own sandbox, where
+documents created early in this project had no Lawyer grant while ones
+created later did. `create_rentshield_workflows` now also backfills this:
+after creating/repairing the workflows themselves, it scans every
+already-existing document for a sensitive reason or a notarization
+request and grants the matching group's access via the exact same
+`set_permissions_for_object()` call the Workflow action itself uses (see
+`_backfill_object_permissions()`) — `merge=True`, so it only ever adds a
+grant, never revokes one, and is safe to re-run. Re-running it in this
+project's sandbox correctly backfilled the 2 sensitive-reason documents
+that were missing it and left the rest untouched (0 backfilled on a
+second run), and a real Lawyer-group API request went from seeing 0
+sensitive notices to seeing all of them.
+
+**Fourth bug found and fixed, by an admin actually using the real
+permissions UI**: `CanManageNotices` originally checked group membership
+directly (`user_in_group(user, PROPERTY_OWNER_GROUP_NAME)`) rather than an
+actual Django permission. That meant Settings > Users & Groups' own
+"Document > Add" checkbox — the exact control an admin would reach for to
+grant someone notice-creation access — silently did nothing for any group
+other than Property Owner: an admin ticking "Add" for Lawyer (confirmed by
+doing exactly this) still got `403` on notice creation, because the check
+never looked at that permission at all. The Angular frontend was never
+wrong here — "New Notice" is (and always was) gated on the real
+`Add`/`Document` permission via `*pngxIfPermissions`, so the nav link
+correctly appeared while the backend silently refused the action, a
+confusing split. Fixed by changing `can_manage_notices()`/
+`CanManageNotices` to check `user.has_perm("documents.add_document")`
+directly — the same permission the checkbox controls, and the same one
+Django already treats a superuser as always having, so no separate staff/
+superuser check is needed either. `notarize_view` was moved to a new
+`CanActOnDocument` checking `documents.change_document` instead (dispatching
+notarization modifies an existing document, so "Change," not "Add," is the
+correct permission). Property Owner already has both by default, so
+nothing changes for the out-of-the-box role; any other group or individual
+user now genuinely gains notice-creation ability the moment "Add" is
+ticked for them, with no code change required. Verified directly: a Lawyer
+account with `add_document` manually granted went from `403` to `200` on
+notice creation, and back to `403` once the permission was removed.
+
+**Fifth bug found and fixed, same real-browser-testing pattern**: the
+Notices list 403'd on `GET /api/tags/?name__iexact=RentShield%20Notice`
+for every role — `rentshield-api.service.ts` resolves the "RentShield
+Notice" tag's id this way to build its document-list filter, and
+`BASELINE_PERMISSIONS` only covered `UiSettings`, never `Tag`. Added
+`view_tag` to `BASELINE_PERMISSIONS`; tag *creation* on notice generation
+was never affected, since that happens server-side via the ORM directly
+in `documents/rentshield/service.py`, not through this API. Verified: a
+real Lawyer-group request to that exact endpoint went from `403` to `200`.
+
+**Real, load-bearing limitations, not glossed over:**
+- No user is a member of any role group by default — an admin has to
+  assign real users to Tenant/Property Owner/Notary/Lawyer under
+  Settings > Users & Groups, based on who they actually are.
+- The backfill only covers what `create_rentshield_workflows` already
+  knows to grant (sensitive-reason → Lawyer, notarization-requested →
+  Notary) — it's not a general "recompute every permission" tool. If you
+  add a new Workflow-driven grant later, give it the same backfill
+  treatment rather than assuming existing documents will pick it up.
+- `reasons_view`/`pricing_view` (static reference data: the list of
+  reasons, the price table) are intentionally left as plain, ungated Django
+  views — no document data, nothing role-specific to protect.
+
+## Landing Page
+
+`GET /welcome/` is the one URL in this project deliberately **not** behind
+paperless-ngx's `login_required` gate — a real public marketing page for
+prospective users (`documents/rentshield_views.py`'s `landing_view`,
+`documents/templates/rentshield/landing.html`), styled with paperless-ngx's
+own static color tokens (`documents/static/base.css`'s `--pngx-primary:
+#17541f` and friends — the exact same green as the app itself, not an
+approximation) rather than Angular's SCSS pipeline.
+
+**Why a Django template, not an Angular route**: the entire Angular app is
+served through one view, `IndexView`, which is wrapped in Django's
+`login_required` at the URL level (`paperless/urls.py`) — an anonymous
+visitor hitting *any* path is redirected to `/accounts/login/` before
+Angular ever bootstraps, so there was no way to add a public route inside
+the SPA. `/welcome/` is registered as its own URL pattern, ahead of the
+Angular catch-all, so it's reachable without a login at all — confirmed by
+requesting `/` while logged out and getting a real `302` to
+`/accounts/login/?next=/`, while `/welcome/` itself returns `200`.
+
+The page's content is all real: the reason chips in the hero's mock
+"Generate a Notice" panel and the pricing cards are rendered from
+`documents/rentshield/constants.py`/`pricing.py` (the same values the real
+notice form and pricing endpoint use), and the "Applicable Law" section
+quotes the same statute citations (`Law No. (33) of 2008`, Article 25(1)/
+(2)/(3), RERA) already used throughout `notice_builder.py` and the legal
+skills library — nothing on this page asserts anything about UAE law that
+isn't already backed elsewhere in this codebase. There are no fabricated
+client logos, testimonials, or stats.
+
+### Self-service signup, with a role chosen at registration
+
+"Get Started"/"Log In" link to real paperless-ngx auth pages
+(`/accounts/signup/`, `/accounts/login/`) — not a dead end. Signups are
+open by default for RentShield specifically (`ACCOUNT_ALLOW_SIGNUPS`
+defaults to enabled in `paperless/settings/__init__.py`, unlike stock
+paperless-ngx which defaults this closed — still overridable via
+`PAPERLESS_ACCOUNT_ALLOW_SIGNUPS` for anyone who wants to lock it down).
+
+The signup form itself has one RentShield-specific addition: an "I am a"
+choice between **Property Owner** and **Tenant**
+(`documents/rentshield/forms.py`'s `RentShieldSignupExtra`, wired in via
+django-allauth's own `ACCOUNT_SIGNUP_FORM_CLASS` extension point — not a
+custom auth flow). Whichever the new user picks, they're added to the
+matching real Django Group (see Roles & Permissions above) the moment
+their account is created. Notary and Lawyer are deliberately **not**
+self-service choices here — those represent a vetted real-world
+relationship (a licensed notary, a retained lawyer) an admin assigns under
+Settings > Users & Groups, not something anyone can declare about
+themselves at signup.
+
+The "Generate Notice" button in the hero opens an in-page modal
+(`rsAuthModal` in `landing.html`, plain CSS/vanilla JS, no framework)
+rather than leaving the page: pick a role first, then a Sign Up/Log In tab
+pair with real form fields. These aren't a fake preview — the forms POST
+directly to paperless-ngx's own `/accounts/signup/`/`/accounts/login/`
+endpoints (same field names, same CSRF token, rendered from the same
+Django template as the real account pages) and create real accounts.
+
+Verified end-to-end, not just visually: a real Playwright browser session
+clicked "Generate Notice," chose "Property Owner," filled in the signup
+form, submitted it, and the resulting account was confirmed server-side to
+exist with the correct email and — critically — actually assigned to the
+**Property Owner** Django group, not just created.
+
+**Real, load-bearing limitations, not glossed over:**
+- The page is static per-request (Django template context, not live data)
+  — pricing/reasons update automatically if `pricing.py`/`constants.py`
+  change, but nothing on it reflects a specific user's account.
+- Validation errors on the modal's forms (e.g. a taken username, a
+  password mismatch) redirect the browser to the real, full
+  `/accounts/signup/`/`/accounts/login/` page to show the error, rather
+  than showing it inline in the modal — a real UX rough edge, not
+  pretended away. Inline validation would need either a JS-driven
+  fetch/AJAX submit or server-rendered partial re-render of the modal,
+  neither attempted here.
+- In this project's local *split* dev setup (Django on port 8000, the
+  Angular dev server separately on port 4200, no proxy stitching them into
+  one origin) a successful signup/login redirects back to port 8000's own
+  copy of `index.html`, which doesn't render correctly there since the
+  Angular bundle is only served by `ng serve` on port 4200, not collected
+  as static files on 8000. This is a real, known friction point for local
+  testing (not a bug in the signup/login flow itself, and not present in a
+  real single-origin deployment) — after registering/logging in locally,
+  manually navigate to `http://localhost:4200/dashboard` to actually use
+  the app.
+
+## Interactive Product Tour
+
+RentShield's onboarding walkthrough extends paperless-ngx's own existing
+guided tour (`ngx-ui-tour-ng-bootstrap`, already a dependency, already
+wired up in `app.component.ts`/`.html` for the stock app) rather than
+adding a second tour mechanism. It's one continuous, 20-step tour: Dashboard
+→ RentShield's dashboard widgets → generate a notice (reason picker,
+add-ons) → the Notices list (stats, table) → Legal Skills → then straight
+into paperless-ngx's own stock steps (Documents, filters, Saved Views,
+Tags, Mail, Workflows, Tasks, Settings) → outro. Same "Start tour" entry
+points as stock paperless-ngx: the welcome widget on an empty dashboard, or
+the permanent button under Settings.
+
+Each step is a real popover (`ngb-popover-window`) anchored to a real
+element via the `tourAnchor` directive, with a spotlight cutout in a
+backdrop over the rest of the page — not a custom overlay of our own.
+RentShield's new anchors live in `app-frame.component.html` (the "New
+Notice"/"Notices"/"Legal Skills" nav items, on the `<li>` wrapper, matching
+the stock nav-item anchors) and inside `notice-form`, `notices-list`, and
+`legal-skills` components' own templates (the reason picker, add-ons
+section, stat cards, notice table, skills list). The new steps themselves
+live in the same array as the stock ones, in `app.component.ts`.
+
+**Bugs found and fixed while building this** (both real, both would have
+made new anchors silently non-functional or broken the *whole* tour):
+- The 3 new page-level components (`notice-form`, `notices-list`,
+  `legal-skills`) are standalone Angular components that never imported
+  anything tour-related — `tourAnchor` was inert on them: the attribute
+  rendered in the DOM (confirmed via a direct DOM check) but
+  `TourAnchorNgBootstrapDirective` was never actually applied, so the
+  anchor never registered with `TourService` at all. Fixed by adding
+  `TourNgBootstrap` (the directive bundle export, same as `app.component.ts`
+  already uses) to each component's own `imports` array.
+- The first version of the 3 new nav-item anchors was placed on the `<a>`
+  tag itself — which already carries its own `ngbPopover` for the
+  slim-sidebar hover tooltip. Every *existing* stock nav-item anchor
+  (`tour.tags`, `tour.mail`, `tour.workflows`, `tour.settings`,
+  `tour.file-tasks`) is on the parent `<li>`, specifically avoiding that
+  same element. Because `ngx-ui-tour-core`'s anchor registry throws on a
+  genuinely duplicate `anchorId` but silently does nothing useful when a
+  tour step's target anchor is present-but-non-interactive this way, the
+  step just... never showed a popover, and because it wasn't marked
+  `isOptional`, the *entire tour silently ended* the moment it reached that
+  step — found by reading `ngx-ui-tour-core`'s actual `showStep()`/
+  `register()` source in `node_modules` after black-box testing gave no
+  console error to go on. Fixed by moving the anchor to the `<li>`, matching
+  the stock pattern exactly.
+
+Verified end-to-end: a real Playwright run started the tour, clicked
+"Next" through all 20 steps, and logged each step's URL and popover text —
+every RentShield step landed on the right page with the right content, in
+order, with zero anchor-registration warnings, flowing seamlessly into the
+unmodified stock steps through to the outro.
+
+**Real, load-bearing limitations, not glossed over:**
+- Several RentShield steps are `isOptional: true` (skipped, not shown, if
+  their anchor isn't in the DOM) — the "New Notice" nav item only exists
+  for a user with `add_document` permission (see Roles & Permissions
+  above), so a Tenant or Notary taking the tour won't see that step; this
+  is intentional, not a bug, and mirrors how the stock tour already treats
+  `tour.tags`/`tour.mail`/etc. as effectively permission-gated (their
+  anchors are behind the same `*pngxIfPermissions` checks).
+- The tour doesn't adapt its *wording* per role — a Tenant who reaches the
+  notarization add-on step reads copy written from a Property Owner's
+  perspective. Role-aware tour copy is a real, separate enhancement, not
+  attempted here.
+
+## Not done yet (named, not silently skipped)

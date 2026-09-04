@@ -137,7 +137,6 @@ INSTALLED_APPS = [
     "paperless",
     "documents.apps.DocumentsConfig",
     "paperless_mail.apps.PaperlessMailConfig",
-    "rentshield.apps.RentshieldConfig",
     "django.contrib.admin",
     "rest_framework",
     "rest_framework.authtoken",
@@ -325,8 +324,15 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv(
 )
 
 ACCOUNT_ADAPTER = "paperless.adapter.CustomAccountAdapter"
-ACCOUNT_ALLOW_SIGNUPS = get_bool_from_env("PAPERLESS_ACCOUNT_ALLOW_SIGNUPS")
+# RentShield is a self-service product (unlike stock paperless-ngx, which
+# defaults this closed) -- prospective Property Owners/Tenants can
+# register themselves from the public landing page. Still overridable via
+# the env var for anyone who wants to lock it down.
+ACCOUNT_ALLOW_SIGNUPS = get_bool_from_env("PAPERLESS_ACCOUNT_ALLOW_SIGNUPS", "yes")
 ACCOUNT_DEFAULT_GROUPS = get_list_from_env("PAPERLESS_ACCOUNT_DEFAULT_GROUPS")
+# Adds the Property Owner/Tenant role choice to the signup form -- see
+# documents/rentshield/forms.py.
+ACCOUNT_SIGNUP_FORM_CLASS = "documents.rentshield.forms.RentShieldSignupExtra"
 
 SOCIALACCOUNT_ADAPTER = "paperless.adapter.CustomSocialAccountAdapter"
 SOCIALACCOUNT_ALLOW_SIGNUPS = get_bool_from_env(
@@ -1203,6 +1209,21 @@ WEBHOOKS_ALLOW_INTERNAL_REQUESTS = get_bool_from_env(
     "PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS",
     "true",
 )
+
+# The base URL this Django process is reachable at, from its OWN Celery
+# worker -- used only to build the self-referential webhook URL for
+# manage.py create_rentshield_workflows' AI-review-on-upload workflows
+# (documents/rentshield/service.py's run_ai_review() runs too long for a
+# Workflow's own 5s webhook timeout, so the webhook calls back into this
+# same server to dispatch it as an async Celery task instead). Cannot be
+# derived from PAPERLESS_URL, which is often unset in a single-host dev
+# setup and would produce a relative path a webhook can't actually POST
+# to. Override for docker-compose/production topologies where the
+# process isn't reachable at localhost from its own worker.
+RENTSHIELD_INTERNAL_URL = os.getenv(
+    "PAPERLESS_RENTSHIELD_INTERNAL_URL",
+    "http://localhost:8000",
+).rstrip("/")
 
 ###############################################################################
 # Remote Parser                                                               #

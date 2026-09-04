@@ -1,0 +1,518 @@
+<!doctype html>
+{% load static %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="RentShield generates RERA and DLD compliant Dubai tenancy notices -- bilingual, statute-cited, with optional notarization and AI compliance review.">
+  <title>RentShield &mdash; Dubai Tenancy Notices, Done Right</title>
+  <link href="{% static 'bootstrap.min.css' %}" rel="stylesheet">
+  <link href="{% static 'base.css' %}" rel="stylesheet">
+  <style>
+    :root {
+      --rs-green-tint: #eef6ef;
+      --rs-green-tint-2: #e0f0e3;
+      --rs-border: #e2e6e4;
+      --rs-text-muted: #55635a;
+    }
+    body {
+      color: #212529;
+      background: #fff;
+    }
+    a { text-decoration: none; }
+    .rs-nav {
+      position: sticky; top: 0; z-index: 20;
+      background: #fff; border-bottom: 1px solid var(--rs-border);
+    }
+    .rs-nav-inner {
+      max-width: 1140px; margin: 0 auto; padding: .85rem 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .rs-brand { display: flex; align-items: center; gap: .5rem; color: #212529; }
+    .rs-brand svg { width: 26px; height: 26px; color: var(--pngx-primary); }
+    .rs-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+    .rs-brand-text strong { font-size: 1.05rem; }
+    .rs-brand-text span { font-size: .65rem; text-transform: uppercase; letter-spacing: .04em; color: var(--rs-text-muted); }
+    .rs-nav-links { display: flex; align-items: center; gap: 1.75rem; }
+    .rs-nav-links a:not(.btn) { color: #212529; font-size: .92rem; }
+    .rs-nav-links a:not(.btn):hover { color: var(--pngx-primary); }
+    .rs-nav-cta { display: flex; align-items: center; gap: .6rem; }
+
+    section { padding: 4.5rem 1.5rem; }
+    .rs-section-inner { max-width: 1140px; margin: 0 auto; }
+    .rs-eyebrow {
+      display: inline-block; font-size: .75rem; font-weight: 600; letter-spacing: .05em;
+      text-transform: uppercase; color: var(--pngx-primary); background: var(--rs-green-tint);
+      padding: .3rem .7rem; border-radius: 999px; margin-bottom: 1rem;
+    }
+    .rs-h1 { font-size: 2.6rem; font-weight: 700; line-height: 1.15; margin-bottom: 1.1rem; }
+    .rs-lead { font-size: 1.1rem; color: var(--rs-text-muted); margin-bottom: 1.75rem; max-width: 34rem; }
+
+    .rs-hero { padding-top: 3.5rem; }
+    .rs-hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 3rem; align-items: start; }
+    @media (max-width: 900px) { .rs-hero-grid { grid-template-columns: 1fr; } }
+    .rs-trustline { margin-top: 1.75rem; font-size: .82rem; color: var(--rs-text-muted); display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; }
+    .rs-trustline span { display: inline-flex; align-items: center; gap: .35rem; }
+    .rs-trustline span::before { content: "\2713"; color: var(--pngx-primary); font-weight: 700; }
+
+    .rs-mock-card {
+      border: 1px solid var(--rs-border); border-radius: 14px; padding: 1.5rem;
+      background: #fff; box-shadow: 0 12px 32px rgba(23, 84, 31, .08);
+    }
+    .rs-mock-card h6 { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--rs-text-muted); margin-bottom: .9rem; }
+    .rs-mock-step { margin-bottom: 1.1rem; }
+    .rs-mock-step label { display: block; font-size: .85rem; font-weight: 600; margin-bottom: .35rem; }
+    .rs-mock-field {
+      border: 1px solid var(--rs-border); border-radius: 8px; padding: .55rem .75rem;
+      font-size: .9rem; color: #495057; background: var(--pngx-bg-darker, #f4f6f5);
+    }
+    .rs-mock-reasons { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .rs-mock-reasons span {
+      font-size: .78rem; border: 1px solid var(--rs-border); border-radius: 999px;
+      padding: .25rem .65rem; color: #495057;
+    }
+    .rs-mock-cta { display: block; text-align: center; margin-top: .25rem; }
+    .rs-mock-caption { text-align: center; font-size: .78rem; color: var(--rs-text-muted); margin-top: .6rem; }
+
+    .rs-alt { background: var(--rs-green-tint); }
+    .rs-h2 { font-size: 1.9rem; font-weight: 700; margin-bottom: .75rem; }
+    .rs-section-lead { color: var(--rs-text-muted); max-width: 42rem; margin-bottom: 2.5rem; }
+
+    .rs-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.75rem; }
+    @media (max-width: 800px) { .rs-steps { grid-template-columns: 1fr; } }
+    .rs-step-num {
+      width: 34px; height: 34px; border-radius: 50%; background: var(--pngx-primary); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: .9rem;
+    }
+    .rs-step h5 { font-weight: 700; margin-bottom: .4rem; }
+    .rs-step p { color: var(--rs-text-muted); font-size: .92rem; }
+
+    .rs-role-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
+    @media (max-width: 1000px) { .rs-role-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .rs-role-grid { grid-template-columns: 1fr; } }
+    .rs-role-card {
+      border: 1px solid var(--rs-border); border-radius: 10px; padding: 1.1rem; background: #fff;
+    }
+    .rs-role-card h6 { font-weight: 700; margin-bottom: .35rem; }
+    .rs-role-card p { font-size: .82rem; color: var(--rs-text-muted); margin: 0; }
+
+    .rs-law-box {
+      background: var(--pngx-primary); color: #fff; border-radius: 16px; padding: 2.5rem;
+    }
+    .rs-law-box .rs-eyebrow { background: rgba(255,255,255,.15); color: #fff; }
+    .rs-law-box h2 { color: #fff; }
+    .rs-law-list { list-style: none; padding: 0; margin: 1.5rem 0 0; display: grid; gap: .9rem; }
+    .rs-law-list li { display: flex; gap: .7rem; font-size: .92rem; opacity: .95; }
+    .rs-law-list li::before { content: "\00A7"; font-weight: 700; opacity: .8; }
+
+    .rs-pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+    @media (max-width: 800px) { .rs-pricing-grid { grid-template-columns: 1fr; } }
+    .rs-price-card { border: 1px solid var(--rs-border); border-radius: 12px; padding: 1.5rem; background: #fff; }
+    .rs-price-card.rs-price-base { border-color: var(--pngx-primary); border-width: 2px; }
+    .rs-price-amount { font-size: 1.9rem; font-weight: 700; margin: .4rem 0 .6rem; }
+    .rs-price-amount span { font-size: .95rem; font-weight: 500; color: var(--rs-text-muted); }
+    .rs-price-card p.rs-price-desc { font-size: .85rem; color: var(--rs-text-muted); }
+
+    .rs-security-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+    @media (max-width: 800px) { .rs-security-grid { grid-template-columns: 1fr; } }
+    .rs-security-card h5 { font-weight: 700; margin: .8rem 0 .4rem; }
+    .rs-security-card p { color: var(--rs-text-muted); font-size: .9rem; }
+    .rs-security-icon {
+      width: 42px; height: 42px; border-radius: 10px; background: var(--rs-green-tint);
+      color: var(--pngx-primary); display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; font-weight: 700;
+    }
+
+    .rs-modal-overlay {
+      position: fixed; inset: 0; background: rgba(20,32,26,.55);
+      align-items: center; justify-content: center; z-index: 100; padding: 1rem;
+    }
+    .rs-modal-overlay:not([hidden]) { display: flex; }
+    .rs-modal {
+      background: #fff; border-radius: 16px; padding: 2rem; max-width: 26rem; width: 100%;
+      position: relative; max-height: 90vh; overflow-y: auto;
+    }
+    .rs-modal-close {
+      position: absolute; top: .75rem; right: .9rem; border: none; background: none;
+      font-size: 1.6rem; line-height: 1; color: var(--rs-text-muted); cursor: pointer;
+    }
+    .rs-role-choice-grid { display: grid; gap: .75rem; margin-top: 1.25rem; }
+    .rs-role-choice-card {
+      border: 1px solid var(--rs-border); border-radius: 10px; padding: 1rem 1.1rem; text-align: left;
+      background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: .25rem; width: 100%;
+    }
+    .rs-role-choice-card:hover { border-color: var(--pngx-primary); background: var(--rs-green-tint); }
+    .rs-role-choice-card strong { font-size: 1rem; }
+    .rs-role-choice-card span { font-size: .82rem; color: var(--rs-text-muted); }
+    .rs-modal-tabs { display: flex; gap: 1.5rem; border-bottom: 1px solid var(--rs-border); margin-bottom: 1.1rem; }
+    .rs-modal-tab {
+      border: none; background: none; padding: .5rem 0; font-weight: 600; color: var(--rs-text-muted);
+      border-bottom: 2px solid transparent; cursor: pointer; font-size: .92rem;
+    }
+    .rs-modal-tab.active { color: var(--pngx-primary); border-bottom-color: var(--pngx-primary); }
+    .rs-modal-field { margin-bottom: .8rem; }
+    .rs-modal-field label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: .3rem; }
+    .rs-modal-back { background: none; border: none; color: var(--rs-text-muted); font-size: .85rem; padding: 0; margin-bottom: .75rem; cursor: pointer; }
+    .rs-modal-back:hover { color: var(--pngx-primary); }
+
+    footer.rs-footer { background: #14201a; color: #b9c4bd; padding: 3rem 1.5rem 1.5rem; }
+    .rs-footer-inner { max-width: 1140px; margin: 0 auto; }
+    .rs-footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 2rem; margin-bottom: 2rem; }
+    @media (max-width: 700px) { .rs-footer-grid { grid-template-columns: 1fr; } }
+    .rs-footer-grid h6 { color: #fff; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .9rem; }
+    .rs-footer-grid a { display: block; color: #b9c4bd; font-size: .88rem; margin-bottom: .5rem; }
+    .rs-footer-grid a:hover { color: #fff; }
+    .rs-footer-bottom { border-top: 1px solid rgba(255,255,255,.1); padding-top: 1.25rem; font-size: .8rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
+  </style>
+</head>
+<body>
+
+  <nav class="rs-nav">
+    <div class="rs-nav-inner">
+      <a class="rs-brand" href="#top">
+        {% include "paperless-ngx/snippets/svg_leaf.html" %}
+        <span class="rs-brand-text">
+          <strong>RentShield</strong>
+          <span>by Paperless-ngx</span>
+        </span>
+      </a>
+      <div class="rs-nav-links">
+        <a href="#how-it-works">How it works</a>
+        <a href="#roles">Who it's for</a>
+        <a href="#applicable-law">Applicable Law</a>
+        <a href="#pricing">Pricing</a>
+      </div>
+      <div class="rs-nav-cta">
+        <a class="btn btn-outline-secondary btn-sm" href="/accounts/login/">Log In</a>
+        <a class="btn btn-primary btn-sm" href="/accounts/signup/">Get Started</a>
+      </div>
+    </div>
+  </nav>
+
+  <header id="top" class="rs-hero">
+    <div class="rs-section-inner rs-hero-grid">
+      <div>
+        <span class="rs-eyebrow">Dubai Tenancy Law, Automated</span>
+        <h1 class="rs-h1">Serve legally compliant eviction &amp; breach notices in minutes, not billable hours.</h1>
+        <p class="rs-lead">
+          RentShield generates bilingual (English/Arabic), statute-cited tenancy notices under
+          UAE Federal Law No. (33) of 2008 &mdash; the correct 365-day statutory notice or the
+          30-day Article 25(1) breach notice, picked automatically from your reason. Every notice
+          is stored as a real, searchable, permission-controlled document, not a one-off PDF you
+          have to track yourself.
+        </p>
+        <div class="rs-nav-cta">
+          <a class="btn btn-primary btn-lg" href="/accounts/signup/">Get Started</a>
+          <a class="btn btn-link" href="#how-it-works">See how it works &rarr;</a>
+        </div>
+        <div class="rs-trustline">
+          <span>Built on paperless-ngx (open source)</span>
+          <span>Bilingual EN / AR notices</span>
+          <span>Article 25 citations on every notice</span>
+          <span>Role-based access control</span>
+        </div>
+      </div>
+
+      <div class="rs-mock-card" aria-hidden="true">
+        <h6>Generate a Notice</h6>
+        <div class="rs-mock-step">
+          <label>1. Select your notice reason</label>
+          <div class="rs-mock-reasons">
+            {% for reason in statutory_reasons %}
+              <span>{{ reason.label }}</span>
+            {% endfor %}
+            {% for reason in breach_reasons %}
+              <span>{{ reason.label }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="rs-mock-step">
+          <label>2. Enter tenancy details</label>
+          <div class="rs-mock-field mb-2">Tenant name, unit, Ejari No.&hellip;</div>
+          <div class="rs-mock-field">Notice date</div>
+        </div>
+        <button type="button" class="btn btn-primary rs-mock-cta" onclick="rsOpenAuthModal()">Generate Notice</button>
+        <p class="rs-mock-caption">Register or sign in to generate a real, signed notice for your property.</p>
+      </div>
+    </div>
+  </header>
+
+  <section id="how-it-works" class="rs-alt">
+    <div class="rs-section-inner">
+      <span class="rs-eyebrow">How it works</span>
+      <h2 class="rs-h2">Three steps from reason to a served notice</h2>
+      <p class="rs-section-lead">
+        No template shopping, no guessing which notice period applies. RentShield knows the
+        difference between a 12-month statutory ground and a 30-day breach ground, and builds
+        the right notice either way.
+      </p>
+      <div class="rs-steps">
+        <div class="rs-step">
+          <div class="rs-step-num">1</div>
+          <h5>Select your reason</h5>
+          <p>Sale, personal use, demolition, or renovation trigger the 365-day statutory notice under
+            Article 25(2); non-payment or unauthorized subleasing trigger the 30-day breach notice
+            under Article 25(1). RentShield applies the correct period automatically.</p>
+        </div>
+        <div class="rs-step">
+          <div class="rs-step-num">2</div>
+          <h5>Generate the bilingual notice</h5>
+          <p>A real PDF is rendered in English and Arabic with the applicable clause and citation,
+            then stored as a document in your own paperless-ngx instance &mdash; full-text searchable,
+            tagged, and versioned like everything else you keep there.</p>
+        </div>
+        <div class="rs-step">
+          <div class="rs-step-num">3</div>
+          <h5>Notarize &amp; review, optionally</h5>
+          <p>Route the notice through a licensed notary for physical notarization, or run an AI
+            compliance review against an uploaded tenancy contract to flag clauses that fall short
+            of Article 25 before you rely on them.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="roles">
+    <div class="rs-section-inner">
+      <span class="rs-eyebrow">Who it's for</span>
+      <h2 class="rs-h2">Access scoped to who someone actually is</h2>
+      <p class="rs-section-lead">
+        RentShield's roles aren't a UI label &mdash; they're enforced on every document, by
+        paperless-ngx's own permission system. A Property Owner sees the notices they generated;
+        a Notary only sees notices once notarization is actually requested; a Lawyer only sees
+        sensitive-reason notices; nobody sees more than their role allows by default.
+      </p>
+      <div class="rs-role-grid">
+        <div class="rs-role-card">
+          <h6>Property Owner</h6>
+          <p>Generates notices, requests notarization, sees the notices they created.</p>
+        </div>
+        <div class="rs-role-card">
+          <h6>Tenant</h6>
+          <p>Views the notice(s) served to them, once granted access to that specific notice.</p>
+        </div>
+        <div class="rs-role-card">
+          <h6>Notary</h6>
+          <p>Sees a notice automatically once notarization is requested on it, to process it.</p>
+        </div>
+        <div class="rs-role-card">
+          <h6>Lawyer</h6>
+          <p>Sees sensitive-reason notices (personal use, demolition, renovation) for legal review.</p>
+        </div>
+        <div class="rs-role-card">
+          <h6>Admin</h6>
+          <p>Full platform access &mdash; paperless-ngx's own superuser, not a separate concept.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="applicable-law" class="rs-alt">
+    <div class="rs-section-inner">
+      <div class="rs-law-box">
+        <span class="rs-eyebrow">Governing law</span>
+        <h2>Every notice cites the statute it relies on</h2>
+        <ul class="rs-law-list">
+          <li>UAE Federal Law No. (33) of 2008, Amending Law No. (26) of 2007 Regulating the
+            Relationship Between Landlords and Tenants in the Emirate of Dubai.</li>
+          <li>Article 25(2): a 12-month (365-day) notice for sale, personal use/recovery,
+            demolition, or extensive renovation &mdash; served before the current contract's expiry.</li>
+          <li>Article 25(1): a 30-day notice for non-payment of rent or unauthorized subleasing.</li>
+          <li>Article 25(3): notice must be served by Notary Public, registered mail with
+            acknowledgment of receipt, or court bailiff &mdash; not email, SMS, or verbal notice.</li>
+          <li>Regulated by Dubai's Real Estate Regulatory Agency (RERA) and enforceable before the
+            Rental Dispute Settlement Centre (RDSC).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="rs-section-inner">
+      <span class="rs-eyebrow">Pricing</span>
+      <h2 class="rs-h2">One notice fee, two optional add-ons</h2>
+      <p class="rs-section-lead">No subscriptions, no per-seat pricing &mdash; pay for what you generate.</p>
+      <div class="rs-pricing-grid">
+        <div class="rs-price-card rs-price-base">
+          <h6 class="text-uppercase text-muted" style="font-size:.78rem;letter-spacing:.04em;">Notice generation</h6>
+          <div class="rs-price-amount">AED {{ base_price_aed }} <span>/ notice</span></div>
+          <p class="rs-price-desc">A bilingual, statute-cited statutory or breach notice, stored as a
+            real document in your paperless-ngx instance.</p>
+        </div>
+        {% for key, addon in add_ons.items %}
+        <div class="rs-price-card">
+          <h6 class="text-uppercase text-muted" style="font-size:.78rem;letter-spacing:.04em;">{{ addon.label }}</h6>
+          <div class="rs-price-amount">+AED {{ addon.price_aed }}</div>
+          <p class="rs-price-desc">{{ addon.description }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section id="security" class="rs-alt">
+    <div class="rs-section-inner">
+      <span class="rs-eyebrow">Built to be trusted with legal documents</span>
+      <h2 class="rs-h2">RentShield's security promise</h2>
+      <div class="rs-security-grid">
+        <div class="rs-security-card">
+          <div class="rs-security-icon">&#128274;</div>
+          <h5>Role-based access, enforced</h5>
+          <p>Every notice is protected by paperless-ngx's own object-level permissions &mdash; not
+            just a UI toggle. Visibility is scoped per document, per role, verified end to end.</p>
+        </div>
+        <div class="rs-security-card">
+          <div class="rs-security-icon">&#128193;</div>
+          <h5>Your own document vault</h5>
+          <p>Notices and contracts live in your own paperless-ngx instance &mdash; full-text search,
+            tagging, and version history on every document, not a third-party silo.</p>
+        </div>
+        <div class="rs-security-card">
+          <div class="rs-security-icon">&#128295;</div>
+          <h5>Open source foundation</h5>
+          <p>Built on paperless-ngx (GPL-3.0). No vendor lock-in: the code, and your data, are
+            yours to inspect, self-host, and export at any time.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="rs-footer">
+    <div class="rs-footer-inner">
+      <div class="rs-footer-grid">
+        <div>
+          <a class="rs-brand" href="#top" style="color:#fff;">
+            {% include "paperless-ngx/snippets/svg_leaf.html" %}
+            <span class="rs-brand-text">
+              <strong>RentShield</strong>
+              <span style="color:#8a9a90;">by Paperless-ngx</span>
+            </span>
+          </a>
+          <p style="margin-top:1rem;font-size:.85rem;max-width:26rem;">
+            Bilingual, statute-cited Dubai tenancy notices, built on the open-source paperless-ngx
+            document platform.
+          </p>
+        </div>
+        <div>
+          <h6>Product</h6>
+          <a href="/">Dashboard</a>
+          <a href="/">New Notice</a>
+          <a href="/">Legal Skills</a>
+        </div>
+        <div>
+          <h6>Reference</h6>
+          <a href="#applicable-law">Applicable Law</a>
+          <a href="#roles">Who it's for</a>
+          <a href="#pricing">Pricing</a>
+        </div>
+      </div>
+      <div class="rs-footer-bottom">
+        <span>&copy; {% now "Y" %} RentShield. Built on paperless-ngx, licensed GPL-3.0.</span>
+        <span>Not a substitute for advice from a licensed UAE lawyer.</span>
+      </div>
+    </div>
+  </footer>
+
+  <div id="rsAuthModal" class="rs-modal-overlay" hidden>
+    <div class="rs-modal" role="dialog" aria-modal="true" aria-labelledby="rsModalTitle">
+      <button type="button" class="rs-modal-close" onclick="rsCloseAuthModal()" aria-label="Close">&times;</button>
+
+      <div id="rsStepRole">
+        <h3 id="rsModalTitle" style="font-size:1.3rem;">Generate a Notice</h3>
+        <p class="text-muted small mb-0">First, tell us who you are.</p>
+        <div class="rs-role-choice-grid">
+          <button type="button" class="rs-role-choice-card" onclick="rsChooseRole('Property Owner')">
+            <strong>Property Owner</strong>
+            <span>I own or manage a rental property and need to serve a notice.</span>
+          </button>
+          <button type="button" class="rs-role-choice-card" onclick="rsChooseRole('Tenant')">
+            <strong>Tenant</strong>
+            <span>I've received, or expect to receive, a notice from my landlord.</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="rsStepAuth" hidden>
+        <button type="button" class="rs-modal-back" onclick="rsBackToRole()">&larr; Back</button>
+        <div class="rs-modal-tabs">
+          <button type="button" class="rs-modal-tab active" id="rsTabSignup" onclick="rsSwitchTab('signup')">Sign Up</button>
+          <button type="button" class="rs-modal-tab" id="rsTabLogin" onclick="rsSwitchTab('login')">Log In</button>
+        </div>
+
+        <form id="rsSignupForm" method="POST" action="/accounts/signup/">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="/">
+          <input type="hidden" name="role" id="rsSignupRole" value="Property Owner">
+          <p class="small text-muted mb-3">Signing up as <strong id="rsSignupRoleLabel">Property Owner</strong>.</p>
+          <div class="rs-modal-field">
+            <label for="rsSuUsername">Username</label>
+            <input type="text" name="username" id="rsSuUsername" class="form-control" required>
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsSuEmail">Email</label>
+            <input type="email" name="email" id="rsSuEmail" class="form-control">
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsSuPassword1">Password</label>
+            <input type="password" name="password1" id="rsSuPassword1" class="form-control" required>
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsSuPassword2">Password (again)</label>
+            <input type="password" name="password2" id="rsSuPassword2" class="form-control" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mt-2">Create account</button>
+        </form>
+
+        <form id="rsLoginForm" method="POST" action="/accounts/login/" hidden>
+          {% csrf_token %}
+          <input type="hidden" name="next" value="/">
+          <div class="rs-modal-field">
+            <label for="rsLiLogin">Username or email</label>
+            <input type="text" name="login" id="rsLiLogin" class="form-control" required>
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsLiPassword">Password</label>
+            <input type="password" name="password" id="rsLiPassword" class="form-control" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mt-2">Log in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function rsOpenAuthModal() {
+      document.getElementById('rsAuthModal').hidden = false;
+      document.getElementById('rsStepRole').hidden = false;
+      document.getElementById('rsStepAuth').hidden = true;
+    }
+    function rsCloseAuthModal() {
+      document.getElementById('rsAuthModal').hidden = true;
+    }
+    function rsChooseRole(role) {
+      document.getElementById('rsSignupRole').value = role;
+      document.getElementById('rsSignupRoleLabel').textContent = role;
+      document.getElementById('rsStepRole').hidden = true;
+      document.getElementById('rsStepAuth').hidden = false;
+    }
+    function rsBackToRole() {
+      document.getElementById('rsStepRole').hidden = false;
+      document.getElementById('rsStepAuth').hidden = true;
+    }
+    function rsSwitchTab(tab) {
+      var isSignup = tab === 'signup';
+      document.getElementById('rsSignupForm').hidden = !isSignup;
+      document.getElementById('rsLoginForm').hidden = isSignup;
+      document.getElementById('rsTabSignup').classList.toggle('active', isSignup);
+      document.getElementById('rsTabLogin').classList.toggle('active', !isSignup);
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') rsCloseAuthModal();
+    });
+    document.getElementById('rsAuthModal').addEventListener('click', function (e) {
+      if (e.target === this) rsCloseAuthModal();
+    });
+  </script>
+
+</body>
+</html>
