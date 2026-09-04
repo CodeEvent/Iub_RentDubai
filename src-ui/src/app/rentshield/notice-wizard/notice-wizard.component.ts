@@ -134,14 +134,35 @@ export class NoticeWizardComponent implements OnInit {
     }
     this.saving.set(true)
     this.saveError.set(null)
+    const addNotarization = !!this.form.value.add_notarization
+
+    // Notice creation renders a real PDF and hands it to paperless-ngx's
+    // own async consumption pipeline (real OCR, full-text indexing) —
+    // createNotice() only returns a task id; waitForNotice() polls
+    // paperless-ngx's stock task-status endpoint until that task
+    // resolves into the created Document's id.
     this.api.createNotice(this.form.value).subscribe({
-      next: (notice) => {
-        this.saving.set(false)
-        this.savedId.set(notice.id)
-        this.paid.set(true)
-        if (notice.add_notarization) {
-          this.api.notarize(notice.id).subscribe()
-        }
+      next: ({ task_id }) => {
+        this.api.waitForNotice(task_id).subscribe({
+          next: ({ status, document_id }) => {
+            this.saving.set(false)
+            if (status !== 'success' || !document_id) {
+              this.saveError.set(
+                'Notice generation failed — check the server logs and try again.'
+              )
+              return
+            }
+            this.savedId.set(document_id)
+            this.paid.set(true)
+            if (addNotarization) {
+              this.api.notarize(document_id).subscribe()
+            }
+          },
+          error: (err) => {
+            this.saving.set(false)
+            this.saveError.set(err?.error?.error || err?.message || 'Save failed')
+          },
+        })
       },
       error: (err) => {
         this.saving.set(false)

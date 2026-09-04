@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from rentshield.service_methods import SERVICE_METHODS
+from documents.rentshield.service_methods import SERVICE_METHODS
 
 NOTICE_DAYS_RE = re.compile(r"(\d{1,3})\s*[- ]?\s*day(?:s)?\s*(?:'|’)?\s*(?:written\s+)?notice", re.IGNORECASE)
 EJARI_RE = re.compile(r"ejari[^0-9]{0,20}(\d{6,})", re.IGNORECASE)

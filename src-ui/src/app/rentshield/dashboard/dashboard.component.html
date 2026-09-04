@@ -52,7 +52,9 @@
             <div class="small text-muted">{{ n.reason_label }} &middot; {{ n.notice_period_days }} days</div>
           </td>
           <td class="text-end">
-            <span class="badge rs-badge-notarized me-1" *ngIf="n.add_notarization">Notarized</span>
+            <span class="badge rs-badge-notarized me-1" *ngIf="n.add_notarization">
+              {{ n.esign_status === 'completed' ? 'Notarized' : 'Notarization due' }}
+            </span>
             <span class="badge rs-badge-ai" *ngIf="n.add_ai_review">AI-Reviewed</span>
           </td>
           <td class="text-end fw-bold" style="width: 6rem">{{ n.total_price_aed }} AED</td>

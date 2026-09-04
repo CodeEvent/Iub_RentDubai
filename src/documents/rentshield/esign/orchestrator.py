@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import os
 
-from rentshield.esign import docuseal_client
-from rentshield.esign import opensign_client
-from rentshield.pdf import render_notice_html
-from rentshield.pdf import render_notice_pdf
+from documents.rentshield.esign import docuseal_client
+from documents.rentshield.esign import opensign_client
+from documents.rentshield.pdf import render_notice_html
+from documents.rentshield.pdf import render_notice_pdf
 
 ESIGN_PRIMARY = os.environ.get("ESIGN_PRIMARY", "docuseal")
 ESIGN_FALLBACK = os.environ.get("ESIGN_FALLBACK", "opensign")
