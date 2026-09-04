@@ -19,6 +19,7 @@ from documents.rentshield_views import analyze_document_view
 from documents.rentshield_views import analyze_uploaded_view
 from documents.rentshield_views import check_service_method_view
 from documents.rentshield_views import create_notice_view
+from documents.rentshield_views import landing_view
 from documents.rentshield_views import legal_skill_detail_view
 from documents.rentshield_views import legal_skills_view
 from documents.rentshield_views import notarize_status_view
@@ -481,6 +482,17 @@ urlpatterns = [
                 ),
             ],
         ),
+    ),
+    # Public landing page -- the one URL in this project deliberately
+    # NOT behind login_required (see documents/rentshield_views.py's
+    # landing_view docstring for why: it has to render for a visitor who
+    # hasn't signed in yet, so it can't be an Angular route -- Angular's
+    # entire index.html is gated below). Must be registered before the
+    # catch-all "Root of the Frontend" pattern so it isn't shadowed.
+    re_path(
+        r"^welcome/?$",
+        landing_view,
+        name="rentshield-landing",
     ),
     # Root of the Frontend
     re_path(

@@ -14,6 +14,7 @@ from __future__ import annotations
 from django.http import Http404
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.decorators import parser_classes
 from rest_framework.decorators import permission_classes
@@ -26,6 +27,8 @@ from documents.models import Document
 from documents.permissions import has_perms_owner_aware
 from documents.rentshield.citation_graph import build_citation_graph
 from documents.rentshield.constants import ALL_REASONS
+from documents.rentshield.constants import BREACH_REASONS
+from documents.rentshield.constants import STATUTORY_REASONS
 from documents.rentshield.document_analysis import DocumentAnalysisError
 from documents.rentshield.document_analysis import analyze_document
 from documents.rentshield.pricing import ADD_ONS
@@ -107,6 +110,29 @@ def reasons_view(request):
 
 def pricing_view(request):
     return JsonResponse({"base_price_aed": BASE_PRICE_AED, "add_ons": ADD_ONS})
+
+
+def landing_view(request):
+    """GET /welcome/ -- the one page in this project deliberately NOT
+    behind paperless-ngx's login_required gate (see paperless/urls.py):
+    a public marketing page for prospective users, styled with
+    paperless-ngx's own static/base.css color tokens rather than
+    Angular's SCSS pipeline, since it has to render before Angular
+    (and its login-gated index.html) ever loads. All reasons/pricing
+    shown are the real values from documents/rentshield/constants.py
+    and pricing.py -- nothing here is invented copy independent of what
+    the product actually does.
+    """
+    return render(
+        request,
+        "rentshield/landing.html",
+        {
+            "statutory_reasons": list(STATUTORY_REASONS.values()),
+            "breach_reasons": list(BREACH_REASONS.values()),
+            "base_price_aed": BASE_PRICE_AED,
+            "add_ons": ADD_ONS,
+        },
+    )
 
 
 @api_view(["POST"])

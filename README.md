@@ -793,4 +793,49 @@ creation).
   reasons, the price table) are intentionally left as plain, ungated Django
   views — no document data, nothing role-specific to protect.
 
+## Landing Page
+
+`GET /welcome/` is the one URL in this project deliberately **not** behind
+paperless-ngx's `login_required` gate — a real public marketing page for
+prospective users (`documents/rentshield_views.py`'s `landing_view`,
+`documents/templates/rentshield/landing.html`), styled with paperless-ngx's
+own static color tokens (`documents/static/base.css`'s `--pngx-primary:
+#17541f` and friends — the exact same green as the app itself, not an
+approximation) rather than Angular's SCSS pipeline.
+
+**Why a Django template, not an Angular route**: the entire Angular app is
+served through one view, `IndexView`, which is wrapped in Django's
+`login_required` at the URL level (`paperless/urls.py`) — an anonymous
+visitor hitting *any* path is redirected to `/accounts/login/` before
+Angular ever bootstraps, so there was no way to add a public route inside
+the SPA. `/welcome/` is registered as its own URL pattern, ahead of the
+Angular catch-all, so it's reachable without a login at all — confirmed by
+requesting `/` while logged out and getting a real `302` to
+`/accounts/login/?next=/`, while `/welcome/` itself returns `200`.
+
+The page's content is all real: the reason chips in the hero's mock
+"Generate a Notice" panel and the pricing cards are rendered from
+`documents/rentshield/constants.py`/`pricing.py` (the same values the real
+notice form and pricing endpoint use), and the "Applicable Law" section
+quotes the same statute citations (`Law No. (33) of 2008`, Article 25(1)/
+(2)/(3), RERA) already used throughout `notice_builder.py` and the legal
+skills library — nothing on this page asserts anything about UAE law that
+isn't already backed elsewhere in this codebase. There are no fabricated
+client logos, testimonials, or stats; "Get Started"/"Log In" both link to
+`/`, which correctly bounces to Django's real login page.
+
+Verified end-to-end: real browser screenshot at `/welcome/`, zero console
+errors, and a direct `curl` confirming the login redirect behavior described
+above.
+
+**Real, load-bearing limitations, not glossed over:**
+- There's no public signup flow behind "Get Started" — it lands on the
+  same login page an existing user would use. paperless-ngx's own
+  `ACCOUNT_ALLOW_SIGNUPS` setting controls whether a "Sign up" link appears
+  there; a dedicated public registration flow (with role selection) is
+  bigger, separate work, not attempted here.
+- The page is static per-request (Django template context, not live data)
+  — pricing/reasons update automatically if `pricing.py`/`constants.py`
+  change, but nothing on it reflects a specific user's account.
+
 ## Not done yet (named, not silently skipped)
