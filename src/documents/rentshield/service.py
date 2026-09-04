@@ -59,16 +59,26 @@ def _custom_fields_payload(fields: dict) -> dict[int, object]:
     return payload
 
 
-def generate_and_consume(fields: dict, owner_id: int | None = None) -> str:
+def generate_and_consume(
+    fields: dict,
+    owner_id: int | None = None,
+    synchronous: bool = False,
+) -> str | Document:
     """Renders `fields` to a real bilingual PDF and hands it to
     paperless-ngx's own consumption pipeline (the same consume_file task
     its stock upload API uses), with every notice field attached as a
     paperless-ngx CustomField value and the "RentShield Notice" tag
     applied -- so the created Document is fully self-describing and
     filterable via paperless's own stock APIs, with no separate
-    rentshield table. Returns the Celery task id; poll it via
-    paperless-ngx's own GET /api/tasks/?task_id=... to learn the
-    resulting Document id.
+    rentshield table.
+
+    By default (synchronous=False, the API view's behavior) this
+    dispatches consumption via Celery and returns the task id; poll it
+    via paperless-ngx's own GET /api/tasks/?task_id=... to learn the
+    resulting Document id. Management commands that need the Document
+    immediately (demo-data seeding, tests) can pass synchronous=True to
+    call consume_file in-process instead and get the Document back
+    directly -- no Celery worker required.
     """
     reason = fields["reason"]
     period_days = notice_period_days(reason)
@@ -119,6 +129,14 @@ def generate_and_consume(fields: dict, owner_id: int | None = None) -> str:
         tag_ids=[tag.id],
         custom_fields=_custom_fields_payload(custom_fields_for_document),
     )
+
+    if synchronous:
+        result = consume_file(input_doc, overrides)
+        document_id = result.get("document_id") if isinstance(result, dict) else None
+        if document_id is None:
+            msg = f"consume_file did not produce a document (synchronous demo/test path): {result!r}"
+            raise RuntimeError(msg)
+        return Document.objects.get(id=document_id)
 
     async_task = consume_file.apply_async(
         kwargs={"input_doc": input_doc, "overrides": overrides},

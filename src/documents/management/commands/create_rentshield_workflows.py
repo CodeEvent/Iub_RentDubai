@@ -106,6 +106,27 @@ class Command(BaseCommand):
             return json.dumps([reason_field, "in", keys])
 
         def notarization_pending_query():
+            # "esign_status doesn't exist yet OR is blank": the correct op
+            # for "this CustomField was never set on this document" is
+            # `exists: False`, not `isnull: True` -- `isnull` only matches
+            # a CustomFieldInstance row whose value column is SQL NULL,
+            # which request_notarization()/_set_custom_field_value() never
+            # produces (they only ever write a real string). A doc that
+            # never had notarization requested has no esign_status
+            # instance row at all, so `isnull` silently matched nothing --
+            # confirmed via a real un-notarized demo notice returning 0
+            # instead of 1 from this exact query.
+            return json.dumps(
+                [
+                    "AND",
+                    [
+                        [notarization_field, "exact", True],
+                        ["OR", [[esign_status_field, "exists", False], [esign_status_field, "exact", ""]]],
+                    ],
+                ],
+            )
+
+        def old_buggy_notarization_pending_query():
             return json.dumps(
                 [
                     "AND",
@@ -336,6 +357,15 @@ class Command(BaseCommand):
             action_change_groups=[lawyer_group],
         )
 
+        self._repair_notarization_pending_queries(
+            workflow_names=[
+                "RentShield: notarization requested, not dispatched",
+                "RentShield: notarization stalled (recurring)",
+            ],
+            old_query=old_buggy_notarization_pending_query(),
+            new_query=notarization_pending_query(),
+        )
+
         self.stdout.write(self.style.SUCCESS("RentShield workflows created/verified."))
         self.stdout.write(
             self.style.WARNING(
@@ -361,6 +391,24 @@ class Command(BaseCommand):
                 "re-run this command.",
             ),
         )
+
+    def _repair_notarization_pending_queries(self, *, workflow_names, old_query, new_query):
+        """One-time healing for a real bug in an already-shipped query
+        (see notarization_pending_query()'s docstring comment above): any
+        already-created workflow whose trigger still carries the old,
+        never-matches-anything query gets it replaced. Only touches rows
+        that exactly match the known-buggy value, so a real edit made
+        afterward in the UI is left alone."""
+        for name in workflow_names:
+            workflow = Workflow.objects.filter(name=name).first()
+            if not workflow:
+                continue
+            for trigger in workflow.triggers.filter(filter_custom_field_query=old_query):
+                trigger.filter_custom_field_query = new_query
+                trigger.save(update_fields=["filter_custom_field_query"])
+                self.stdout.write(
+                    self.style.SUCCESS(f"Repaired notarization-pending query on: {name}"),
+                )
 
     def _create_workflow(
         self,

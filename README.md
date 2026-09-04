@@ -557,6 +557,23 @@ name, so edits made afterward in the UI aren't clobbered.
   var and re-run `create_rentshield_workflows` (it only creates
   workflows that don't already exist by name — delete the two AI-review
   ones first if you need to change an already-created URL).
+- **Bug found and fixed while building demo data**: workflows #3/#4's
+  "notarization requested, not dispatched" condition originally used
+  `esign_status: isnull True` to mean "notarization was requested but no
+  e-sign status exists yet." That's not what `isnull` means in
+  paperless-ngx's custom-field-query DSL — it only matches a
+  `CustomFieldInstance` row whose value column is SQL NULL, which
+  `request_notarization()` never produces (it only ever writes a real
+  status string). A notice that never had notarization requested has no
+  `esign_status` instance row *at all*, so the query silently matched
+  zero documents, always — confirmed by creating a real un-notarized demo
+  notice and getting 0 back instead of 1. Fixed to use `exists: False`
+  (`documents/filters.py`'s `CustomFieldQueryParser`, `"basic"` category),
+  which correctly means "this custom field was never set on this
+  document." Re-running `create_rentshield_workflows` now also repairs
+  any already-created workflow whose trigger still carries the old,
+  broken query (matches by exact old value, so a real edit made
+  afterward in the UI is left alone).
 
 ## Dashboards
 
@@ -619,6 +636,70 @@ contracts, Statutory Notices 3, Sensitive Notices 2).
 - Re-running the command is safe: it skips any view that already exists by
   name, and only *adds* newly-created view ids to a user's dashboard/sidebar
   list — it won't re-add a view a user deliberately unpinned.
+- "Notarization Pending" shared the `isnull`-vs-`exists` bug described in
+  the Workflows section above (it used the same query helper) — it showed
+  0 in the original screenshot only because there was no genuinely-pending
+  notice to test against yet. Fixed the same way; re-running
+  `create_rentshield_dashboards` also repairs an already-created view's
+  filter rule if it still carries the old, broken query.
+
+## Demo Data
+
+`manage.py create_rentshield_demo_data` idempotently seeds 8 realistic
+(fictitious) notices and 3 uploaded tenancy contracts
+(`documents/management/commands/create_rentshield_demo_data.py`) — so a new
+install, or a prospective user clicking through the self-guided tour, sees a
+platform that already has real data in it instead of an empty shell. Every
+document is created through the same code real usage goes through
+(`documents.rentshield.service.generate_and_consume`/`run_ai_review`,
+paperless-ngx's own consumption pipeline) — there is no seed-only shortcut
+that writes rows directly, so the demo data also exercises the Workflow
+engine's `DOCUMENT_ADDED` triggers exactly like a real upload would.
+
+The 8 notices span every statutory and breach reason, with a deliberate mix
+of add-ons so every dashboard widget has something to show: 3 have the
+notarization add-on requested but not yet dispatched, 2 are tagged `Needs AI
+Review`. Of the 3 contracts, one is written to fail AI review (a 7-day
+notice-period clause, well short of the 365-day statutory minimum, plus a
+verbal-notice service-method mention), one is written to pass cleanly (a
+365-day clause via registered mail), and the third is deliberately left
+un-reviewed — its filename avoids "contract" and its `Tenancy Contract` tag
+is applied only after consumption, so neither AI-review-on-upload workflow's
+`DOCUMENT_ADDED` trigger catches it — to show a genuine, non-empty
+"Contracts Under Review" queue.
+
+Verified end-to-end: ran the command against the real dev stack (Django +
+Celery + docling-service all live), confirmed the correct tags/custom-field
+values landed on every document, and re-loaded the Dashboard in a real
+browser — all 8 widgets showed correct, non-zero, mutually-consistent counts
+(this is also how the `isnull`/`exists` bug above was actually found: a
+demo notice with notarization requested and no e-sign status yet was the
+first real "genuinely pending" case this project had ever created).
+
+**Real, load-bearing limitations, not glossed over:**
+- Building the notices calls `generate_and_consume(..., synchronous=True)`
+  — a new parameter added specifically for this command
+  (`documents/rentshield/service.py`) that calls paperless-ngx's own
+  `consume_file` task in-process instead of dispatching it through Celery,
+  so the command works even with no worker running and gets the created
+  `Document` back immediately instead of a task id to poll. The API view
+  used by the real notice-generation form is unaffected — it still
+  dispatches via Celery, as it always has.
+- AI-reviewing the 2 contracts calls `run_ai_review()` directly and
+  requires docling-service to be reachable; if it isn't, the command
+  degrades gracefully (creates the documents, prints a warning, leaves
+  them tagged `Tenancy Contract` only) rather than failing outright.
+- Idempotency here is coarser than the other commands: it checks for the
+  existence of a `Demo Data` tag at all, not per-document. Re-running after
+  a partial failure without first deleting anything tagged `Demo Data`
+  will skip entirely rather than filling in what's missing.
+- If a Celery worker is running when this command runs, the real
+  `DOCUMENT_ADDED` workflows (storage path assignment, document-type
+  tagging, the notarization-pending webhook, etc.) also fire on these
+  documents asynchronously, same as any real upload — the two contracts
+  meant to demonstrate the AI-review pipeline get reviewed twice (once
+  synchronously by this command, once again by the async webhook); both
+  writes are idempotent so this is harmless, just redundant.
 
 ## Not done yet (named, not silently skipped)
 

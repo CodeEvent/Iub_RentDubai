@@ -19,6 +19,7 @@ RENTSHIELD_TAG_NAME = "RentShield Notice"
 TENANCY_CONTRACT_TAG_NAME = "Tenancy Contract"
 AI_REVIEWED_TAG_NAME = "AI-Reviewed"
 NEEDS_AI_REVIEW_TAG_NAME = "Needs AI Review"
+DEMO_DATA_TAG_NAME = "Demo Data"
 
 PROPERTY_TYPE_OPTIONS = [
     {"id": "Apartment", "label": "Apartment"},

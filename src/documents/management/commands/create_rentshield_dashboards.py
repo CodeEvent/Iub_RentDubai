@@ -69,6 +69,23 @@ class Command(BaseCommand):
             return json.dumps([reason_field, "in", keys])
 
         def notarization_pending_query():
+            # `exists: False`, not `isnull: True` -- see the matching
+            # comment in create_rentshield_workflows.py's
+            # notarization_pending_query() for why: `isnull` only matches
+            # a CustomFieldInstance row whose value is SQL NULL, which
+            # never happens here, so it silently matched nothing for a
+            # document that never had notarization requested at all.
+            return json.dumps(
+                [
+                    "AND",
+                    [
+                        [notarization_field, "exact", True],
+                        ["OR", [[esign_status_field, "exists", False], [esign_status_field, "exact", ""]]],
+                    ],
+                ],
+            )
+
+        def old_buggy_notarization_pending_query():
             return json.dumps(
                 [
                     "AND",
@@ -161,6 +178,11 @@ class Command(BaseCommand):
             ),
         )
 
+        self._repair_notarization_pending_view(
+            old_query=old_buggy_notarization_pending_query(),
+            new_query=notarization_pending_query(),
+        )
+
         view_ids = [v for v in view_ids if v is not None]
         added_for = []
         for user in User.objects.filter(is_superuser=True):
@@ -180,6 +202,23 @@ class Command(BaseCommand):
                 "any view themselves from Saved Views in the sidebar.",
             ),
         )
+
+    def _repair_notarization_pending_view(self, *, old_query, new_query):
+        """One-time healing for a real bug in an already-shipped query --
+        see notarization_pending_query()'s comment above. Only touches a
+        filter rule whose stored value exactly matches the known-buggy
+        query, so a real edit made afterward in the UI is left alone."""
+        view = SavedView.objects.filter(name="RentShield: Notarization Pending").first()
+        if not view:
+            return
+        updated = view.filter_rules.filter(
+            rule_type=RULE_CUSTOM_FIELDS_QUERY,
+            value=old_query,
+        ).update(value=new_query)
+        if updated:
+            self.stdout.write(
+                self.style.SUCCESS("Repaired notarization-pending query on: RentShield: Notarization Pending"),
+            )
 
     def _create_view(self, *, name, icon, rules, sort_field, sort_reverse):
         view, created = SavedView.objects.get_or_create(
