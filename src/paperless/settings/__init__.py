@@ -324,8 +324,15 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = os.getenv(
 )
 
 ACCOUNT_ADAPTER = "paperless.adapter.CustomAccountAdapter"
-ACCOUNT_ALLOW_SIGNUPS = get_bool_from_env("PAPERLESS_ACCOUNT_ALLOW_SIGNUPS")
+# RentShield is a self-service product (unlike stock paperless-ngx, which
+# defaults this closed) -- prospective Property Owners/Tenants can
+# register themselves from the public landing page. Still overridable via
+# the env var for anyone who wants to lock it down.
+ACCOUNT_ALLOW_SIGNUPS = get_bool_from_env("PAPERLESS_ACCOUNT_ALLOW_SIGNUPS", "yes")
 ACCOUNT_DEFAULT_GROUPS = get_list_from_env("PAPERLESS_ACCOUNT_DEFAULT_GROUPS")
+# Adds the Property Owner/Tenant role choice to the signup form -- see
+# documents/rentshield/forms.py.
+ACCOUNT_SIGNUP_FORM_CLASS = "documents.rentshield.forms.RentShieldSignupExtra"
 
 SOCIALACCOUNT_ADAPTER = "paperless.adapter.CustomSocialAccountAdapter"
 SOCIALACCOUNT_ALLOW_SIGNUPS = get_bool_from_env(

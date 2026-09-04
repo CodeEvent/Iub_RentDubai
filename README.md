@@ -821,22 +821,64 @@ quotes the same statute citations (`Law No. (33) of 2008`, Article 25(1)/
 (2)/(3), RERA) already used throughout `notice_builder.py` and the legal
 skills library — nothing on this page asserts anything about UAE law that
 isn't already backed elsewhere in this codebase. There are no fabricated
-client logos, testimonials, or stats; "Get Started"/"Log In" both link to
-`/`, which correctly bounces to Django's real login page.
+client logos, testimonials, or stats.
 
-Verified end-to-end: real browser screenshot at `/welcome/`, zero console
-errors, and a direct `curl` confirming the login redirect behavior described
-above.
+### Self-service signup, with a role chosen at registration
+
+"Get Started"/"Log In" link to real paperless-ngx auth pages
+(`/accounts/signup/`, `/accounts/login/`) — not a dead end. Signups are
+open by default for RentShield specifically (`ACCOUNT_ALLOW_SIGNUPS`
+defaults to enabled in `paperless/settings/__init__.py`, unlike stock
+paperless-ngx which defaults this closed — still overridable via
+`PAPERLESS_ACCOUNT_ALLOW_SIGNUPS` for anyone who wants to lock it down).
+
+The signup form itself has one RentShield-specific addition: an "I am a"
+choice between **Property Owner** and **Tenant**
+(`documents/rentshield/forms.py`'s `RentShieldSignupExtra`, wired in via
+django-allauth's own `ACCOUNT_SIGNUP_FORM_CLASS` extension point — not a
+custom auth flow). Whichever the new user picks, they're added to the
+matching real Django Group (see Roles & Permissions above) the moment
+their account is created. Notary and Lawyer are deliberately **not**
+self-service choices here — those represent a vetted real-world
+relationship (a licensed notary, a retained lawyer) an admin assigns under
+Settings > Users & Groups, not something anyone can declare about
+themselves at signup.
+
+The "Generate Notice" button in the hero opens an in-page modal
+(`rsAuthModal` in `landing.html`, plain CSS/vanilla JS, no framework)
+rather than leaving the page: pick a role first, then a Sign Up/Log In tab
+pair with real form fields. These aren't a fake preview — the forms POST
+directly to paperless-ngx's own `/accounts/signup/`/`/accounts/login/`
+endpoints (same field names, same CSRF token, rendered from the same
+Django template as the real account pages) and create real accounts.
+
+Verified end-to-end, not just visually: a real Playwright browser session
+clicked "Generate Notice," chose "Property Owner," filled in the signup
+form, submitted it, and the resulting account was confirmed server-side to
+exist with the correct email and — critically — actually assigned to the
+**Property Owner** Django group, not just created.
 
 **Real, load-bearing limitations, not glossed over:**
-- There's no public signup flow behind "Get Started" — it lands on the
-  same login page an existing user would use. paperless-ngx's own
-  `ACCOUNT_ALLOW_SIGNUPS` setting controls whether a "Sign up" link appears
-  there; a dedicated public registration flow (with role selection) is
-  bigger, separate work, not attempted here.
 - The page is static per-request (Django template context, not live data)
   — pricing/reasons update automatically if `pricing.py`/`constants.py`
   change, but nothing on it reflects a specific user's account.
+- Validation errors on the modal's forms (e.g. a taken username, a
+  password mismatch) redirect the browser to the real, full
+  `/accounts/signup/`/`/accounts/login/` page to show the error, rather
+  than showing it inline in the modal — a real UX rough edge, not
+  pretended away. Inline validation would need either a JS-driven
+  fetch/AJAX submit or server-rendered partial re-render of the modal,
+  neither attempted here.
+- In this project's local *split* dev setup (Django on port 8000, the
+  Angular dev server separately on port 4200, no proxy stitching them into
+  one origin) a successful signup/login redirects back to port 8000's own
+  copy of `index.html`, which doesn't render correctly there since the
+  Angular bundle is only served by `ng serve` on port 4200, not collected
+  as static files on 8000. This is a real, known friction point for local
+  testing (not a bug in the signup/login flow itself, and not present in a
+  real single-origin deployment) — after registering/logging in locally,
+  manually navigate to `http://localhost:4200/dashboard` to actually use
+  the app.
 
 ## Interactive Product Tour
 

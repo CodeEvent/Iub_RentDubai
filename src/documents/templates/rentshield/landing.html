@@ -123,6 +123,38 @@
       font-size: 1.2rem; font-weight: 700;
     }
 
+    .rs-modal-overlay {
+      position: fixed; inset: 0; background: rgba(20,32,26,.55);
+      align-items: center; justify-content: center; z-index: 100; padding: 1rem;
+    }
+    .rs-modal-overlay:not([hidden]) { display: flex; }
+    .rs-modal {
+      background: #fff; border-radius: 16px; padding: 2rem; max-width: 26rem; width: 100%;
+      position: relative; max-height: 90vh; overflow-y: auto;
+    }
+    .rs-modal-close {
+      position: absolute; top: .75rem; right: .9rem; border: none; background: none;
+      font-size: 1.6rem; line-height: 1; color: var(--rs-text-muted); cursor: pointer;
+    }
+    .rs-role-choice-grid { display: grid; gap: .75rem; margin-top: 1.25rem; }
+    .rs-role-choice-card {
+      border: 1px solid var(--rs-border); border-radius: 10px; padding: 1rem 1.1rem; text-align: left;
+      background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: .25rem; width: 100%;
+    }
+    .rs-role-choice-card:hover { border-color: var(--pngx-primary); background: var(--rs-green-tint); }
+    .rs-role-choice-card strong { font-size: 1rem; }
+    .rs-role-choice-card span { font-size: .82rem; color: var(--rs-text-muted); }
+    .rs-modal-tabs { display: flex; gap: 1.5rem; border-bottom: 1px solid var(--rs-border); margin-bottom: 1.1rem; }
+    .rs-modal-tab {
+      border: none; background: none; padding: .5rem 0; font-weight: 600; color: var(--rs-text-muted);
+      border-bottom: 2px solid transparent; cursor: pointer; font-size: .92rem;
+    }
+    .rs-modal-tab.active { color: var(--pngx-primary); border-bottom-color: var(--pngx-primary); }
+    .rs-modal-field { margin-bottom: .8rem; }
+    .rs-modal-field label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: .3rem; }
+    .rs-modal-back { background: none; border: none; color: var(--rs-text-muted); font-size: .85rem; padding: 0; margin-bottom: .75rem; cursor: pointer; }
+    .rs-modal-back:hover { color: var(--pngx-primary); }
+
     footer.rs-footer { background: #14201a; color: #b9c4bd; padding: 3rem 1.5rem 1.5rem; }
     .rs-footer-inner { max-width: 1140px; margin: 0 auto; }
     .rs-footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 2rem; margin-bottom: 2rem; }
@@ -151,8 +183,8 @@
         <a href="#pricing">Pricing</a>
       </div>
       <div class="rs-nav-cta">
-        <a class="btn btn-outline-secondary btn-sm" href="/">Log In</a>
-        <a class="btn btn-primary btn-sm" href="/">Get Started</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/accounts/login/">Log In</a>
+        <a class="btn btn-primary btn-sm" href="/accounts/signup/">Get Started</a>
       </div>
     </div>
   </nav>
@@ -170,7 +202,7 @@
           have to track yourself.
         </p>
         <div class="rs-nav-cta">
-          <a class="btn btn-primary btn-lg" href="/">Get Started</a>
+          <a class="btn btn-primary btn-lg" href="/accounts/signup/">Get Started</a>
           <a class="btn btn-link" href="#how-it-works">See how it works &rarr;</a>
         </div>
         <div class="rs-trustline">
@@ -199,8 +231,8 @@
           <div class="rs-mock-field mb-2">Tenant name, unit, Ejari No.&hellip;</div>
           <div class="rs-mock-field">Notice date</div>
         </div>
-        <a class="btn btn-primary rs-mock-cta" href="/">Generate Notice</a>
-        <p class="rs-mock-caption">Sign in to generate a real, signed notice for your property.</p>
+        <button type="button" class="btn btn-primary rs-mock-cta" onclick="rsOpenAuthModal()">Generate Notice</button>
+        <p class="rs-mock-caption">Register or sign in to generate a real, signed notice for your property.</p>
       </div>
     </div>
   </header>
@@ -380,6 +412,107 @@
       </div>
     </div>
   </footer>
+
+  <div id="rsAuthModal" class="rs-modal-overlay" hidden>
+    <div class="rs-modal" role="dialog" aria-modal="true" aria-labelledby="rsModalTitle">
+      <button type="button" class="rs-modal-close" onclick="rsCloseAuthModal()" aria-label="Close">&times;</button>
+
+      <div id="rsStepRole">
+        <h3 id="rsModalTitle" style="font-size:1.3rem;">Generate a Notice</h3>
+        <p class="text-muted small mb-0">First, tell us who you are.</p>
+        <div class="rs-role-choice-grid">
+          <button type="button" class="rs-role-choice-card" onclick="rsChooseRole('Property Owner')">
+            <strong>Property Owner</strong>
+            <span>I own or manage a rental property and need to serve a notice.</span>
+          </button>
+          <button type="button" class="rs-role-choice-card" onclick="rsChooseRole('Tenant')">
+            <strong>Tenant</strong>
+            <span>I've received, or expect to receive, a notice from my landlord.</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="rsStepAuth" hidden>
+        <button type="button" class="rs-modal-back" onclick="rsBackToRole()">&larr; Back</button>
+        <div class="rs-modal-tabs">
+          <button type="button" class="rs-modal-tab active" id="rsTabSignup" onclick="rsSwitchTab('signup')">Sign Up</button>
+          <button type="button" class="rs-modal-tab" id="rsTabLogin" onclick="rsSwitchTab('login')">Log In</button>
+        </div>
+
+        <form id="rsSignupForm" method="POST" action="/accounts/signup/">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="/">
+          <input type="hidden" name="role" id="rsSignupRole" value="Property Owner">
+          <p class="small text-muted mb-3">Signing up as <strong id="rsSignupRoleLabel">Property Owner</strong>.</p>
+          <div class="rs-modal-field">
+            <label for="rsSuUsername">Username</label>
+            <input type="text" name="username" id="rsSuUsername" class="form-control" required>
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsSuEmail">Email</label>
+            <input type="email" name="email" id="rsSuEmail" class="form-control">
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsSuPassword1">Password</label>
+            <input type="password" name="password1" id="rsSuPassword1" class="form-control" required>
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsSuPassword2">Password (again)</label>
+            <input type="password" name="password2" id="rsSuPassword2" class="form-control" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mt-2">Create account</button>
+        </form>
+
+        <form id="rsLoginForm" method="POST" action="/accounts/login/" hidden>
+          {% csrf_token %}
+          <input type="hidden" name="next" value="/">
+          <div class="rs-modal-field">
+            <label for="rsLiLogin">Username or email</label>
+            <input type="text" name="login" id="rsLiLogin" class="form-control" required>
+          </div>
+          <div class="rs-modal-field">
+            <label for="rsLiPassword">Password</label>
+            <input type="password" name="password" id="rsLiPassword" class="form-control" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mt-2">Log in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function rsOpenAuthModal() {
+      document.getElementById('rsAuthModal').hidden = false;
+      document.getElementById('rsStepRole').hidden = false;
+      document.getElementById('rsStepAuth').hidden = true;
+    }
+    function rsCloseAuthModal() {
+      document.getElementById('rsAuthModal').hidden = true;
+    }
+    function rsChooseRole(role) {
+      document.getElementById('rsSignupRole').value = role;
+      document.getElementById('rsSignupRoleLabel').textContent = role;
+      document.getElementById('rsStepRole').hidden = true;
+      document.getElementById('rsStepAuth').hidden = false;
+    }
+    function rsBackToRole() {
+      document.getElementById('rsStepRole').hidden = false;
+      document.getElementById('rsStepAuth').hidden = true;
+    }
+    function rsSwitchTab(tab) {
+      var isSignup = tab === 'signup';
+      document.getElementById('rsSignupForm').hidden = !isSignup;
+      document.getElementById('rsLoginForm').hidden = isSignup;
+      document.getElementById('rsTabSignup').classList.toggle('active', isSignup);
+      document.getElementById('rsTabLogin').classList.toggle('active', !isSignup);
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') rsCloseAuthModal();
+    });
+    document.getElementById('rsAuthModal').addEventListener('click', function (e) {
+      if (e.target === this) rsCloseAuthModal();
+    });
+  </script>
 
 </body>
 </html>
