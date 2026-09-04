@@ -781,6 +781,22 @@ inconsistent state, since it always sets the group's permission set to
 exactly what's defined in `roles.py` rather than only adding on first
 creation).
 
+**Second bug found and fixed, this time via real browser testing, not just
+API-level automated checks**: every role group 403'd on `GET
+/api/ui_settings/` — the very first API call paperless-ngx's own Angular
+app makes on every single page load, before it even knows what permissions
+the logged-in user has (so it can't itself be gated behind a permission
+check). It requires the plain Django model-level `view_uisettings`/
+`change_uisettings` permissions, which `create_rentshield_roles` only ever
+granted for Document, never for `UiSettings` — meaning the app shell never
+even finished loading for a Tenant/Property Owner/Notary/Lawyer account. The
+automated verification described above never caught this because it drove
+specific endpoints directly via Django's test client rather than actually
+booting the Angular app as one of these roles. Fixed by adding
+`BASELINE_PERMISSIONS` (`documents/rentshield/roles.py`) — granted to every
+role group alongside its Document permissions — and re-verified via a real
+logged-in request to `/api/ui_settings/` returning `200` instead of `403`.
+
 **Real, load-bearing limitations, not glossed over:**
 - No user is a member of any role group by default — an admin has to
   assign real users to Tenant/Property Owner/Notary/Lawyer under

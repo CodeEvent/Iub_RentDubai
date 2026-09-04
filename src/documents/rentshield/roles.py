@@ -38,6 +38,18 @@ ROLE_DOCUMENT_PERMISSIONS: dict[str, list[str]] = {
     LAWYER_GROUP_NAME: ["view_document", "change_document"],
 }
 
+# Every one of these role groups also needs paperless-ngx's own baseline
+# permissions that have nothing to do with documents but that its own
+# Angular app requires unconditionally just to finish loading -- most
+# critically view/change_uisettings: GET /api/ui_settings/ is the very
+# first call the app makes on every load (it's what tells the frontend
+# what the user *can* do in the first place, so it can't itself be gated
+# behind a permission check), and it 403s outright without this. Found by
+# actually logging in as a role-restricted user in a real browser, not by
+# API-only testing -- the automated verification in Roles & Permissions
+# above never exercised this endpoint.
+BASELINE_PERMISSIONS: list[str] = ["view_uisettings", "change_uisettings"]
+
 
 def user_in_group(user: User | None, group_name: str) -> bool:
     return bool(user and user.is_authenticated and user.groups.filter(name=group_name).exists())

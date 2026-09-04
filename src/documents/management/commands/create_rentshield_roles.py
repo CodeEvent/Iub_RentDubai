@@ -14,6 +14,8 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 from documents.models import Document
+from documents.models import UiSettings
+from documents.rentshield.roles import BASELINE_PERMISSIONS
 from documents.rentshield.roles import LAWYER_GROUP_NAME
 from documents.rentshield.roles import ROLE_DOCUMENT_PERMISSIONS
 
@@ -21,44 +23,57 @@ from documents.rentshield.roles import ROLE_DOCUMENT_PERMISSIONS
 class Command(BaseCommand):
     help = (
         "Idempotently creates RentShield's Tenant, Property Owner, and "
-        "Notary Groups (and fixes up model-level Document permissions on "
-        "the Lawyer group created by create_rentshield_workflows) with "
-        "real Django model-level Document permissions. Safe to re-run: "
-        "always sets each group's permission set to exactly what's "
-        "defined in documents/rentshield/roles.py, so it also heals a "
-        "group whose permissions were edited into an inconsistent state."
+        "Notary Groups (and fixes up model-level permissions on the "
+        "Lawyer group created by create_rentshield_workflows) with real "
+        "Django model-level permissions: Document permissions per role, "
+        "plus view/change_uisettings on every role (paperless-ngx's own "
+        "Angular app calls GET /api/ui_settings/ unconditionally on every "
+        "load -- without this baseline permission every role gets 403'd "
+        "before the app even finishes loading). Safe to re-run: always "
+        "sets each group's permission set to exactly what's defined in "
+        "documents/rentshield/roles.py, so it also heals a group whose "
+        "permissions were edited into an inconsistent state."
     )
 
     def handle(self, *args, **options):
         document_content_type = ContentType.objects.get_for_model(Document)
+        uisettings_content_type = ContentType.objects.get_for_model(UiSettings)
 
-        for group_name, codenames in ROLE_DOCUMENT_PERMISSIONS.items():
+        for group_name, document_codenames in ROLE_DOCUMENT_PERMISSIONS.items():
             group, created = Group.objects.get_or_create(name=group_name)
-            permissions = Permission.objects.filter(
+
+            document_permissions = Permission.objects.filter(
                 content_type=document_content_type,
-                codename__in=codenames,
+                codename__in=document_codenames,
             )
-            found_codenames = set(permissions.values_list("codename", flat=True))
-            missing = set(codenames) - found_codenames
+            baseline_permissions = Permission.objects.filter(
+                content_type=uisettings_content_type,
+                codename__in=BASELINE_PERMISSIONS,
+            )
+            all_codenames = set(document_codenames) | set(BASELINE_PERMISSIONS)
+            found_codenames = set(
+                document_permissions.values_list("codename", flat=True),
+            ) | set(baseline_permissions.values_list("codename", flat=True))
+            missing = all_codenames - found_codenames
             if missing:
                 self.stderr.write(
                     self.style.ERROR(
-                        f"Could not find Permission(s) {sorted(missing)} for "
-                        f"Document -- Django's migrations should have created "
-                        f"these automatically. Skipping {group_name!r}.",
+                        f"Could not find Permission(s) {sorted(missing)} -- "
+                        f"Django's migrations should have created these "
+                        f"automatically. Skipping {group_name!r}.",
                     ),
                 )
                 continue
 
             before = set(group.permissions.values_list("codename", flat=True))
-            group.permissions.set(permissions)
+            group.permissions.set(list(document_permissions) + list(baseline_permissions))
             after = set(group.permissions.values_list("codename", flat=True))
 
             if created:
-                self.stdout.write(self.style.SUCCESS(f"Created group: {group_name} ({', '.join(sorted(codenames))})"))
+                self.stdout.write(self.style.SUCCESS(f"Created group: {group_name} ({', '.join(sorted(all_codenames))})"))
             elif before != after:
                 self.stdout.write(
-                    self.style.SUCCESS(f"Repaired permissions on existing group: {group_name} ({', '.join(sorted(codenames))})"),
+                    self.style.SUCCESS(f"Repaired permissions on existing group: {group_name} ({', '.join(sorted(all_codenames))})"),
                 )
             else:
                 self.stdout.write(f"Already up to date: {group_name}")
