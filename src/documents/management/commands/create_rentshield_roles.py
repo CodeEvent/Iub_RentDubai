@@ -14,7 +14,6 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 from documents.models import Document
-from documents.models import UiSettings
 from documents.rentshield.roles import BASELINE_PERMISSIONS
 from documents.rentshield.roles import LAWYER_GROUP_NAME
 from documents.rentshield.roles import ROLE_DOCUMENT_PERMISSIONS
@@ -26,18 +25,22 @@ class Command(BaseCommand):
         "Notary Groups (and fixes up model-level permissions on the "
         "Lawyer group created by create_rentshield_workflows) with real "
         "Django model-level permissions: Document permissions per role, "
-        "plus view/change_uisettings on every role (paperless-ngx's own "
-        "Angular app calls GET /api/ui_settings/ unconditionally on every "
-        "load -- without this baseline permission every role gets 403'd "
-        "before the app even finishes loading). Safe to re-run: always "
-        "sets each group's permission set to exactly what's defined in "
-        "documents/rentshield/roles.py, so it also heals a group whose "
-        "permissions were edited into an inconsistent state."
+        "plus baseline permissions on every role that paperless-ngx's own "
+        "Angular app needs unconditionally just to load and to use "
+        "RentShield's own pages -- see documents/rentshield/roles.py's "
+        "BASELINE_PERMISSIONS for exactly which and why. Safe to re-run: "
+        "always sets each group's permission set to exactly what's "
+        "defined in documents/rentshield/roles.py, so it also heals a "
+        "group whose permissions were edited into an inconsistent state."
     )
 
     def handle(self, *args, **options):
         document_content_type = ContentType.objects.get_for_model(Document)
-        uisettings_content_type = ContentType.objects.get_for_model(UiSettings)
+        # Baseline permissions span more than one model (UiSettings, Tag,
+        # ...) -- looked up by codename alone rather than pinned to a
+        # single content type, since Django's auto-generated codenames
+        # (<action>_<model name>) are unique across this app already.
+        baseline_permissions = Permission.objects.filter(codename__in=BASELINE_PERMISSIONS)
 
         for group_name, document_codenames in ROLE_DOCUMENT_PERMISSIONS.items():
             group, created = Group.objects.get_or_create(name=group_name)
@@ -45,10 +48,6 @@ class Command(BaseCommand):
             document_permissions = Permission.objects.filter(
                 content_type=document_content_type,
                 codename__in=document_codenames,
-            )
-            baseline_permissions = Permission.objects.filter(
-                content_type=uisettings_content_type,
-                codename__in=BASELINE_PERMISSIONS,
             )
             all_codenames = set(document_codenames) | set(BASELINE_PERMISSIONS)
             found_codenames = set(

@@ -40,15 +40,21 @@ ROLE_DOCUMENT_PERMISSIONS: dict[str, list[str]] = {
 
 # Every one of these role groups also needs paperless-ngx's own baseline
 # permissions that have nothing to do with documents but that its own
-# Angular app requires unconditionally just to finish loading -- most
-# critically view/change_uisettings: GET /api/ui_settings/ is the very
-# first call the app makes on every load (it's what tells the frontend
-# what the user *can* do in the first place, so it can't itself be gated
-# behind a permission check), and it 403s outright without this. Found by
-# actually logging in as a role-restricted user in a real browser, not by
-# API-only testing -- the automated verification in Roles & Permissions
-# above never exercised this endpoint.
-BASELINE_PERMISSIONS: list[str] = ["view_uisettings", "change_uisettings"]
+# Angular app requires unconditionally just to finish loading or to use
+# RentShield's own pages -- found the same way each time (a real user
+# testing in a real browser, not the API-only automated checks, which
+# never exercise these specific calls):
+#   - view/change_uisettings: GET /api/ui_settings/ is the very first
+#     call the app makes on every load (it tells the frontend what the
+#     user *can* do in the first place, so it can't itself be gated
+#     behind a permission check) -- 403s outright without this.
+#   - view_tag: rentshield-api.service.ts resolves the "RentShield
+#     Notice" tag's id via GET /api/tags/?name__iexact=... to build the
+#     Notices list's filter query -- 403s the Notices page without this
+#     (tag *creation* on notice generation happens server-side via the
+#     ORM directly in documents/rentshield/service.py, not through this
+#     API, so add_tag isn't needed here).
+BASELINE_PERMISSIONS: list[str] = ["view_uisettings", "change_uisettings", "view_tag"]
 
 
 def user_in_group(user: User | None, group_name: str) -> bool:

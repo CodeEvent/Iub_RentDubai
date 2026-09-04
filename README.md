@@ -850,6 +850,16 @@ ticked for them, with no code change required. Verified directly: a Lawyer
 account with `add_document` manually granted went from `403` to `200` on
 notice creation, and back to `403` once the permission was removed.
 
+**Fifth bug found and fixed, same real-browser-testing pattern**: the
+Notices list 403'd on `GET /api/tags/?name__iexact=RentShield%20Notice`
+for every role — `rentshield-api.service.ts` resolves the "RentShield
+Notice" tag's id this way to build its document-list filter, and
+`BASELINE_PERMISSIONS` only covered `UiSettings`, never `Tag`. Added
+`view_tag` to `BASELINE_PERMISSIONS`; tag *creation* on notice generation
+was never affected, since that happens server-side via the ORM directly
+in `documents/rentshield/service.py`, not through this API. Verified: a
+real Lawyer-group request to that exact endpoint went from `403` to `200`.
+
 **Real, load-bearing limitations, not glossed over:**
 - No user is a member of any role group by default — an admin has to
   assign real users to Tenant/Property Owner/Notary/Lawyer under
