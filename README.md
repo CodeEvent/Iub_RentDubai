@@ -718,10 +718,16 @@ weaker notion of admin alongside the real one.
 
 Every `documents/rentshield_views.py` endpoint that creates or dispatches a
 real legal document now requires real auth instead of `AllowAny`:
-- `create_notice_view` / `analyze_document_view` / `notarize_view`: require
-  `CanManageNotices` (`documents/rentshield/roles.py`) — Property Owner or
-  Admin only. A notice's `owner` is now always the authenticated requester
-  (paperless-ngx's own `Document.owner` field), never `None`.
+- `create_notice_view` / `analyze_document_view`: require `CanManageNotices`
+  (`documents/rentshield/roles.py`) — Django's own `documents.add_document`
+  permission, i.e. the same "Add" checkbox under Document in Settings >
+  Users & Groups (or on an individual user) that an admin already sees and
+  edits — not a hidden rule checking group membership by name. A notice's
+  `owner` is now always the authenticated requester (paperless-ngx's own
+  `Document.owner` field), never `None`.
+- `notarize_view`: requires `CanActOnDocument` — Django's own
+  `documents.change_document` permission, since dispatching notarization
+  modifies an existing document rather than creating a new one.
 - `notarize_status_view`: any authenticated user who can already *see* the
   document (owns it, or has a Workflow-granted object permission, or is
   Admin) — read-only, so not limited to `CanManageNotices`.
@@ -817,6 +823,32 @@ project's sandbox correctly backfilled the 2 sensitive-reason documents
 that were missing it and left the rest untouched (0 backfilled on a
 second run), and a real Lawyer-group API request went from seeing 0
 sensitive notices to seeing all of them.
+
+**Fourth bug found and fixed, by an admin actually using the real
+permissions UI**: `CanManageNotices` originally checked group membership
+directly (`user_in_group(user, PROPERTY_OWNER_GROUP_NAME)`) rather than an
+actual Django permission. That meant Settings > Users & Groups' own
+"Document > Add" checkbox — the exact control an admin would reach for to
+grant someone notice-creation access — silently did nothing for any group
+other than Property Owner: an admin ticking "Add" for Lawyer (confirmed by
+doing exactly this) still got `403` on notice creation, because the check
+never looked at that permission at all. The Angular frontend was never
+wrong here — "New Notice" is (and always was) gated on the real
+`Add`/`Document` permission via `*pngxIfPermissions`, so the nav link
+correctly appeared while the backend silently refused the action, a
+confusing split. Fixed by changing `can_manage_notices()`/
+`CanManageNotices` to check `user.has_perm("documents.add_document")`
+directly — the same permission the checkbox controls, and the same one
+Django already treats a superuser as always having, so no separate staff/
+superuser check is needed either. `notarize_view` was moved to a new
+`CanActOnDocument` checking `documents.change_document` instead (dispatching
+notarization modifies an existing document, so "Change," not "Add," is the
+correct permission). Property Owner already has both by default, so
+nothing changes for the out-of-the-box role; any other group or individual
+user now genuinely gains notice-creation ability the moment "Add" is
+ticked for them, with no code change required. Verified directly: a Lawyer
+account with `add_document` manually granted went from `403` to `200` on
+notice creation, and back to `403` once the permission was removed.
 
 **Real, load-bearing limitations, not glossed over:**
 - No user is a member of any role group by default — an admin has to

@@ -33,6 +33,7 @@ from documents.rentshield.document_analysis import DocumentAnalysisError
 from documents.rentshield.document_analysis import analyze_document
 from documents.rentshield.pricing import ADD_ONS
 from documents.rentshield.pricing import BASE_PRICE_AED
+from documents.rentshield.roles import CanActOnDocument
 from documents.rentshield.roles import CanManageNotices
 from documents.rentshield.service import check_notarization_status
 from documents.rentshield.service import generate_and_consume
@@ -223,11 +224,13 @@ def check_service_method_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, CanManageNotices])
+@permission_classes([IsAuthenticated, CanActOnDocument])
 def notarize_view(request, document_id: int):
     """POST /api/documents/notice/<document_id>/notarize/ -- routes the
     notice on this Document through a real e-signature workflow
-    (DocuSeal primary, OpenSign fallback)."""
+    (DocuSeal primary, OpenSign fallback). Gated on "Change Document"
+    (not "Add Document" like creating a notice) -- this modifies an
+    existing one, matching Django's own permission semantics."""
     document = _get_visible_document_or_404(request, document_id)
     try:
         result = request_notarization(document)

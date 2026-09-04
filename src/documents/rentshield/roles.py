@@ -56,19 +56,53 @@ def user_in_group(user: User | None, group_name: str) -> bool:
 
 
 def can_manage_notices(user: User | None) -> bool:
-    """Property Owner or Admin: the two RentShield actions that create or
-    dispatch a real legal document (generating a notice, requesting
-    notarization) are limited to whoever owns the tenancy relationship or
-    has full platform access -- not Tenant, Notary, or Lawyer, who each
-    only need to view/act on specific documents once one exists."""
+    """Whether `user` can generate a RentShield notice.
+
+    Deliberately just Django's own "documents.add_document" permission --
+    the exact same Document > Add checkbox an admin already sees and
+    edits under Settings > Users & Groups (or on a single user's own
+    permission list there) -- not a separate, hidden rule checking group
+    membership by name. Property Owner is granted this by default (see
+    ROLE_DOCUMENT_PERMISSIONS below); ticking "Add" for Document on any
+    other group or on an individual user extends the ability to them too,
+    with no code change needed here. `has_perm` already treats an active
+    superuser as having every permission, so no separate staff/superuser
+    check is needed.
+
+    (Previously this checked PROPERTY_OWNER_GROUP_NAME membership
+    directly, which meant granting "Add" on Document to another group
+    through the real permissions UI silently did nothing -- confirmed by
+    a real admin doing exactly that and the action still being refused.)
+    """
     if not user or not user.is_authenticated:
         return False
-    return bool(user.is_staff or user.is_superuser or user_in_group(user, PROPERTY_OWNER_GROUP_NAME))
+    return user.has_perm("documents.add_document")
+
+
+def can_act_on_document(user: User | None) -> bool:
+    """Whether `user` can dispatch an action against an existing
+    document (e.g. requesting notarization) -- Django's own
+    "documents.change_document" permission, same reasoning as
+    can_manage_notices() above. Which *specific* document a request can
+    act on is still checked separately (ownership or an explicit
+    object-level grant), this only gates the action in general."""
+    if not user or not user.is_authenticated:
+        return False
+    return user.has_perm("documents.change_document")
 
 
 class CanManageNotices(BasePermission):
-    """DRF permission for create_notice_view/analyze_document_view/
-    notarize_view: Property Owner or Admin role only."""
+    """DRF permission for create_notice_view/analyze_document_view:
+    requires Django's own "Add Document" permission."""
 
     def has_permission(self, request, view) -> bool:
         return can_manage_notices(request.user)
+
+
+class CanActOnDocument(BasePermission):
+    """DRF permission for notarize_view: requires Django's own "Change
+    Document" permission. Object-level visibility for the specific
+    document is checked separately by the view itself."""
+
+    def has_permission(self, request, view) -> bool:
+        return can_act_on_document(request.user)
