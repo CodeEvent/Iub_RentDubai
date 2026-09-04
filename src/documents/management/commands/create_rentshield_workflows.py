@@ -17,6 +17,8 @@ from documents.rentshield.custom_fields import NEEDS_AI_REVIEW_TAG_NAME
 from documents.rentshield.custom_fields import RENTSHIELD_TAG_NAME
 from documents.rentshield.custom_fields import TENANCY_CONTRACT_TAG_NAME
 from documents.rentshield.custom_fields import key_to_id_map
+from documents.rentshield.roles import LAWYER_GROUP_NAME
+from documents.rentshield.roles import NOTARY_GROUP_NAME
 
 STATUTORY_REASONS = ["sale", "personal", "demolition", "renovation"]
 BREACH_REASONS = ["nonpayment", "sublease"]
@@ -36,7 +38,7 @@ PLACEHOLDER_WEBHOOK_URL = "https://example.com/rentshield-webhook"
 
 class Command(BaseCommand):
     help = (
-        "Idempotently creates the 10 RentShield paperless-ngx Workflows "
+        "Idempotently creates the 13 RentShield paperless-ngx Workflows "
         "(see README.md 'Workflows' section for what each one does and "
         "why). Safe to re-run -- looks up existing Workflows by name and "
         "leaves them alone if already present, so edits made in the UI "
@@ -92,9 +94,13 @@ class Command(BaseCommand):
             name="Tenancy Notices",
             defaults={"path": "Tenancy Notices/{created_year}/{title}"},
         )
-        # Minimal placeholder -- task 5 (per-role permissions) fleshes this
-        # group's actual membership and object-level permissions out.
-        lawyer_group, _ = Group.objects.get_or_create(name="Lawyer")
+        # Model-level Document permissions on these two groups are set up
+        # by `manage.py create_rentshield_roles` (documents/rentshield/
+        # roles.py) -- get_or_create here just ensures the group exists so
+        # it can be assigned on a Workflow action below; membership is a
+        # human decision made under Settings > Users & Groups.
+        lawyer_group, _ = Group.objects.get_or_create(name=LAWYER_GROUP_NAME)
+        notary_group, _ = Group.objects.get_or_create(name=NOTARY_GROUP_NAME)
 
         reason_field = ids["reason"]
         notarization_field = ids["add_notarization"]
@@ -355,6 +361,19 @@ class Command(BaseCommand):
             action_kwargs={"type": WorkflowAction.WorkflowActionType.ASSIGNMENT},
             action_view_groups=[lawyer_group],
             action_change_groups=[lawyer_group],
+        )
+
+        self._create_workflow(
+            name="RentShield: grant Notary access on notarization request",
+            order=13,
+            trigger_kwargs={
+                "type": WorkflowTrigger.WorkflowTriggerType.DOCUMENT_ADDED,
+                "filter_custom_field_query": json.dumps([notarization_field, "exact", True]),
+            },
+            trigger_tags=[rentshield_tag],
+            action_kwargs={"type": WorkflowAction.WorkflowActionType.ASSIGNMENT},
+            action_view_groups=[notary_group],
+            action_change_groups=[notary_group],
         )
 
         self._repair_notarization_pending_queries(

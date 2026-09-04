@@ -45,12 +45,26 @@ export const routes: Routes = [
       {
         path: 'notice/new',
         component: NoticeFormComponent,
-        data: { componentName: 'NoticeFormComponent' },
+        canActivate: [PermissionsGuard],
+        data: {
+          requiredPermission: {
+            action: PermissionAction.Add,
+            type: PermissionType.Document,
+          },
+          componentName: 'NoticeFormComponent',
+        },
       },
       {
         path: 'notices',
         component: NoticesListComponent,
-        data: { componentName: 'NoticesListComponent' },
+        canActivate: [PermissionsGuard],
+        data: {
+          requiredPermission: {
+            action: PermissionAction.View,
+            type: PermissionType.Document,
+          },
+          componentName: 'NoticesListComponent',
+        },
       },
       {
         path: 'legal-skills',

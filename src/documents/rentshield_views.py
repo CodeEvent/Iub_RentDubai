@@ -11,6 +11,7 @@
 # bespoke -- see src-ui's rentshield-api.service.ts.
 from __future__ import annotations
 
+from django.http import Http404
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
@@ -18,15 +19,18 @@ from rest_framework.decorators import parser_classes
 from rest_framework.decorators import permission_classes
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from documents.models import Document
+from documents.permissions import has_perms_owner_aware
 from documents.rentshield.citation_graph import build_citation_graph
 from documents.rentshield.constants import ALL_REASONS
 from documents.rentshield.document_analysis import DocumentAnalysisError
 from documents.rentshield.document_analysis import analyze_document
 from documents.rentshield.pricing import ADD_ONS
 from documents.rentshield.pricing import BASE_PRICE_AED
+from documents.rentshield.roles import CanManageNotices
 from documents.rentshield.service import check_notarization_status
 from documents.rentshield.service import generate_and_consume
 from documents.rentshield.service import request_notarization
@@ -34,14 +38,33 @@ from documents.rentshield.service_methods import SERVICE_METHODS
 from documents.rentshield.skills_lib import get_skill
 from documents.rentshield.skills_lib import load_skills
 
-# Deliberately AllowAny for now (Phase 1 scope, unchanged from the old
-# rentshield app): paperless-ngx's own auth (django-allauth / DRF token
-# auth) governs the rest of the app; wiring these into it is Phase 2,
-# not silently skipped.
+# Real permission gating (task 5): CanManageNotices (documents/rentshield/
+# roles.py) restricts notice creation and notarization dispatch to the
+# Property Owner / Admin roles; a plain IsAuthenticated gate covers the
+# read-only reference endpoints any role can use. analyze_uploaded_view
+# stays AllowAny -- it's an internal server-to-server webhook callback,
+# not a human-facing endpoint, see its own docstring.
+
+
+def _get_visible_document_or_404(request, document_id: int) -> Document:
+    """Loads a Document the requesting user is actually allowed to see
+    (owns it, or has an explicit/group guardian grant, or is staff/
+    superuser) -- 404 rather than 403 for a document that exists but
+    isn't visible, so its existence isn't leaked to someone with no
+    access to it at all."""
+    document = get_object_or_404(Document, id=document_id)
+    user = request.user
+    if not (
+        getattr(user, "is_staff", False)
+        or getattr(user, "is_superuser", False)
+        or has_perms_owner_aware(user, "view_document", document)
+    ):
+        raise Http404
+    return document
 
 
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated, CanManageNotices])
 def create_notice_view(request):
     """POST /api/documents/notice/create/ -- renders the bilingual
     notice to a real PDF and hands it to paperless-ngx's own
@@ -60,7 +83,6 @@ def create_notice_view(request):
     if bool(data.get("add_notarization")) and not data.get("landlord_email"):
         return Response({"error": "A landlord email is required when Notarization is selected."}, status=400)
 
-    owner = request.user if request.user.is_authenticated else None
     fields = {
         "landlord_name": data.get("landlord_name"),
         "landlord_email": data.get("landlord_email"),
@@ -75,7 +97,7 @@ def create_notice_view(request):
         "add_notarization": bool(data.get("add_notarization")),
         "add_ai_review": bool(data.get("add_ai_review")),
     }
-    task_id = generate_and_consume(fields, owner_id=owner.id if owner else None)
+    task_id = generate_and_consume(fields, owner_id=request.user.id)
     return Response({"task_id": task_id})
 
 
@@ -88,7 +110,7 @@ def pricing_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated, CanManageNotices])
 @parser_classes([MultiPartParser])
 def analyze_document_view(request):
     """POST /api/documents/notice/analyze/ -- structured extraction for
@@ -119,7 +141,7 @@ def analyze_document_view(request):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def legal_skills_view(request):
     """GET /api/documents/notice/legal-skills/ -- summaries only (id,
     title, jurisdiction, practice_area), for a picker/suggestion list.
@@ -132,7 +154,7 @@ def legal_skills_view(request):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def legal_skill_detail_view(request, skill_id: str):
     """GET /api/documents/notice/legal-skills/<id>/ -- full guidance
     text + disclaimer."""
@@ -143,7 +165,7 @@ def legal_skill_detail_view(request, skill_id: str):
 
 
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def check_service_method_view(request):
     """POST /api/documents/notice/check-service-method/
     {"method": "..."} -- whether a notice-service method satisfies
@@ -175,12 +197,12 @@ def check_service_method_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated, CanManageNotices])
 def notarize_view(request, document_id: int):
     """POST /api/documents/notice/<document_id>/notarize/ -- routes the
     notice on this Document through a real e-signature workflow
     (DocuSeal primary, OpenSign fallback)."""
-    document = get_object_or_404(Document, id=document_id)
+    document = _get_visible_document_or_404(request, document_id)
     try:
         result = request_notarization(document)
     except ValueError as exc:
@@ -208,6 +230,14 @@ def analyze_uploaded_view(request):
     manage.py create_rentshield_workflows); paperless-ngx's own Workflow
     webhooks time out after 5 seconds, so this must not do the actual
     docling-service call inline -- see documents.tasks.run_ai_review_task.
+
+    Deliberately still AllowAny (task 5 wired real role gating into every
+    other endpoint in this file, but not this one): the caller is
+    paperless-ngx's own Celery worker calling back into this same Django
+    process via settings.RENTSHIELD_INTERNAL_URL, not a human, so there's
+    no user session to authenticate. It's scoped to a single, narrow
+    action (queue AI review for a doc id that must already exist) rather
+    than exposing anything readable/writable beyond that.
     """
     from documents.tasks import run_ai_review_task
 
@@ -224,12 +254,15 @@ def analyze_uploaded_view(request):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def notarize_status_view(request, document_id: int):
     """GET /api/documents/notice/<document_id>/notarize-status/ --
     refreshes the signing status from whichever provider originally
-    handled the request."""
-    document = get_object_or_404(Document, id=document_id)
+    handled the request. Read-only, so any role that can already see the
+    document (Property Owner who owns it, Notary/Lawyer via their
+    Workflow-granted object permissions, Admin) can check it -- not
+    limited to CanManageNotices like creating/dispatching."""
+    document = _get_visible_document_or_404(request, document_id)
     try:
         result = check_notarization_status(document)
     except ValueError as exc:

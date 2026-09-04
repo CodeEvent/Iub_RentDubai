@@ -701,9 +701,96 @@ first real "genuinely pending" case this project had ever created).
   synchronously by this command, once again by the async webhook); both
   writes are idempotent so this is harmless, just redundant.
 
-## Not done yet (named, not silently skipped)
+## Roles & Permissions
 
-- **Auth wiring**: every `documents/rentshield_views.py` endpoint is
-  `AllowAny` for now. paperless-ngx's own auth (django-allauth, DRF token
-  auth, django-guardian object permissions) is fully present and
-  unmodified — wiring these endpoints into it is next, not forgotten.
+`manage.py create_rentshield_roles` idempotently creates 4 role Groups —
+Tenant, Property Owner, Notary, Lawyer — with real, model-level Django
+Document permissions (`documents/rentshield/roles.py`,
+`documents/management/commands/create_rentshield_roles.py`). There is no
+custom roles/permissions framework: these are plain `django.contrib.auth.
+Group` objects, the exact same mechanism paperless-ngx's own Settings >
+Users & Groups admin UI already manages, given real permissions instead of
+being left as an empty placeholder. The 5th role, full-access Admin, is
+just Django's own `is_staff`/`is_superuser` — not a group at all, since
+paperless-ngx (and Django itself) already treats a superuser as
+unrestricted everywhere; a separate "Admin" group would only be a second,
+weaker notion of admin alongside the real one.
+
+Every `documents/rentshield_views.py` endpoint that creates or dispatches a
+real legal document now requires real auth instead of `AllowAny`:
+- `create_notice_view` / `analyze_document_view` / `notarize_view`: require
+  `CanManageNotices` (`documents/rentshield/roles.py`) — Property Owner or
+  Admin only. A notice's `owner` is now always the authenticated requester
+  (paperless-ngx's own `Document.owner` field), never `None`.
+- `notarize_status_view`: any authenticated user who can already *see* the
+  document (owns it, or has a Workflow-granted object permission, or is
+  Admin) — read-only, so not limited to `CanManageNotices`.
+- `legal_skills_view` / `legal_skill_detail_view` / `check_service_method_view`:
+  any authenticated user — informational reference content, not gated by
+  role.
+- `analyze_uploaded_view` stays `AllowAny`, on purpose: it's the internal
+  server-to-server webhook callback Workflows #11/#12 hit
+  (`settings.RENTSHIELD_INTERNAL_URL`), not a human-facing endpoint — see
+  its own docstring.
+
+**Which specific documents a role's members see is narrowed per-document,
+not just per-model**, reusing paperless-ngx's existing guardian-backed
+object permissions (`documents/permissions.py`) rather than anything new:
+- **Property Owner**: sees the notices they personally generated
+  (`Document.owner`, paperless-ngx's own ownership model) — one Property
+  Owner cannot see another's notices, verified directly (a second Property
+  Owner account got `404` on the first owner's notice, `200` creating
+  their own).
+- **Notary**: sees a notice only once notarization is actually requested
+  on it — granted by the new Workflow #13, "RentShield: grant Notary
+  access on notarization request" (`DOCUMENT_ADDED`, `add_notarization`
+  exact `True` → `assign_view_groups`/`assign_change_groups` on the Notary
+  group), the exact same mechanism Workflow #10 already used for Lawyer.
+- **Lawyer**: sees only sensitive-reason notices (personal use, demolition,
+  renovation) — Workflow #10, unchanged, now paired with real model-level
+  permissions on the Lawyer group (see the bug note below).
+- **Tenant**: gets `view_document` at the model level, but **no automatic
+  per-notice visibility** — `tenant_name` on a notice is free text, not a
+  link to a real user account, so there's no way to know which Tenant user
+  a given notice belongs to without a bigger schema change (named here, not
+  silently skipped). A Tenant sees nothing until an admin manually grants
+  them view access to their specific notice(s) (Documents > select > Edit
+  permissions in paperless-ngx's own UI).
+
+Verified end-to-end with 4 real test users (one per role, `force_login`'d
+through Django's real request/response cycle, not mocked) plus a second
+Property Owner account: `create_notice_view` returned `200` only for the
+Property Owner and `403` for Tenant/Notary/Lawyer; after the Property Owner
+created a notarization-requested notice and a sensitive-reason notice, the
+Notary could `GET` the former (`200`) but not the latter (`404`), the
+Lawyer the reverse, and the Tenant neither — exactly the intended matrix.
+
+The Angular frontend gates on the same real permissions, not a separate
+check: "New Notice" (`app-frame.component.html`) and its route
+(`app-routing.module.ts`) require `Add`/`Document`; "Notices" and "Legal
+Skills" require `View`/`Document` — both via paperless-ngx's own existing
+`*pngxIfPermissions` directive and `PermissionsGuard`, the same mechanism
+already gating every other nav item, not a bespoke role check.
+
+**Bug found and fixed while verifying this**: the `Lawyer` group (created
+as an empty placeholder by `create_rentshield_workflows.py` back in task
+1) had never been given model-level Document permissions — only the
+object-level grant from Workflow #10. `create_rentshield_roles` fixes this
+(and will heal it again if the group's permissions are ever edited into an
+inconsistent state, since it always sets the group's permission set to
+exactly what's defined in `roles.py` rather than only adding on first
+creation).
+
+**Real, load-bearing limitations, not glossed over:**
+- No user is a member of any role group by default — an admin has to
+  assign real users to Tenant/Property Owner/Notary/Lawyer under
+  Settings > Users & Groups, based on who they actually are.
+- Object-level grants only apply going forward: Workflow triggers fire on
+  `DOCUMENT_ADDED`, not retroactively, so notices created before both
+  `create_rentshield_roles` and `create_rentshield_workflows` have run need
+  their permissions set by hand if they should be restricted.
+- `reasons_view`/`pricing_view` (static reference data: the list of
+  reasons, the price table) are intentionally left as plain, ungated Django
+  views — no document data, nothing role-specific to protect.
+
+## Not done yet (named, not silently skipped)
