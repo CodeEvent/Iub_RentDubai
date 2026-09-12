@@ -39,12 +39,15 @@ export interface Notice {
   notice_period_days: number
   add_notarization: boolean
   add_ai_review: boolean
+  add_real_notarization: boolean
   total_price_aed: number
   document_id: number | null
   esign_provider: string | null
   esign_status: string | null
   esign_signing_url: string | null
   esign_signed_document_url: string | null
+  notary_status: string | null
+  notary_reference_no: string | null
   created_at: string
 }
 
@@ -90,6 +93,22 @@ export interface DocumentAnalysisResult {
   num_pages?: number
   tables?: unknown[]
   citation_graph: CitationGraph
+}
+
+export interface AdminVerificationRecord {
+  id: number
+  username: string
+  email: string
+  status: string
+  provider: string
+  verification_id: string
+  passport_photo_url: string | null
+  selfie_photo_url: string | null
+  latitude: number | null
+  longitude: number | null
+  location_accuracy_m: number | null
+  created_at: string
+  updated_at: string
 }
 
 const RENTSHIELD_TAG_NAME = 'RentShield Notice'
@@ -140,6 +159,9 @@ const FIELD_KEYS: Record<string, string> = {
   esign_signing_url: 'RentShield: E-Sign Signing URL',
   esign_status: 'RentShield: E-Sign Status',
   esign_signed_document_url: 'RentShield: E-Sign Signed Document URL',
+  add_real_notarization: 'RentShield: Real Notarization Add-on',
+  notary_status: 'RentShield: Notary Public Status',
+  notary_reference_no: 'RentShield: Notary Reference No.',
 }
 
 @Injectable({ providedIn: 'root' })
@@ -151,18 +173,29 @@ export class RentshieldApiService {
   // paperless/urls.py (not a separate rentshield API namespace).
   private base = environment.apiBaseUrl
 
+  // Looks up a tag's live id by name -- paperless-ngx has no "get tag by
+  // name" endpoint, just filtering, so this is the same one-line lookup
+  // every tag-by-name need here shares. shareReplay(1) so it's resolved
+  // once per app session, not re-fetched on every subscribe.
+  private tagId(name: string): Observable<number | null> {
+    return this.http
+      .get<{ results: { id: number; name: string }[] }>(
+        `${this.base}tags/?name__iexact=${encodeURIComponent(name)}`
+      )
+      .pipe(
+        map((res) => res.results[0]?.id ?? null),
+        shareReplay(1)
+      )
+  }
+
   // Resolved once per app session and cached: the "RentShield Notice"
-  // tag id (documents carrying it are RentShield notices) and the
-  // CustomField id <-> short-key maps used to build/read the
-  // custom_fields payload on a Document.
-  private rentshieldTagId$ = this.http
-    .get<{ results: { id: number; name: string }[] }>(
-      `${this.base}tags/?name__iexact=${encodeURIComponent(RENTSHIELD_TAG_NAME)}`
-    )
-    .pipe(
-      map((res) => res.results[0]?.id ?? null),
-      shareReplay(1)
-    )
+  // tag id (documents carrying it are RentShield notices), the
+  // "Awaiting Notary Public" tag id (the Real Notary Public fulfillment
+  // queue -- see the Notary Guide page), and the CustomField
+  // id <-> short-key maps used to build/read the custom_fields payload
+  // on a Document.
+  private rentshieldTagId$ = this.tagId(RENTSHIELD_TAG_NAME)
+  private awaitingNotaryTagId$ = this.tagId('Awaiting Notary Public')
 
   private customFieldIdToKey$ = this.http
     .get<{ results: PaperlessCustomFieldDef[] }>(`${this.base}custom_fields/?page_size=100`)
@@ -208,12 +241,15 @@ export class RentshieldApiService {
       notice_period_days: (f['notice_period_days'] as number) ?? 365,
       add_notarization: !!f['add_notarization'],
       add_ai_review: !!f['add_ai_review'],
+      add_real_notarization: !!f['add_real_notarization'],
       total_price_aed: (f['total_price_aed'] as number) ?? 0,
       document_id: doc.id,
       esign_provider: (f['esign_provider'] as string) ?? null,
       esign_status: (f['esign_status'] as string) ?? null,
       esign_signing_url: (f['esign_signing_url'] as string) ?? null,
       esign_signed_document_url: (f['esign_signed_document_url'] as string) ?? null,
+      notary_status: (f['notary_status'] as string) ?? null,
+      notary_reference_no: (f['notary_reference_no'] as string) ?? null,
       created_at: doc.created,
     }
   }
@@ -226,6 +262,13 @@ export class RentshieldApiService {
     return this.http.get<{ base_price_aed: number; add_ons: Record<string, AddOn> }>(
       `${this.base}documents/notice/pricing/`
     )
+  }
+
+  // The Real Notary Public fulfillment queue's tag id -- used to deep-link
+  // straight into the filtered document list (see the Notary Guide page),
+  // the same way listNotices() above filters by the RentShield tag.
+  getAwaitingNotaryTagId(): Observable<number | null> {
+    return this.awaitingNotaryTagId$
   }
 
   // Lists every RentShield notice by querying paperless-ngx's own stock
@@ -286,6 +329,29 @@ export class RentshieldApiService {
     )
   }
 
+  // The real, payment-gated path (documents/rentshield_billing/) --
+  // notice-form now calls this instead of createNotice() directly. In
+  // demo mode (no Stripe key configured server-side) the notice is
+  // already generated by the time this resolves, so document_id comes
+  // back directly; in real-Stripe mode checkout_url is set instead and
+  // the caller must redirect there, with generation happening later via
+  // Stripe's webhook once payment actually completes.
+  checkout(payload: Partial<Notice>): Observable<{
+    order_id: number
+    demo: boolean
+    checkout_url: string | null
+    status: string
+    document_id: number | null
+  }> {
+    return this.http.post<{
+      order_id: number
+      demo: boolean
+      checkout_url: string | null
+      status: string
+      document_id: number | null
+    }>(`${this.base}documents/notice/checkout/`, payload)
+  }
+
   notarize(
     documentId: number
   ): Observable<{ provider: string; status: string; signing_url: string | null }> {
@@ -306,6 +372,70 @@ export class RentshieldApiService {
       status: string
       signed_document_url: string | null
     }>(`${this.base}documents/notice/${documentId}/notarize-status/`)
+  }
+
+  // Property-owner identity verification (documents/rentshield_identity/,
+  // self-hosted Idswyft -- camera capture + liveness + face match, not
+  // NFC chip reading, see that app's models.py for why). The capture
+  // itself (photo + selfie) happens right inside identity-verification.
+  // component.ts, uploaded through the two endpoints below -- the
+  // property owner never leaves RentShield's own page or sees Idswyft's
+  // branding. A 503 from startIdentityVerification means the feature
+  // isn't configured in this environment, not that the request itself
+  // failed -- callers should show that message as-is.
+  startIdentityVerification(): Observable<{ status: string; step: string }> {
+    return this.http.post<{ status: string; step: string }>(
+      `${this.base}documents/identity/verify/start/`,
+      {}
+    )
+  }
+
+  getIdentityVerificationStatus(): Observable<{ status: string | null; step: string | null }> {
+    return this.http.get<{ status: string | null; step: string | null }>(
+      `${this.base}documents/identity/verify/status/`
+    )
+  }
+
+  private appendGeolocation(formData: FormData, position: GeolocationPosition | null): void {
+    if (!position) return
+    formData.append('latitude', String(position.coords.latitude))
+    formData.append('longitude', String(position.coords.longitude))
+    formData.append('location_accuracy_m', String(position.coords.accuracy))
+  }
+
+  uploadIdentityFrontDocument(
+    file: File,
+    position: GeolocationPosition | null = null
+  ): Observable<{ step: string; status: string }> {
+    const formData = new FormData()
+    formData.append('document', file)
+    this.appendGeolocation(formData, position)
+    return this.http.post<{ step: string; status: string }>(
+      `${this.base}documents/identity/verify/front-document/`,
+      formData
+    )
+  }
+
+  uploadIdentityLiveCapture(
+    file: File,
+    position: GeolocationPosition | null = null
+  ): Observable<{ step: string; status: string }> {
+    const formData = new FormData()
+    formData.append('selfie', file)
+    this.appendGeolocation(formData, position)
+    return this.http.post<{ step: string; status: string }>(
+      `${this.base}documents/identity/verify/live-capture/`,
+      formData
+    )
+  }
+
+  // Admin-only review list (documents/rentshield_identity/admin_views.py)
+  // -- every user's verification, their submitted passport photo and
+  // selfie, result, and where it was performed.
+  getIdentityVerificationAdminList(): Observable<{ results: AdminVerificationRecord[] }> {
+    return this.http.get<{ results: AdminVerificationRecord[] }>(
+      `${this.base}documents/identity/verify/admin/list/`
+    )
   }
 
   listLegalSkills(): Observable<{ skills: LegalSkillSummary[] }> {
@@ -333,25 +463,5 @@ export class RentshieldApiService {
     formData.append('file', file)
     if (useDeepseekOcr) formData.append('use_deepseek_ocr', 'true')
     return this.http.post<DocumentAnalysisResult>(`${this.base}documents/notice/analyze/`, formData)
-  }
-
-  // Property-owner identity verification (documents/rentshield_identity/,
-  // self-hosted Idswyft -- camera capture + liveness + face match, not
-  // NFC chip reading, see that app's models.py for why). A 503 means the
-  // feature isn't configured in this environment, not that the request
-  // itself failed -- callers should show that message as-is rather than
-  // treat it like an error.
-  startIdentityVerification(): Observable<{
-    status: string
-    hosted_url: string
-  }> {
-    return this.http.post<{ status: string; hosted_url: string }>(
-      `${this.base}documents/identity/verify/start/`,
-      {}
-    )
-  }
-
-  getIdentityVerificationStatus(): Observable<{ status: string | null }> {
-    return this.http.get<{ status: string | null }>(`${this.base}documents/identity/verify/status/`)
   }
 }

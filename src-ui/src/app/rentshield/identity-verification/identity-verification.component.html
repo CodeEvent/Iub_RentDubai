@@ -31,26 +31,60 @@
 
     @if (status() === 'pending') {
       <div class="d-flex flex-column align-items-center gap-3 text-center">
-        @if (qrSvg()) {
-          <div class="rs-qr-box" [innerHTML]="qrSvg()"></div>
-          <p class="small text-muted mb-0">
-            Scan with your phone's camera -- a phone camera is usually much better for
-            photographing a passport than a laptop's.
-          </p>
-          <a
-            class="btn btn-outline-secondary btn-sm"
-            [href]="hostedUrl()"
-            target="_blank"
-            rel="noopener"
-          >
-            Or continue on this device
-          </a>
-        } @else {
-          <p class="small text-muted mb-0">Verification is already in progress.</p>
+        @if (step() === 'awaiting_front') {
+          <i-bs name="camera" width="2rem" height="2rem" class="text-muted"></i-bs>
+          <p class="small mb-0">Take a clear photo of your passport's photo page.</p>
+          <label class="btn rs-btn-emerald d-flex align-items-center gap-2 mb-0" [class.disabled]="uploading()">
+            <span class="spinner-border spinner-border-sm" *ngIf="uploading()"></span>
+            <i-bs name="camera" *ngIf="!uploading()"></i-bs>
+            {{ uploading() ? 'Processing…' : 'Take Photo of Passport' }}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              hidden
+              [disabled]="uploading()"
+              (change)="onFrontFileSelected($event)"
+            />
+          </label>
         }
-        <p class="small text-muted mb-0 d-flex align-items-center gap-2">
-          <span class="spinner-border spinner-border-sm"></span> Waiting for verification…
-        </p>
+
+        @if (step() === 'awaiting_live') {
+          <i-bs name="person-circle" width="2rem" height="2rem" class="text-muted"></i-bs>
+          <p class="small mb-0">Now take a quick selfie to match against your passport photo.</p>
+          <label class="btn rs-btn-emerald d-flex align-items-center gap-2 mb-0" [class.disabled]="uploading()">
+            <span class="spinner-border spinner-border-sm" *ngIf="uploading()"></span>
+            <i-bs name="camera" *ngIf="!uploading()"></i-bs>
+            {{ uploading() ? 'Processing…' : 'Take Selfie' }}
+            <input
+              type="file"
+              accept="image/*"
+              capture="user"
+              hidden
+              [disabled]="uploading()"
+              (change)="onSelfieFileSelected($event)"
+            />
+          </label>
+        }
+
+        @if (step() === 'processing') {
+          <p class="small text-muted mb-0 d-flex align-items-center gap-2">
+            <span class="spinner-border spinner-border-sm"></span> Verifying…
+          </p>
+        }
+
+        @if (error()) {
+          <p class="text-danger small mb-0">{{ error() }}</p>
+        }
+
+        <button
+          type="button"
+          class="btn btn-link btn-sm text-muted"
+          [disabled]="starting()"
+          (click)="reset()"
+        >
+          <i-bs name="arrow-clockwise" class="me-1"></i-bs>Reset and start over
+        </button>
       </div>
     }
 

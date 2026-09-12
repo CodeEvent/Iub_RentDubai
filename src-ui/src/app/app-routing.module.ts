@@ -23,7 +23,9 @@ import { PermissionsGuard } from './guards/permissions.guard'
 import { LegalSkillsComponent } from './rentshield/legal-skills/legal-skills.component'
 import { NoticeFormComponent } from './rentshield/notice-form/notice-form.component'
 import { NoticesListComponent } from './rentshield/notices-list/notices-list.component'
+import { NotaryGuideComponent } from './rentshield/notary-guide/notary-guide.component'
 import { IdentityVerificationComponent } from './rentshield/identity-verification/identity-verification.component'
+import { IdentityAdminComponent } from './rentshield/identity-admin/identity-admin.component'
 import {
   PermissionAction,
   PermissionType,
@@ -73,9 +75,19 @@ export const routes: Routes = [
         data: { componentName: 'LegalSkillsComponent' },
       },
       {
+        path: 'notary-guide',
+        component: NotaryGuideComponent,
+        data: { componentName: 'NotaryGuideComponent' },
+      },
+      {
         path: 'identity-verification',
         component: IdentityVerificationComponent,
         data: { componentName: 'IdentityVerificationComponent' },
+      },
+      {
+        path: 'identity-verification/admin',
+        component: IdentityAdminComponent,
+        data: { componentName: 'IdentityAdminComponent' },
       },
       {
         path: 'documents',

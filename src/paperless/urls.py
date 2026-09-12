@@ -11,12 +11,19 @@ from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import RedirectView
+from django.views.static import serve
 from drf_spectacular.views import SpectacularAPIView
 from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
+from documents.rentshield_billing.views import checkout_status_view
+from documents.rentshield_billing.views import create_checkout_view
+from documents.rentshield_billing.views import stripe_webhook_view
+from documents.rentshield_identity.admin_views import admin_list_verifications_view
 from documents.rentshield_identity.views import idswyft_webhook_view
 from documents.rentshield_identity.views import start_verification_view
+from documents.rentshield_identity.views import upload_front_document_view
+from documents.rentshield_identity.views import upload_live_capture_view
 from documents.rentshield_identity.views import verification_status_view
 from documents.rentshield_views import analyze_document_view
 from documents.rentshield_views import analyze_uploaded_view
@@ -26,6 +33,7 @@ from documents.rentshield_views import landing_view
 from documents.rentshield_views import legal_skill_detail_view
 from documents.rentshield_views import legal_skills_view
 from documents.rentshield_views import notarize_status_view
+from documents.rentshield_views import notarize_uploaded_view
 from documents.rentshield_views import notarize_view
 from documents.rentshield_views import pricing_view
 from documents.rentshield_views import reasons_view
@@ -186,6 +194,21 @@ urlpatterns = [
                                 name="rentshield-create-notice",
                             ),
                             re_path(
+                                r"^notice/checkout/$",
+                                create_checkout_view,
+                                name="rentshield-checkout",
+                            ),
+                            re_path(
+                                r"^notice/checkout/(?P<order_id>\d+)/status/$",
+                                checkout_status_view,
+                                name="rentshield-checkout-status",
+                            ),
+                            re_path(
+                                "^notice/stripe-webhook/",
+                                stripe_webhook_view,
+                                name="rentshield-stripe-webhook",
+                            ),
+                            re_path(
                                 "^notice/analyze/",
                                 analyze_document_view,
                                 name="rentshield-analyze-document",
@@ -216,6 +239,11 @@ urlpatterns = [
                                 name="rentshield-notarize",
                             ),
                             re_path(
+                                "^notice/notarize-uploaded/",
+                                notarize_uploaded_view,
+                                name="rentshield-notarize-uploaded",
+                            ),
+                            re_path(
                                 r"^notice/(?P<document_id>\d+)/notarize-status/$",
                                 notarize_status_view,
                                 name="rentshield-notarize-status",
@@ -236,9 +264,24 @@ urlpatterns = [
                                 name="rentshield-identity-verify-status",
                             ),
                             re_path(
+                                r"^identity/verify/front-document/$",
+                                upload_front_document_view,
+                                name="rentshield-identity-verify-front-document",
+                            ),
+                            re_path(
+                                r"^identity/verify/live-capture/$",
+                                upload_live_capture_view,
+                                name="rentshield-identity-verify-live-capture",
+                            ),
+                            re_path(
                                 r"^identity/verify/webhook/$",
                                 idswyft_webhook_view,
                                 name="rentshield-identity-verify-webhook",
+                            ),
+                            re_path(
+                                r"^identity/verify/admin/list/$",
+                                admin_list_verifications_view,
+                                name="rentshield-identity-verify-admin-list",
                             ),
                             re_path(
                                 "^bulk_edit/",
@@ -516,6 +559,18 @@ urlpatterns = [
         r"^welcome/?$",
         landing_view,
         name="rentshield-landing",
+    ),
+    # Uploaded identity-verification evidence
+    # (documents/rentshield_identity/) -- dev-only convenience serving,
+    # same reasoning as Django's own django.conf.urls.static.static()
+    # helper; a real deployment serves MEDIA_ROOT via its own front-end
+    # web server, not this process. Must be registered before the
+    # catch-all "Root of the Frontend" pattern so it isn't shadowed, same
+    # as the landing page above.
+    *(
+        [re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT})]
+        if settings.DEBUG
+        else []
     ),
     # Root of the Frontend
     re_path(

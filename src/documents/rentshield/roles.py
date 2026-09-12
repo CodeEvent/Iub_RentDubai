@@ -1,41 +1,40 @@
-# RentShield's 5 roles are plain Django Groups + paperless-ngx's own
-# permission machinery (Django model-level Permissions on Document, plus
-# guardian object-level grants via documents.permissions -- see
-# create_rentshield_roles.py) -- there is no separate roles/permissions
-# table or framework of our own.
+# RentShield has 2 account types: Property Owner (plain Django Group +
+# paperless-ngx's own model-level Document permissions) and full-access
+# Admin (Django's own is_staff/is_superuser, not a group at all --
+# paperless-ngx, and Django itself, already treats a superuser as
+# unrestricted everywhere, so a separate "Admin" group would be
+# redundant and, worse, a second, weaker notion of "admin" alongside the
+# real one). There is no separate roles/permissions table or framework
+# of our own.
 #
-# - Tenant, Property Owner, Notary: created + given model-level Document
-#   permissions by create_rentshield_roles.py.
-# - Lawyer: created by create_rentshield_workflows.py (it needs the group
-#   to exist to assign it on Workflow #10), given model-level permissions
-#   by create_rentshield_roles.py.
-# - Full-access Admin: Django's own is_staff/is_superuser, not a group at
-#   all -- paperless-ngx (and Django itself) already treats a superuser as
-#   unrestricted everywhere, so a 5th "Admin" group would be redundant
-#   and, worse, a second, weaker notion of "admin" alongside the real one.
+# Previously (see README's dated "Roles simplified" section) there were
+# 4 self/admin-assignable roles -- Tenant, Notary, and Lawyer alongside
+# Property Owner. Cut because: Tenant had no working per-notice
+# visibility (tenant_name is free text, not linked to a real account) so
+# a self-registered Tenant saw a permanently empty Notices list; Notary
+# duplicated what the DocuSeal/OpenSign e-signature integration already
+# automates; and Lawyer's object-permission-grant machinery was this
+# project's single biggest source of real bugs (see the "bug found and
+# fixed" entries this same file used to carry). Lawyer's one real use --
+# flagging sensitive-reason notices for legal review -- is now a plain
+# paid add-on (a tag + an email an admin acts on manually), not a login
+# role; see documents/rentshield/pricing.py's "Legal Review" entry and
+# create_notice_view's add_legal_review handling.
 from __future__ import annotations
 
 from django.contrib.auth.models import User
 from rest_framework.permissions import BasePermission
 
-TENANT_GROUP_NAME = "Tenant"
 PROPERTY_OWNER_GROUP_NAME = "Property Owner"
-NOTARY_GROUP_NAME = "Notary"
-LAWYER_GROUP_NAME = "Lawyer"
 
 # Model-level Django permissions (paperless-ngx's own auto-generated
-# add/view/change/delete_document) granted to each role's Group. This is
-# the *ceiling* on what the role can ever do; which specific documents a
-# given member actually sees/edits is narrowed further per-document by
-# ownership (the Property Owner who generated a notice) or by guardian
-# object-level grants a Workflow assigns at consumption time (Notary on
-# notarization-requested notices, Lawyer on sensitive-reason notices --
-# see create_rentshield_workflows.py).
+# add/view/change/delete_document) granted to the Property Owner Group.
+# This is the *ceiling* on what the role can ever do; which specific
+# documents a member actually sees/edits is narrowed further by
+# ownership (paperless-ngx's own Document.owner, set automatically at
+# creation) -- there is no other role/object-grant layer any more.
 ROLE_DOCUMENT_PERMISSIONS: dict[str, list[str]] = {
     PROPERTY_OWNER_GROUP_NAME: ["add_document", "view_document", "change_document"],
-    TENANT_GROUP_NAME: ["view_document"],
-    NOTARY_GROUP_NAME: ["view_document", "change_document"],
-    LAWYER_GROUP_NAME: ["view_document", "change_document"],
 }
 
 # Every one of these role groups also needs paperless-ngx's own baseline
@@ -112,3 +111,16 @@ class CanActOnDocument(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         return can_act_on_document(request.user)
+
+
+class IsRentshieldAdmin(BasePermission):
+    """DRF permission for admin-only RentShield views (the identity-
+    verification review page) -- is_staff alone, same check
+    src-ui/src/app/services/permissions.service.ts's isAdmin() already
+    uses on the frontend, not is_superuser: this project's "Admin"
+    account type is is_staff/is_superuser together (see this file's own
+    header comment), and every other admin-gated page in the app already
+    treats is_staff as sufficient to see the page."""
+
+    def has_permission(self, request, view) -> bool:
+        return bool(request.user and request.user.is_staff)

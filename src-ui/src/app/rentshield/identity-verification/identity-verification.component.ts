@@ -1,22 +1,20 @@
 import { CommonModule } from '@angular/common'
 import { Component, OnDestroy, inject, signal } from '@angular/core'
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser'
 import { RouterModule } from '@angular/router'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
 import { Subscription, interval } from 'rxjs'
 import { switchMap } from 'rxjs/operators'
 import { RentshieldApiService } from '../services/rentshield-api.service'
-// Vendored (not npm) qrcode-generator -- see that file's own header
-// comment for why. MIT-licensed, zero runtime deps, single file.
-import qrcode from '../vendor-qrcode.js'
 
-// Property-owner identity verification. This page never touches a
-// passport photo or a selfie itself -- it only starts a session with a
-// self-hosted Idswyft instance (documents/rentshield_identity/) and
-// polls for the result. The actual capture happens on Idswyft's own
-// hosted page, either right here (same device) or on a phone after
-// scanning the QR code below, since a phone's camera is usually much
-// better for photographing a passport than a laptop's webcam.
+type CaptureStep = 'idle' | 'awaiting_front' | 'awaiting_live' | 'processing'
+
+// Property-owner identity verification. The capture itself (passport
+// photo, then a selfie) happens right here, inside RentShield's own
+// page -- backed by a self-hosted Idswyft instance
+// (documents/rentshield_identity/) for the actual OCR/liveness/face-
+// match work, but the property owner never leaves this page or sees
+// Idswyft's own branding (their hosted page can't be white-labeled
+// without an enterprise license -- see README).
 //
 // Deliberately NOT NFC chip reading: that needs either a native app
 // with hardware NFC access or a physical PC/SC reader, neither of which
@@ -31,23 +29,32 @@ import qrcode from '../vendor-qrcode.js'
 })
 export class IdentityVerificationComponent implements OnDestroy {
   private api = inject(RentshieldApiService)
-  private sanitizer = inject(DomSanitizer)
 
   starting = signal(false)
+  uploading = signal(false)
   error = signal<string | null>(null)
   status = signal<string | null>(null)
-  hostedUrl = signal<string | null>(null)
-  qrSvg = signal<SafeHtml | null>(null)
+  step = signal<CaptureStep>('idle')
 
   private pollSubscription?: Subscription
+  // Captured once via the browser's own Geolocation API when
+  // verification starts -- evidence of where it happened for the admin
+  // review page, never a gate on the result. Null (permission
+  // denied/unsupported) is a normal, silently-accepted outcome, same as
+  // this project's other optional-evidence fields.
+  private position: GeolocationPosition | null = null
 
   constructor() {
     // A user who's already mid-verification (or already verified) from
-    // a previous visit should see that state immediately, not a blank
-    // "start" button.
+    // a previous visit should resume at the right capture step
+    // immediately, not a blank "start" button or a spinner with no way
+    // forward -- that used to be lost on reload entirely.
     this.api.getIdentityVerificationStatus().subscribe((res) => {
       if (res.status) this.status.set(res.status)
-      if (res.status === 'pending') this.startPolling()
+      if (res.status === 'pending') {
+        this.step.set(this.mapStep(res.step))
+        this.startPolling()
+      }
     })
   }
 
@@ -55,17 +62,48 @@ export class IdentityVerificationComponent implements OnDestroy {
     this.pollSubscription?.unsubscribe()
   }
 
+  private mapStep(rawStep: string | null): CaptureStep {
+    switch (rawStep) {
+      case 'AWAITING_FRONT':
+        return 'awaiting_front'
+      case 'AWAITING_LIVE':
+        return 'awaiting_live'
+      case 'FRONT_PROCESSING':
+      case 'LIVE_PROCESSING':
+      case 'FACE_MATCHING':
+        return 'processing'
+      default:
+        // COMPLETE/HARD_REJECTED land here -- status() (final_result)
+        // already carries the real outcome by the time this matters.
+        return 'processing'
+    }
+  }
+
+  // Reset is just start() again -- the backend already generates a
+  // fresh Idswyft session and overwrites the stored one whenever it's
+  // not already verified, so there's no separate "clear" step needed.
+  reset(): void {
+    this.pollSubscription?.unsubscribe()
+    this.error.set(null)
+    this.start()
+  }
+
   start(): void {
     this.starting.set(true)
     this.error.set(null)
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => (this.position = position),
+        () => (this.position = null),
+        { timeout: 8000 }
+      )
+    }
     this.api.startIdentityVerification().subscribe({
       next: (res) => {
         this.starting.set(false)
         this.status.set(res.status)
         if (res.status === 'verified') return
-        this.hostedUrl.set(res.hosted_url)
-        this.renderQr(res.hosted_url)
-        this.startPolling()
+        this.step.set(this.mapStep(res.step))
       },
       error: (err) => {
         this.starting.set(false)
@@ -74,11 +112,41 @@ export class IdentityVerificationComponent implements OnDestroy {
     })
   }
 
-  private renderQr(url: string): void {
-    const qr = qrcode(0, 'M')
-    qr.addData(url)
-    qr.make()
-    this.qrSvg.set(this.sanitizer.bypassSecurityTrustHtml(qr.createSvgTag(6)))
+  onFrontFileSelected(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0]
+    if (!file) return
+    this.uploading.set(true)
+    this.error.set(null)
+    this.api.uploadIdentityFrontDocument(file, this.position).subscribe({
+      next: (res) => {
+        this.uploading.set(false)
+        this.status.set(res.status)
+        this.step.set(this.mapStep(res.step))
+      },
+      error: (err) => {
+        this.uploading.set(false)
+        this.error.set(err?.error?.error || err?.message || 'Could not process that photo -- try again.')
+      },
+    })
+  }
+
+  onSelfieFileSelected(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0]
+    if (!file) return
+    this.uploading.set(true)
+    this.error.set(null)
+    this.api.uploadIdentityLiveCapture(file, this.position).subscribe({
+      next: (res) => {
+        this.uploading.set(false)
+        this.status.set(res.status)
+        this.step.set(this.mapStep(res.step))
+        if (res.status === 'pending') this.startPolling()
+      },
+      error: (err) => {
+        this.uploading.set(false)
+        this.error.set(err?.error?.error || err?.message || 'Could not process that selfie -- try again.')
+      },
+    })
   }
 
   private startPolling(): void {
@@ -87,7 +155,11 @@ export class IdentityVerificationComponent implements OnDestroy {
       .pipe(switchMap(() => this.api.getIdentityVerificationStatus()))
       .subscribe((res) => {
         this.status.set(res.status)
-        if (res.status !== 'pending') this.pollSubscription?.unsubscribe()
+        if (res.status !== 'pending') {
+          this.pollSubscription?.unsubscribe()
+        } else {
+          this.step.set(this.mapStep(res.step))
+        }
       })
   }
 }

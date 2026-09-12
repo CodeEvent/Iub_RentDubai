@@ -67,6 +67,12 @@ BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 STATIC_ROOT = get_path_from_env("PAPERLESS_STATICDIR", BASE_DIR.parent / "static")
 
 MEDIA_ROOT = get_path_from_env("PAPERLESS_MEDIA_ROOT", BASE_DIR.parent / "media")
+# Only used by documents/rentshield_identity/ (plain Django FileField
+# storage for verification evidence, served via paperless/urls.py in
+# DEBUG) -- paperless-ngx's own Document storage below doesn't route
+# through Django's static-file serving at all, so this was never needed
+# until now.
+MEDIA_URL = "/media/"
 ORIGINALS_DIR = MEDIA_ROOT / "documents" / "originals"
 ARCHIVE_DIR = MEDIA_ROOT / "documents" / "archive"
 THUMBNAIL_DIR = MEDIA_ROOT / "documents" / "thumbnails"
@@ -136,6 +142,7 @@ INSTALLED_APPS = [
     "django_extensions",
     "paperless",
     "documents.apps.DocumentsConfig",
+    "documents.rentshield_billing.apps.RentshieldBillingConfig",
     "documents.rentshield_identity.apps.RentshieldIdentityConfig",
     "paperless_mail.apps.PaperlessMailConfig",
     "django.contrib.admin",
@@ -731,6 +738,32 @@ CELERY_ACCEPT_CONTENT = ["application/json", "application/x-signed-pickle"]
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#beat-schedule
 CELERY_BEAT_SCHEDULE = parse_beat_schedule()
 
+# RentShield: daily notary-provider research scan (documents/rentshield/
+# notary_research/) -- kept out of parse_beat_schedule()'s own task list
+# above (that function/list is paperless-ngx's own vendored scheduling
+# code) so this RentShield-specific addition stays clearly separate from
+# stock behavior, same reasoning RENTSHIELD_INTERNAL_URL etc. live in
+# this file rather than being threaded into custom.py. Runs whether or
+# not SCRAPFLY_API_KEY is set -- the task itself no-ops cleanly and logs
+# why when it isn't, so there's nothing to break by leaving this always
+# scheduled.
+from celery.schedules import crontab  # noqa: E402
+
+_notary_scan_cron = os.getenv("PAPERLESS_RENTSHIELD_NOTARY_SCAN_CRON", "15 3 * * *")
+if _notary_scan_cron != "disable":
+    _minute, _hour, _dom, _month, _dow = _notary_scan_cron.split(" ")
+    CELERY_BEAT_SCHEDULE["RentShield: notary provider scan"] = {
+        "task": "documents.tasks.run_notary_provider_scan_task",
+        "schedule": crontab(
+            minute=_minute,
+            hour=_hour,
+            day_of_month=_dom,
+            month_of_year=_month,
+            day_of_week=_dow,
+        ),
+        "options": {"expires": 23.0 * 60.0 * 60.0},
+    }
+
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#beat-schedule-filename
 CELERY_BEAT_SCHEDULE_FILENAME = str(DATA_DIR / "celerybeat-schedule.db")
 
@@ -1226,11 +1259,71 @@ RENTSHIELD_INTERNAL_URL = os.getenv(
     "http://localhost:8000",
 ).rstrip("/")
 
+# Where to notify an admin that a notice requested the Legal Review
+# add-on (documents/rentshield/service.py's generate_and_consume()) --
+# fulfilled operationally (this email + a "Legal Review Requested" tag
+# an admin filters by), not through in-app RBAC; see README's dated
+# "Roles simplified" section for why Lawyer stopped being a login role.
+# Empty/unset is a deliberate no-op, not an error -- notice creation
+# must never fail just because this wasn't configured.
+RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL = os.getenv(
+    "PAPERLESS_RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL",
+    "",
+)
+
+# Where to notify the real notary-services contact who manually fulfills
+# the "Real Notary Public" add-on (documents/rentshield/service.py's
+# generate_and_consume()) -- same reasoning/no-op-when-unset behavior as
+# RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL above. There is no API to dispatch
+# to (see documents/rentshield/notary_research/); this is the only
+# automation on that path -- everything past this email is a real person
+# working the "Awaiting Notary Public" tag queue by hand in paperless-
+# ngx's own UI.
+RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL = os.getenv(
+    "PAPERLESS_RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL",
+    "",
+)
+
+# Scrapfly (https://scrapfly.io) API key for the notary-provider research
+# scan (documents/rentshield/notary_research/) -- a recurring background
+# check of a small, real, verified-by-live-search list of UAE notary
+# services (documents/rentshield/notary_research/targets.py) for any
+# public sign of a third-party/developer API, feeding the still-open
+# "Phase 0" research question in the notarization-automation plan (see
+# README). Empty/unset is a deliberate no-op -- the scheduled task skips
+# cleanly and logs why, rather than failing, exactly like every other
+# optional external integration in this project (Stripe, DocuSeal/
+# OpenSign, docling-service).
+SCRAPFLY_API_KEY = os.getenv("PAPERLESS_SCRAPFLY_API_KEY", "")
+
+# Where to email a summary when the notary-provider scan above finds a
+# NEW signal (a target site mentioning "API"/"integration"/"developer"/
+# etc. that it didn't on the previous scan) -- deliberately does not
+# email on every run, only on a real change, so it doesn't become noise.
+# Empty/unset is a no-op, same reasoning as RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL.
+RENTSHIELD_NOTARY_RESEARCH_NOTIFY_EMAIL = os.getenv(
+    "PAPERLESS_RENTSHIELD_NOTARY_RESEARCH_NOTIFY_EMAIL",
+    "",
+)
+
+# Stripe (documents/rentshield_billing/) -- real payment collection for
+# notice generation. Empty/unset is a deliberate DEMO MODE, not an
+# error: documents/rentshield_billing/views.py checks this exact value
+# and, when it's empty, skips Stripe entirely and marks the Order paid
+# immediately (Order.Status.DEMO_PAID) so the whole pay -> generate
+# pipeline can be exercised and verified without a real Stripe account.
+# Every Order row records which path it took (paid vs demo_paid) --
+# there is no ambiguity later about what was a real charge.
+STRIPE_SECRET_KEY = os.getenv("PAPERLESS_STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("PAPERLESS_STRIPE_WEBHOOK_SECRET", "")
+
 # Idswyft (documents/rentshield_identity/) config lives in
 # idswyft_client.py itself, read straight from os.environ -- same
 # "self-hosted service, its own small client module" shape as
 # documents/rentshield/esign/docuseal_client.py's DOCUSEAL_URL/
-# DOCUSEAL_API_TOKEN, not a Django settings entry here.
+# DOCUSEAL_API_TOKEN, not the Django-settings pattern above (that one's
+# for RentShield's own notify-email config, not an external service's
+# connection details).
 
 ###############################################################################
 # Remote Parser                                                               #
