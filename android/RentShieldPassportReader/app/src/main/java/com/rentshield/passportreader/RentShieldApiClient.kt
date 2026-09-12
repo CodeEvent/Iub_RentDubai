@@ -84,10 +84,13 @@ class RentShieldApiClient(private val baseUrl: String) {
     /** The name/DOB read straight off the NFC chip (DG1/MRZ) -- plain
      * JSON, no file, cross-checked server-side against the card photo's
      * own OCR read (see views.py's _check_identity_mismatch). */
-    fun submitChipData(fullName: String, dateOfBirth: String, callback: (Result<VerificationStatus>) -> Unit) {
+    fun submitChipData(fullName: String, dateOfBirth: String, documentNumber: String, callback: (Result<VerificationStatus>) -> Unit) {
         val currentToken = token
         if (currentToken == null) return callback(Result.failure(ApiException("Not logged in.")))
-        val body = JSONObject().put("full_name", fullName).put("date_of_birth", dateOfBirth)
+        val body = JSONObject()
+            .put("full_name", fullName)
+            .put("date_of_birth", dateOfBirth)
+            .put("document_number", documentNumber)
             .toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url(url("/api/documents/identity/verify/chip-data/"))

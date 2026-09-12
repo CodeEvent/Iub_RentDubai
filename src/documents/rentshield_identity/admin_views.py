@@ -51,6 +51,7 @@ def admin_list_verifications_view(request):
                     "card_ocr_document_number": record.card_ocr_document_number,
                     "chip_full_name": record.chip_full_name,
                     "chip_date_of_birth": record.chip_date_of_birth,
+                    "chip_document_number": record.chip_document_number,
                     "identity_mismatch_notes": record.identity_mismatch_notes,
                     "automated_result": record.automated_result,
                     "notary_reviewed_by": record.notary_reviewed_by.username if record.notary_reviewed_by else None,

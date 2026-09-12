@@ -76,6 +76,13 @@ class IdentityVerification(models.Model):
     # disagreement between the two is real signal, not noise.
     chip_full_name = models.CharField(max_length=255, blank=True, default="")
     chip_date_of_birth = models.CharField(max_length=32, blank=True, default="")
+    # The chip's OWN copy of the card's printed ID/serial number -- the
+    # real "does the card number match the chip" check some users
+    # expect, done *after* unlocking the chip with its actual PACE key
+    # (the CAN), never by using the serial number as that key itself
+    # (the chip's firmware doesn't accept it as one -- see
+    # MainActivity.kt's onScanClicked() comment on the Android side).
+    chip_document_number = models.CharField(max_length=64, blank=True, default="")
 
     # Set once the two sources above are both present -- never a hard
     # gate (OCR misreads happen), just something the Notary reviewer

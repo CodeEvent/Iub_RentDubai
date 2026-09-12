@@ -116,6 +116,19 @@ def _check_identity_mismatch(record: IdentityVerification) -> str:
                 f'Date of birth mismatch: card photo OCR read "{record.card_ocr_date_of_birth}", '
                 f'chip read "{record.chip_date_of_birth}".',
             )
+    if record.card_ocr_document_number and record.chip_document_number:
+        # The document number the chip unlocked itself with a key that's
+        # NOT this number (see chip_document_number's own field comment)
+        # -- this only ever runs after a successful PACE/BAC handshake,
+        # so a mismatch here means the OCR misread the printed number,
+        # not that the wrong document was scanned.
+        card_doc_number = record.card_ocr_document_number.strip().upper().replace(" ", "")
+        chip_doc_number = record.chip_document_number.strip().upper().replace(" ", "")
+        if card_doc_number != chip_doc_number:
+            notes.append(
+                f'Document number mismatch: card photo OCR read "{record.card_ocr_document_number}", '
+                f'chip read "{record.chip_document_number}".',
+            )
     return " ".join(notes)
 
 
@@ -327,8 +340,14 @@ def submit_chip_data_view(request):
 
     record.chip_full_name = full_name[:255]
     record.chip_date_of_birth = (request.data.get("date_of_birth") or "").strip()[:32]
+    record.chip_document_number = (request.data.get("document_number") or "").strip()[:64]
     record.identity_mismatch_notes = _check_identity_mismatch(record)
-    record.save(update_fields=["chip_full_name", "chip_date_of_birth", "identity_mismatch_notes", "updated_at"])
+    record.save(
+        update_fields=[
+            "chip_full_name", "chip_date_of_birth", "chip_document_number",
+            "identity_mismatch_notes", "updated_at",
+        ],
+    )
     return Response({"status": record.status, "mismatch": bool(record.identity_mismatch_notes)})
 
 

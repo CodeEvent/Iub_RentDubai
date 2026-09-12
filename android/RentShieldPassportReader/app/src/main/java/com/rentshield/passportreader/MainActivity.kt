@@ -203,6 +203,17 @@ class MainActivity : AppCompatActivity() {
 
     // MARK: -- NFC scan (cross-checked against the card photo's OCR, server-side)
 
+    // The CAN here is mandatory and cannot be swapped for the card's
+    // printed ID/serial number ("CA00000AA"-style) -- the chip's own
+    // firmware only recognizes CAN, MRZ, PIN, or PUK as valid PACE key
+    // material, full stop, the same way a bike lock only opens for its
+    // actual combination. The serial number IS still checked, just not
+    // here: once the chip is unlocked with the real CAN, its own copy of
+    // the document number (PassportReadResult.documentNumber) is sent to
+    // the backend and cross-checked against the card photo's OCR read
+    // (see views.py's _check_identity_mismatch) -- that's the "does the
+    // card number match the chip" check, just done after unlocking, not
+    // used to unlock.
     private fun onScanClicked() {
         val isCie = findViewById<RadioGroup>(R.id.radio_document_type).checkedRadioButtonId == R.id.radio_cie
         if (isCie) {
@@ -269,7 +280,7 @@ class MainActivity : AppCompatActivity() {
         sectionDocument.visibility = View.GONE
         statusText.text = "Checking chip details against your card photo…"
         val fullName = "${result.firstName} ${result.lastName}".trim()
-        api.submitChipData(fullName, result.dateOfBirth) { chipResult ->
+        api.submitChipData(fullName, result.dateOfBirth, result.documentNumber) { chipResult ->
             runOnUiThread {
                 chipResult.onSuccess {
                     statusText.text = "Chip read: $fullName. Now take a selfie."

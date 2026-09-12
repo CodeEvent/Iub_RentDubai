@@ -113,6 +113,7 @@ export interface AdminVerificationRecord {
   card_ocr_document_number: string
   chip_full_name: string
   chip_date_of_birth: string
+  chip_document_number: string
   identity_mismatch_notes: string
   automated_result: string
   notary_reviewed_by: string | null

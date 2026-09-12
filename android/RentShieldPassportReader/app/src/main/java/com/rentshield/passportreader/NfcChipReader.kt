@@ -21,6 +21,7 @@ data class PassportReadResult(
     val lastName: String,
     val nationality: String,
     val dateOfBirth: String, // MRZ's own YYMMDD, per MRZInfo.getDateOfBirth() -- passed through as-is, not reformatted
+    val documentNumber: String, // the chip's OWN copy of the card's printed ID/serial number -- cross-checked server-side against the card photo's OCR read, never used as the access key (that's the CAN, a different, mandatory field -- see onScanClicked()'s comment)
     val photoBytes: ByteArray?,
     val photoMimeType: String?,
     val photoBitmap: Bitmap?,
@@ -132,6 +133,7 @@ object NfcChipReader {
             lastName = mrzInfo.primaryIdentifier.replace("<", " ").trim(),
             nationality = mrzInfo.nationality,
             dateOfBirth = mrzInfo.dateOfBirth,
+            documentNumber = mrzInfo.documentNumber,
             photoBytes = photoBytes,
             photoMimeType = mimeType,
             photoBitmap = bitmap,
