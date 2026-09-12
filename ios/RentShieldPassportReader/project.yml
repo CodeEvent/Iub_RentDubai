@@ -1,0 +1,40 @@
+name: RentShieldPassportReader
+options:
+  bundleIdPrefix: com.rentshield
+  deploymentTarget:
+    iOS: "15.0"
+
+packages:
+  NFCPassportReader:
+    url: https://github.com/AndyQ/NFCPassportReader
+    from: 4.0.0
+
+targets:
+  RentShieldPassportReader:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/RentShieldPassportReader
+    dependencies:
+      - package: NFCPassportReader
+    info:
+      path: Sources/RentShieldPassportReader/App/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NFCReaderUsageDescription: "RentShield reads the chip inside your passport to verify your identity, the same way an airport e-gate does."
+        NSCameraUsageDescription: "RentShield needs the camera to take a live selfie to match against your passport photo."
+        NSLocationWhenInUseUsageDescription: "RentShield records where verification happened as evidence for the property owner/admin review."
+        NSFaceIDUsageDescription: "Face ID confirms it's really you opening this verification before it starts."
+    entitlements:
+      path: Sources/RentShieldPassportReader/App/RentShieldPassportReader.entitlements
+      properties:
+        com.apple.developer.nfc.readersession.formats:
+          - TAG
+        com.apple.developer.nfc.readersession.iso7816.select-identifiers:
+          - A0000002471001
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rentshield.passportreader
+        DEVELOPMENT_TEAM: "" # fill in with your own Apple Developer Team ID in Xcode's Signing & Capabilities
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1" # iPhone only -- iPad has no NFC reader in most models

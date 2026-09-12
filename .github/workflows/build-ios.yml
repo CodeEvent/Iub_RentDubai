@@ -1,0 +1,45 @@
+name: Build iOS passport reader
+
+# Compiles ios/RentShieldPassportReader on a real macOS runner -- this
+# repo is public, so GitHub-hosted macOS runners are free, which is what
+# makes this possible at all from a machine that has no Mac/Xcode
+# available (see ios/RentShieldPassportReader/SETUP.md). This builds for
+# the Simulator only -- no code signing, no Apple Developer account
+# needed -- so it only proves the Swift compiles, not that NFC/Face ID/
+# camera actually work (those need a real device and real signing, which
+# is a separate, paid step documented in SETUP.md).
+
+on:
+  push:
+    paths:
+      - "ios/RentShieldPassportReader/**"
+      - ".github/workflows/build-ios.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: ios/RentShieldPassportReader
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for Simulator (no code signing)
+        run: |
+          xcodebuild \
+            -project RentShieldPassportReader.xcodeproj \
+            -scheme RentShieldPassportReader \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
