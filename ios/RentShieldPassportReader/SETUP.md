@@ -1,5 +1,14 @@
 # RentShield Passport Reader (iOS) -- setup
 
+**Status: dormant.** iOS's NFC entitlement is gated behind a $99/year
+Apple Developer account with no free workaround (confirmed -- a free
+"Personal Team" account hits a hard "sandbox restriction" error on NFC).
+With no budget available, `android/RentShieldPassportReader` is the
+active path -- it does everything this was going to do, plus supports
+Italian CIE cards, with no paid account needed at all. This project is
+left here, compiling cleanly in CI, for if a paid account (yours or a
+future partner's) ever becomes available.
+
 ## What this actually is
 
 A native iPhone app that reads a passport's NFC chip (the real BAC
