@@ -6,6 +6,15 @@
   border: 1px solid var(--bs-border-color, #dee2e6);
 }
 
+// The confirmation video needs room for its own play/seek controls --
+// the same 90x110 photo-thumbnail size is too cramped to use.
+video.rs-evidence-thumb {
+  width: 160px;
+  height: 110px;
+  object-fit: contain;
+  background: #000;
+}
+
 .rs-evidence-empty {
   display: flex;
   align-items: center;

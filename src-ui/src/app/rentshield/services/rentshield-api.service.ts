@@ -104,9 +104,20 @@ export interface AdminVerificationRecord {
   verification_id: string
   passport_photo_url: string | null
   selfie_photo_url: string | null
+  video_url: string | null
   latitude: number | null
   longitude: number | null
   location_accuracy_m: number | null
+  card_ocr_full_name: string
+  card_ocr_date_of_birth: string
+  card_ocr_document_number: string
+  chip_full_name: string
+  chip_date_of_birth: string
+  identity_mismatch_notes: string
+  automated_result: string
+  notary_reviewed_by: string | null
+  notary_reviewed_at: string | null
+  notary_notes: string
   created_at: string
   updated_at: string
 }
@@ -435,6 +446,24 @@ export class RentshieldApiService {
   getIdentityVerificationAdminList(): Observable<{ results: AdminVerificationRecord[] }> {
     return this.http.get<{ results: AdminVerificationRecord[] }>(
       `${this.base}documents/identity/verify/admin/list/`
+    )
+  }
+
+  // Notary Public review actions (documents/rentshield_identity/views.py's
+  // notary_confirm_view/notary_reject_view) -- the only path that ever
+  // sets a verification to "verified"; see IdentityVerification's own
+  // docstring on why the automated result alone no longer does.
+  confirmIdentityVerification(id: number, notes: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(
+      `${this.base}documents/identity/verify/notary/${id}/confirm/`,
+      { notes }
+    )
+  }
+
+  rejectIdentityVerification(id: number, notes: string): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(
+      `${this.base}documents/identity/verify/notary/${id}/reject/`,
+      { notes }
     )
   }
 

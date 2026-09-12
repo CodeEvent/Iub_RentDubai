@@ -1,7 +1,7 @@
 <div class="rs-panel" style="max-width: 64rem">
   <div class="rs-panel-body d-flex flex-column gap-3">
     <h3 class="fs-6 fw-bold mb-0 d-flex align-items-center gap-2">
-      <i-bs name="shield-check" class="text-muted"></i-bs> Identity Verification -- Admin Review
+      <i-bs name="shield-check" class="text-muted"></i-bs> Identity Verification -- Review
     </h3>
 
     @if (loading()) {
@@ -19,41 +19,107 @@
     }
 
     @for (record of records(); track record.id) {
-      <div class="border rounded p-3 d-flex flex-column flex-md-row gap-3">
-        <div class="d-flex gap-2">
-          @if (record.passport_photo_url) {
-            <a [href]="record.passport_photo_url" target="_blank" rel="noopener">
-              <img [src]="record.passport_photo_url" alt="Submitted passport photo" class="rs-evidence-thumb" />
-            </a>
-          } @else {
-            <div class="rs-evidence-thumb rs-evidence-empty">No passport photo</div>
-          }
-          @if (record.selfie_photo_url) {
-            <a [href]="record.selfie_photo_url" target="_blank" rel="noopener">
-              <img [src]="record.selfie_photo_url" alt="Submitted selfie" class="rs-evidence-thumb" />
-            </a>
-          } @else {
-            <div class="rs-evidence-thumb rs-evidence-empty">No selfie</div>
-          }
+      <div class="border rounded p-3 d-flex flex-column gap-3">
+        <div class="d-flex flex-column flex-md-row gap-3">
+          <div class="d-flex gap-2">
+            @if (record.passport_photo_url) {
+              <a [href]="record.passport_photo_url" target="_blank" rel="noopener">
+                <img [src]="record.passport_photo_url" alt="Photographed ID card" class="rs-evidence-thumb" />
+              </a>
+            } @else {
+              <div class="rs-evidence-thumb rs-evidence-empty">No card photo</div>
+            }
+            @if (record.selfie_photo_url) {
+              <a [href]="record.selfie_photo_url" target="_blank" rel="noopener">
+                <img [src]="record.selfie_photo_url" alt="Submitted selfie" class="rs-evidence-thumb" />
+              </a>
+            } @else {
+              <div class="rs-evidence-thumb rs-evidence-empty">No selfie</div>
+            }
+            @if (record.video_url) {
+              <video [src]="record.video_url" controls class="rs-evidence-thumb"></video>
+            } @else {
+              <div class="rs-evidence-thumb rs-evidence-empty">No video</div>
+            }
+          </div>
+
+          <div class="flex-grow-1">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <strong>{{ record.username }}</strong>
+              <span class="badge" [ngClass]="statusClass(record.status)">{{ record.status }}</span>
+              @if (record.automated_result) {
+                <span class="small text-muted">(automated: {{ record.automated_result }})</span>
+              }
+            </div>
+            <div class="small text-muted">{{ record.email }}</div>
+            <div class="small text-muted">Provider: {{ record.provider }}</div>
+            <div class="small text-muted">Updated: {{ record.updated_at | date: 'medium' }}</div>
+            @if (mapLink(record)) {
+              <a class="small" [href]="mapLink(record)" target="_blank" rel="noopener">
+                <i-bs name="geo-alt" class="me-1"></i-bs>View location
+                ({{ record.location_accuracy_m ? ('±' + (record.location_accuracy_m | number: '1.0-0') + 'm') : '' }})
+              </a>
+            } @else {
+              <div class="small text-muted">No location captured</div>
+            }
+          </div>
         </div>
 
-        <div class="flex-grow-1">
-          <div class="d-flex align-items-center gap-2 mb-1">
-            <strong>{{ record.username }}</strong>
-            <span class="badge" [ngClass]="statusClass(record.status)">{{ record.status }}</span>
+        <div class="row small g-2">
+          <div class="col-md-6">
+            <div class="fw-semibold text-muted">Card photo OCR</div>
+            <div>Name: {{ record.card_ocr_full_name || '--' }}</div>
+            <div>DOB: {{ record.card_ocr_date_of_birth || '--' }}</div>
+            <div>Doc #: {{ record.card_ocr_document_number || '--' }}</div>
           </div>
-          <div class="small text-muted">{{ record.email }}</div>
-          <div class="small text-muted">Provider: {{ record.provider }}</div>
-          <div class="small text-muted">Updated: {{ record.updated_at | date: 'medium' }}</div>
-          @if (mapLink(record)) {
-            <a class="small" [href]="mapLink(record)" target="_blank" rel="noopener">
-              <i-bs name="geo-alt" class="me-1"></i-bs>View location
-              ({{ record.location_accuracy_m ? ('±' + (record.location_accuracy_m | number: '1.0-0') + 'm') : '' }})
-            </a>
-          } @else {
-            <div class="small text-muted">No location captured</div>
-          }
+          <div class="col-md-6">
+            <div class="fw-semibold text-muted">NFC chip read</div>
+            <div>Name: {{ record.chip_full_name || '--' }}</div>
+            <div>DOB: {{ record.chip_date_of_birth || '--' }}</div>
+          </div>
         </div>
+
+        @if (record.identity_mismatch_notes) {
+          <div class="alert alert-warning py-2 px-3 mb-0 small">
+            <i-bs name="exclamation-triangle" class="me-1"></i-bs>{{ record.identity_mismatch_notes }}
+          </div>
+        }
+
+        @if (record.notary_reviewed_by) {
+          <div class="small text-muted">
+            Reviewed by {{ record.notary_reviewed_by }} on {{ record.notary_reviewed_at | date: 'medium' }}
+            @if (record.notary_notes) { -- "{{ record.notary_notes }}" }
+          </div>
+        }
+
+        @if (isReviewable(record)) {
+          <div class="d-flex flex-column flex-md-row gap-2 align-items-md-end">
+            <textarea
+              class="form-control form-control-sm flex-grow-1"
+              rows="1"
+              placeholder="Optional review notes"
+              [(ngModel)]="reviewNotes[record.id]"
+            ></textarea>
+            <div class="d-flex gap-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-success"
+                [disabled]="isBusy(record.id)"
+                (click)="confirm(record)"
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                [disabled]="isBusy(record.id)"
+                (click)="reject(record)"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        }
       </div>
     }
   </div>
