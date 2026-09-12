@@ -45,7 +45,7 @@ def start_verification_view(request):
 
     record, _ = IdentityVerification.objects.get_or_create(user=request.user)
     try:
-        session = idswyft_client.create_verification_session()
+        session = idswyft_client.create_verification_session(request.user.id)
     except Exception:
         logger.exception("Failed to start Idswyft verification session for user %s", request.user.id)
         return Response({"error": "Could not start identity verification -- try again shortly."}, status=502)
@@ -77,7 +77,11 @@ def verification_status_view(request):
         except Exception:
             logger.exception("Failed to poll Idswyft status for verification %s", record.verification_id)
         else:
-            if live_status != record.status:
+            # None means "still in progress" (Idswyft's own final_result
+            # is null until the session completes) -- not a status value
+            # to write, and never mistake it for the string "None" landing
+            # in the field.
+            if live_status is not None and live_status != record.status:
                 record.status = live_status
                 record.save(update_fields=["status", "updated_at"])
 
