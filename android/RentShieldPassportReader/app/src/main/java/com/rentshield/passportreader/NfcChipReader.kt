@@ -59,10 +59,11 @@ object NfcChipReader {
         service.open()
 
         var paceSucceeded = false
+        var paceFailure: Exception? = null
         try {
             val cardAccessFile = CardAccessFile(service.getInputStream(PassportService.EF_CARD_ACCESS))
             for (securityInfo: SecurityInfo in cardAccessFile.securityInfos) {
-                if (securityInfo is PACEInfo) {
+                if (securityInfo is PACEInfo && !paceSucceeded) {
                     service.doPACE(
                         paceKey,
                         securityInfo.objectIdentifier,
@@ -73,14 +74,22 @@ object NfcChipReader {
                 }
             }
         } catch (e: Exception) {
-            // No PACE support on this chip -- BAC fallback below (passports
-            // only; a CIE has none, see class doc).
+            // Could be a genuinely wrong key (bad CAN/passport details), a
+            // dropped connection (card moved mid-read), or a chip that
+            // really has no PACE support -- surfaced below rather than
+            // swallowed, so the actual cause is visible instead of a
+            // generic message that looks the same for all three.
+            paceFailure = e
         }
 
         service.sendSelectApplet(paceSucceeded)
         if (!paceSucceeded) {
             if (bacFallbackKey == null) {
-                throw IllegalStateException("Could not establish PACE with this card, and it has no BAC fallback -- try again, holding it flat against the phone.")
+                val reason = paceFailure?.message?.let { ": $it" } ?: " (no further detail from the chip)"
+                throw IllegalStateException(
+                    "Could not establish PACE with this card$reason. Double-check the CAN, and hold the card flat against the phone without moving it.",
+                    paceFailure,
+                )
             }
             try {
                 service.getInputStream(PassportService.EF_COM).read()
