@@ -103,7 +103,10 @@ class MainActivity : AppCompatActivity() {
     private fun onLoginClicked() {
         val serverUrl = findViewById<EditText>(R.id.input_server_url).text.toString().trim()
         val username = findViewById<EditText>(R.id.input_username).text.toString().trim()
-        val password = findViewById<EditText>(R.id.input_password).text.toString()
+        // Trimmed same as username -- this is a dev-credential typically
+        // copy-pasted from chat, where a stray leading/trailing space is
+        // an accident, not an intentional part of the password.
+        val password = findViewById<EditText>(R.id.input_password).text.toString().trim()
         if (serverUrl.isEmpty() || username.isEmpty() || password.isEmpty()) {
             toast("Fill in server address, username, and password.")
             return
