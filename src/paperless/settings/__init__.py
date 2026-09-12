@@ -136,6 +136,7 @@ INSTALLED_APPS = [
     "django_extensions",
     "paperless",
     "documents.apps.DocumentsConfig",
+    "documents.rentshield_identity.apps.RentshieldIdentityConfig",
     "paperless_mail.apps.PaperlessMailConfig",
     "django.contrib.admin",
     "rest_framework",
@@ -1224,6 +1225,12 @@ RENTSHIELD_INTERNAL_URL = os.getenv(
     "PAPERLESS_RENTSHIELD_INTERNAL_URL",
     "http://localhost:8000",
 ).rstrip("/")
+
+# Idswyft (documents/rentshield_identity/) config lives in
+# idswyft_client.py itself, read straight from os.environ -- same
+# "self-hosted service, its own small client module" shape as
+# documents/rentshield/esign/docuseal_client.py's DOCUSEAL_URL/
+# DOCUSEAL_API_TOKEN, not a Django settings entry here.
 
 ###############################################################################
 # Remote Parser                                                               #

@@ -334,4 +334,24 @@ export class RentshieldApiService {
     if (useDeepseekOcr) formData.append('use_deepseek_ocr', 'true')
     return this.http.post<DocumentAnalysisResult>(`${this.base}documents/notice/analyze/`, formData)
   }
+
+  // Property-owner identity verification (documents/rentshield_identity/,
+  // self-hosted Idswyft -- camera capture + liveness + face match, not
+  // NFC chip reading, see that app's models.py for why). A 503 means the
+  // feature isn't configured in this environment, not that the request
+  // itself failed -- callers should show that message as-is rather than
+  // treat it like an error.
+  startIdentityVerification(): Observable<{
+    status: string
+    hosted_url: string
+  }> {
+    return this.http.post<{ status: string; hosted_url: string }>(
+      `${this.base}documents/identity/verify/start/`,
+      {}
+    )
+  }
+
+  getIdentityVerificationStatus(): Observable<{ status: string | null }> {
+    return this.http.get<{ status: string | null }>(`${this.base}documents/identity/verify/status/`)
+  }
 }

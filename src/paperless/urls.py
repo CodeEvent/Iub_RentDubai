@@ -15,6 +15,9 @@ from drf_spectacular.views import SpectacularAPIView
 from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
+from documents.rentshield_identity.views import idswyft_webhook_view
+from documents.rentshield_identity.views import start_verification_view
+from documents.rentshield_identity.views import verification_status_view
 from documents.rentshield_views import analyze_document_view
 from documents.rentshield_views import analyze_uploaded_view
 from documents.rentshield_views import check_service_method_view
@@ -216,6 +219,26 @@ urlpatterns = [
                                 r"^notice/(?P<document_id>\d+)/notarize-status/$",
                                 notarize_status_view,
                                 name="rentshield-notarize-status",
+                            ),
+                            # Property-owner identity verification --
+                            # documents/rentshield_identity/, a separate
+                            # small app since a verification row has to
+                            # exist independently of any Document (see
+                            # its apps.py comment).
+                            re_path(
+                                r"^identity/verify/start/$",
+                                start_verification_view,
+                                name="rentshield-identity-verify-start",
+                            ),
+                            re_path(
+                                r"^identity/verify/status/$",
+                                verification_status_view,
+                                name="rentshield-identity-verify-status",
+                            ),
+                            re_path(
+                                r"^identity/verify/webhook/$",
+                                idswyft_webhook_view,
+                                name="rentshield-identity-verify-webhook",
                             ),
                             re_path(
                                 "^bulk_edit/",

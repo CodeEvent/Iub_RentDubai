@@ -1,0 +1,70 @@
+<div class="rs-panel" style="max-width: 32rem">
+  <div class="rs-panel-body d-flex flex-column gap-3">
+    <h3 class="fs-6 fw-bold mb-0 d-flex align-items-center gap-2">
+      <i-bs name="person-badge" class="text-muted"></i-bs> Identity Verification
+    </h3>
+
+    @if (!status() || status() === 'failed') {
+      <p class="text-muted small mb-0">
+        Confirm you're the real owner of this property: take a photo of your passport and a
+        quick live selfie to match against it.
+      </p>
+      @if (status() === 'failed') {
+        <div class="alert alert-danger small mb-0">
+          Verification didn't succeed last time. You can try again below.
+        </div>
+      }
+      <button
+        type="button"
+        class="btn rs-btn-emerald align-self-start d-flex align-items-center gap-2"
+        [disabled]="starting()"
+        (click)="start()"
+      >
+        <span class="spinner-border spinner-border-sm" *ngIf="starting()"></span>
+        <i-bs name="shield-check" *ngIf="!starting()"></i-bs>
+        {{ starting() ? 'Starting…' : 'Start Verification' }}
+      </button>
+      @if (error()) {
+        <p class="text-danger small mb-0">{{ error() }}</p>
+      }
+    }
+
+    @if (status() === 'pending') {
+      <div class="d-flex flex-column align-items-center gap-3 text-center">
+        @if (qrSvg()) {
+          <div class="rs-qr-box" [innerHTML]="qrSvg()"></div>
+          <p class="small text-muted mb-0">
+            Scan with your phone's camera -- a phone camera is usually much better for
+            photographing a passport than a laptop's.
+          </p>
+          <a
+            class="btn btn-outline-secondary btn-sm"
+            [href]="hostedUrl()"
+            target="_blank"
+            rel="noopener"
+          >
+            Or continue on this device
+          </a>
+        } @else {
+          <p class="small text-muted mb-0">Verification is already in progress.</p>
+        }
+        <p class="small text-muted mb-0 d-flex align-items-center gap-2">
+          <span class="spinner-border spinner-border-sm"></span> Waiting for verification…
+        </p>
+      </div>
+    }
+
+    @if (status() === 'verified') {
+      <div class="alert alert-success d-flex align-items-center gap-2 mb-0">
+        <i-bs name="patch-check"></i-bs> Identity verified.
+      </div>
+    }
+
+    @if (status() === 'manual_review') {
+      <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
+        <i-bs name="hourglass-split"></i-bs> Your verification needs a manual review -- you'll be
+        notified once it's complete.
+      </div>
+    }
+  </div>
+</div>
