@@ -20,6 +20,7 @@ data class PassportReadResult(
     val firstName: String,
     val lastName: String,
     val nationality: String,
+    val dateOfBirth: String, // MRZ's own YYMMDD, per MRZInfo.getDateOfBirth() -- passed through as-is, not reformatted
     val photoBytes: ByteArray?,
     val photoMimeType: String?,
     val photoBitmap: Bitmap?,
@@ -130,6 +131,7 @@ object NfcChipReader {
             firstName = mrzInfo.secondaryIdentifier.replace("<", " ").trim(),
             lastName = mrzInfo.primaryIdentifier.replace("<", " ").trim(),
             nationality = mrzInfo.nationality,
+            dateOfBirth = mrzInfo.dateOfBirth,
             photoBytes = photoBytes,
             photoMimeType = mimeType,
             photoBitmap = bitmap,

@@ -31,11 +31,16 @@ import java.io.File
 /**
  * Full flow: sign in -> Face ID/fingerprint gate (confirms phone
  * ownership only, see NfcChipReader.kt) -> pick Passport or Italian CIE
- * and enter its access key -> tap the chip -> take a selfie -> upload
- * both to RentShield's existing identity-verification endpoints, which
- * run the actual identity check (selfie vs. chip photo face match).
+ * and enter its access key -> photograph the physical card (Idswyft
+ * OCRs it, RentShield auto-updates the account's name) -> tap the chip
+ * (cross-checked against the card photo's OCR, never a hard gate) ->
+ * selfie (matched against the card photo) -> a short recorded video ->
+ * a human (Notary Public) reviews everything within 24h before the
+ * account is actually marked verified.
  */
 class MainActivity : AppCompatActivity() {
+
+    private enum class CaptureKind { CARD_PHOTO, SELFIE, VIDEO }
 
     private lateinit var api: RentShieldApiClient
 
@@ -47,7 +52,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fieldsCie: View
     private lateinit var statusText: TextView
     private lateinit var photoPreview: ImageView
+    private lateinit var buttonCardPhoto: Button
+    private lateinit var buttonScan: Button
     private lateinit var buttonSelfie: Button
+    private lateinit var buttonVideo: Button
     private lateinit var buttonDone: Button
 
     // Pending NFC read request, set once "Ready to scan" is tapped and
@@ -55,18 +63,22 @@ class MainActivity : AppCompatActivity() {
     private var pendingPaceKey: AccessKeySpec? = null
     private var pendingBacFallback: BACKey? = null
 
-    private var chipPhotoBytes: ByteArray? = null
-    private var chipPhotoMimeType: String? = null
-    private var selfieFile: File? = null
+    private var pendingCaptureFile: File? = null
+    private var pendingCaptureKind: CaptureKind? = null
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val file = selfieFile
-        if (result.resultCode == RESULT_OK && file != null && file.exists()) {
-            onSelfieCaptured(file.readBytes())
+        val file = pendingCaptureFile
+        val kind = pendingCaptureKind
+        if (result.resultCode == RESULT_OK && file != null && file.exists() && kind != null) {
+            when (kind) {
+                CaptureKind.CARD_PHOTO -> onCardPhotoCaptured(file.readBytes())
+                CaptureKind.SELFIE -> onSelfieCaptured(file.readBytes())
+                CaptureKind.VIDEO -> onVideoCaptured(file.readBytes())
+            }
         } else {
-            statusText.text = "Selfie was cancelled -- tap 'Take selfie' to try again."
+            statusText.text = "Capture was cancelled -- try again."
         }
     }
 
@@ -81,7 +93,10 @@ class MainActivity : AppCompatActivity() {
         fieldsCie = findViewById(R.id.fields_cie)
         statusText = findViewById(R.id.status_text)
         photoPreview = findViewById(R.id.photo_preview)
+        buttonCardPhoto = findViewById(R.id.button_card_photo)
+        buttonScan = findViewById(R.id.button_scan)
         buttonSelfie = findViewById(R.id.button_selfie)
+        buttonVideo = findViewById(R.id.button_video)
         buttonDone = findViewById(R.id.button_done)
 
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION))
@@ -93,8 +108,10 @@ class MainActivity : AppCompatActivity() {
             fieldsPassport.visibility = if (isCie) View.GONE else View.VISIBLE
             fieldsCie.visibility = if (isCie) View.VISIBLE else View.GONE
         }
-        findViewById<Button>(R.id.button_scan).setOnClickListener { onScanClicked() }
-        buttonSelfie.setOnClickListener { launchCamera() }
+        buttonCardPhoto.setOnClickListener { launchCamera(CaptureKind.CARD_PHOTO) }
+        buttonScan.setOnClickListener { onScanClicked() }
+        buttonSelfie.setOnClickListener { launchCamera(CaptureKind.SELFIE) }
+        buttonVideo.setOnClickListener { launchVideoCamera() }
         buttonDone.setOnClickListener { resetToBiometricGate() }
     }
 
@@ -103,9 +120,6 @@ class MainActivity : AppCompatActivity() {
     private fun onLoginClicked() {
         val serverUrl = findViewById<EditText>(R.id.input_server_url).text.toString().trim()
         val username = findViewById<EditText>(R.id.input_username).text.toString().trim()
-        // Trimmed same as username -- this is a dev-credential typically
-        // copy-pasted from chat, where a stray leading/trailing space is
-        // an accident, not an intentional part of the password.
         val password = findViewById<EditText>(R.id.input_password).text.toString().trim()
         if (serverUrl.isEmpty() || username.isEmpty() || password.isEmpty()) {
             toast("Fill in server address, username, and password.")
@@ -159,7 +173,35 @@ class MainActivity : AppCompatActivity() {
         prompt.authenticate(promptInfo)
     }
 
-    // MARK: -- Document entry + NFC
+    // MARK: -- Card photo (Idswyft OCR + face-match reference)
+
+    private fun onCardPhotoCaptured(cardPhotoBytes: ByteArray) {
+        buttonCardPhoto.visibility = View.GONE
+        statusText.text = "Reading your card…"
+        BitmapFactory.decodeByteArray(cardPhotoBytes, 0, cardPhotoBytes.size)?.let { photoPreview.setImageBitmap(it) }
+
+        LocationHelper.requestOnce(this) { location ->
+            api.startVerification { startResult ->
+                startResult.onFailure { runOnUiThread { statusText.text = it.message; buttonCardPhoto.visibility = View.VISIBLE } }
+                startResult.onSuccess {
+                    api.uploadFrontDocument(cardPhotoBytes, "image/jpeg", location) { result ->
+                        runOnUiThread {
+                            result.onSuccess {
+                                statusText.text = "Card read. Now tap the chip: hold it flat against the back of your phone."
+                                buttonScan.visibility = View.VISIBLE
+                            }
+                            result.onFailure {
+                                statusText.text = it.message
+                                buttonCardPhoto.visibility = View.VISIBLE
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: -- NFC scan (cross-checked against the card photo's OCR, server-side)
 
     private fun onScanClicked() {
         val isCie = findViewById<RadioGroup>(R.id.radio_document_type).checkedRadioButtonId == R.id.radio_cie
@@ -215,8 +257,6 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val result = NfcChipReader.read(isoDep, paceKey, pendingBacFallback)
-                chipPhotoBytes = result.photoBytes
-                chipPhotoMimeType = result.photoMimeType
                 runOnUiThread { onChipReadSuccess(result) }
             } catch (e: Exception) {
                 runOnUiThread { statusText.text = "Could not read the chip: ${e.message}" }
@@ -227,27 +267,94 @@ class MainActivity : AppCompatActivity() {
     private fun onChipReadSuccess(result: PassportReadResult) {
         pendingPaceKey = null
         sectionDocument.visibility = View.GONE
-        statusText.text = "Read ${result.firstName} ${result.lastName} (${result.nationality})." +
-            if (result.photoBitmap == null && result.photoBytes != null) {
-                " Photo is JPEG2000 -- no on-device preview, but it's still sent for face-matching."
-            } else {
-                " Now take a selfie to match against it."
+        statusText.text = "Checking chip details against your card photo…"
+        val fullName = "${result.firstName} ${result.lastName}".trim()
+        api.submitChipData(fullName, result.dateOfBirth) { chipResult ->
+            runOnUiThread {
+                chipResult.onSuccess {
+                    statusText.text = "Chip read: $fullName. Now take a selfie."
+                    buttonSelfie.visibility = View.VISIBLE
+                }
+                chipResult.onFailure {
+                    statusText.text = it.message
+                    sectionDocument.visibility = View.VISIBLE
+                }
             }
-        result.photoBitmap?.let { photoPreview.setImageBitmap(it) }
-        buttonSelfie.visibility = View.VISIBLE
+        }
     }
 
-    // MARK: -- Selfie
+    // MARK: -- Selfie (Idswyft matches this against the card photo)
 
-    private fun launchCamera() {
+    private fun onSelfieCaptured(selfieBytes: ByteArray) {
+        buttonSelfie.visibility = View.GONE
+        statusText.text = "Verifying selfie…"
+        BitmapFactory.decodeByteArray(selfieBytes, 0, selfieBytes.size)?.let { photoPreview.setImageBitmap(it) }
+
+        LocationHelper.requestOnce(this) { location ->
+            api.uploadLiveCapture(selfieBytes, location) { result ->
+                runOnUiThread {
+                    result.onSuccess {
+                        if (it.status == "failed") {
+                            onVerificationComplete(it)
+                        } else {
+                            statusText.text = "Selfie submitted. Last step: record a short confirmation video."
+                            buttonVideo.visibility = View.VISIBLE
+                        }
+                    }
+                    result.onFailure { statusText.text = it.message }
+                }
+            }
+        }
+    }
+
+    // MARK: -- Confirmation video (reviewed by a Notary Public within 24h)
+
+    private fun launchVideoCamera() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            toast("Camera permission is required for the selfie step.")
+            toast("Camera permission is required to record the confirmation video.")
             permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
             return
         }
-        val dir = File(cacheDir, "selfies").apply { mkdirs() }
-        val file = File(dir, "selfie_${System.currentTimeMillis()}.jpg")
-        selfieFile = file
+        val dir = File(cacheDir, "videos").apply { mkdirs() }
+        val file = File(dir, "confirmation_${System.currentTimeMillis()}.mp4")
+        pendingCaptureFile = file
+        pendingCaptureKind = CaptureKind.VIDEO
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            putExtra(MediaStore.EXTRA_DURATION_LIMIT, 20) // a couple of sentences, not a monologue
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        cameraLauncher.launch(intent)
+    }
+
+    private fun onVideoCaptured(videoBytes: ByteArray) {
+        buttonVideo.visibility = View.GONE
+        statusText.text = "Uploading video…"
+        api.uploadVideo(videoBytes) { result ->
+            runOnUiThread {
+                result.onSuccess { onVerificationComplete(it) }
+                result.onFailure {
+                    statusText.text = it.message
+                    buttonVideo.visibility = View.VISIBLE
+                }
+            }
+        }
+    }
+
+    // MARK: -- Shared camera helper (card photo + selfie both take a still photo)
+
+    private fun launchCamera(kind: CaptureKind) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            toast("Camera permission is required for this step.")
+            permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+            return
+        }
+        val dirName = if (kind == CaptureKind.CARD_PHOTO) "cards" else "selfies"
+        val dir = File(cacheDir, dirName).apply { mkdirs() }
+        val file = File(dir, "${dirName}_${System.currentTimeMillis()}.jpg")
+        pendingCaptureFile = file
+        pendingCaptureKind = kind
         val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
             putExtra(MediaStore.EXTRA_OUTPUT, uri)
@@ -256,40 +363,13 @@ class MainActivity : AppCompatActivity() {
         cameraLauncher.launch(intent)
     }
 
-    private fun onSelfieCaptured(selfieBytes: ByteArray) {
-        buttonSelfie.visibility = View.GONE
-        statusText.text = "Verifying…"
-        BitmapFactory.decodeByteArray(selfieBytes, 0, selfieBytes.size)?.let { photoPreview.setImageBitmap(it) }
-
-        LocationHelper.requestOnce(this) { location ->
-            val chipBytes = chipPhotoBytes
-            if (chipBytes == null) {
-                runOnUiThread { statusText.text = "Missing chip photo -- restart the scan." }
-                return@requestOnce
-            }
-            api.startVerification { startResult ->
-                startResult.onFailure { runOnUiThread { statusText.text = it.message } }
-                startResult.onSuccess {
-                    api.uploadFrontDocument(chipBytes, chipPhotoMimeType, location) { frontResult ->
-                        frontResult.onFailure { runOnUiThread { statusText.text = it.message } }
-                        frontResult.onSuccess {
-                            api.uploadLiveCapture(selfieBytes, location) { finalResult ->
-                                runOnUiThread {
-                                    finalResult.onSuccess { onVerificationComplete(it) }
-                                    finalResult.onFailure { statusText.text = it.message }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // MARK: -- Result
 
     private fun onVerificationComplete(status: VerificationStatus) {
         statusText.text = when (status.status) {
             "verified" -> "Verified."
             "failed" -> "Verification failed."
+            "awaiting_notary_review" -> "Submitted -- a Notary Public will review your video within 24 hours."
             "manual_review" -> "Submitted -- under manual review."
             else -> "Submitted -- processing."
         }
@@ -297,13 +377,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resetToBiometricGate() {
-        chipPhotoBytes = null
-        chipPhotoMimeType = null
-        selfieFile = null
+        pendingCaptureFile = null
+        pendingCaptureKind = null
         pendingPaceKey = null
         pendingBacFallback = null
-        buttonDone.visibility = View.GONE
+        buttonCardPhoto.visibility = View.VISIBLE
+        buttonScan.visibility = View.GONE
         buttonSelfie.visibility = View.GONE
+        buttonVideo.visibility = View.GONE
+        buttonDone.visibility = View.GONE
         photoPreview.setImageDrawable(null)
         statusText.text = ""
         sectionDocument.visibility = View.GONE

@@ -81,6 +81,28 @@ class RentShieldApiClient(private val baseUrl: String) {
         uploadMultipart("/api/documents/identity/verify/live-capture/", "selfie", "selfie.jpg", selfieBytes, "image/jpeg", location, callback)
     }
 
+    /** The name/DOB read straight off the NFC chip (DG1/MRZ) -- plain
+     * JSON, no file, cross-checked server-side against the card photo's
+     * own OCR read (see views.py's _check_identity_mismatch). */
+    fun submitChipData(fullName: String, dateOfBirth: String, callback: (Result<VerificationStatus>) -> Unit) {
+        val currentToken = token
+        if (currentToken == null) return callback(Result.failure(ApiException("Not logged in.")))
+        val body = JSONObject().put("full_name", fullName).put("date_of_birth", dateOfBirth)
+            .toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(url("/api/documents/identity/verify/chip-data/"))
+            .header("Authorization", "Token $currentToken")
+            .post(body)
+            .build()
+        client.newCall(request).enqueue(jsonCallback(callback) { json ->
+            VerificationStatus(json.optNullableString("status"), null)
+        })
+    }
+
+    fun uploadVideo(videoBytes: ByteArray, callback: (Result<VerificationStatus>) -> Unit) {
+        uploadMultipart("/api/documents/identity/verify/video/", "video", "confirmation.mp4", videoBytes, "video/mp4", location = null, callback = callback)
+    }
+
     // MARK: internals
 
     private fun authed(path: String, method: String, callback: (Result<VerificationStatus>) -> Unit) {

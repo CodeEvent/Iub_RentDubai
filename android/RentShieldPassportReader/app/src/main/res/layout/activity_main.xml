@@ -147,14 +147,22 @@
         </LinearLayout>
 
         <Button
+            android:id="@+id/button_card_photo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="1. Take a photo of your ID card" />
+
+        <Button
             android:id="@+id/button_scan"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Ready to scan -- hold document to phone" />
+            android:text="2. Ready to scan -- hold document to phone"
+            android:visibility="gone" />
     </LinearLayout>
 
-    <!-- 4/5/6. Status, selfie, upload, result -->
+    <!-- Status, per-step capture buttons, result -->
     <TextView
         android:id="@+id/status_text"
         android:layout_width="match_parent"
@@ -168,14 +176,22 @@
         android:layout_height="200dp"
         android:layout_marginTop="16dp"
         android:scaleType="centerCrop"
-        android:contentDescription="Extracted chip photo" />
+        android:contentDescription="Card photo or selfie preview" />
 
     <Button
         android:id="@+id/button_selfie"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="Take selfie"
+        android:text="3. Take selfie"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/button_video"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="4. Record a short confirmation video (2 sentences)"
         android:visibility="gone" />
 
     <Button
