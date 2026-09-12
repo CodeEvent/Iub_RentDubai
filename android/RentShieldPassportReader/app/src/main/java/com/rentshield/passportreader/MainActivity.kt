@@ -166,7 +166,7 @@ class MainActivity : AppCompatActivity() {
         if (isCie) {
             val can = findViewById<EditText>(R.id.input_can).text.toString().trim()
             if (can.length != 6) {
-                toast("The CAN is the 6-digit number printed on the front of the card.")
+                toast("The CAN is exactly 6 digits -- it's a different number from the card's longer alphanumeric ID/serial number.")
                 return
             }
             pendingPaceKey = PACEKeySpec.createCANKey(can)

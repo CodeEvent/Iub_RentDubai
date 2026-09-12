@@ -113,7 +113,8 @@
                 android:id="@+id/input_passport_number"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Passport number" />
+                android:hint="Passport number"
+                android:inputType="textCapCharacters|textNoSuggestions" />
 
             <EditText
                 android:id="@+id/input_date_of_birth"
@@ -141,7 +142,7 @@
                 android:id="@+id/input_can"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Card Access Number (CAN, printed on the front)"
+                android:hint="CAN -- the 6-digit number only (NOT the card's longer ID/serial number)"
                 android:inputType="number" />
         </LinearLayout>
 
