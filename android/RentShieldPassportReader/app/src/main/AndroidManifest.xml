@@ -9,11 +9,16 @@
     <uses-feature android:name="android.hardware.nfc" android:required="true" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 
+    <!-- ponytail: usesCleartextTraffic=true is a dev-only convenience,
+         since the RentShield server this talks to is plain http:// on a
+         LAN during development. Tighten to a network-security-config
+         scoped to the real server's domain once it's behind HTTPS. -->
     <application
         android:allowBackup="true"
         android:label="RentShield Verification"
         android:theme="@style/Theme.RentShieldPassportReader"
-        android:icon="@drawable/ic_launcher">
+        android:icon="@drawable/ic_launcher"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
