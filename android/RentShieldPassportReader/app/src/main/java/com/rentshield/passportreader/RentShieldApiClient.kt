@@ -138,7 +138,19 @@ class RentShieldApiClient(private val baseUrl: String) {
         }
     }
 
-    private fun errorMessage(body: String, code: Int): String =
-        runCatching { JSONObject(body).optString("error").ifEmpty { "Server returned $code." } }
-            .getOrDefault("Server returned $code.")
+    // The identity-verification endpoints return {"error": "..."}, but
+    // DRF's own login serializer (used by /api/token/) returns its
+    // default validation shape instead -- {"non_field_errors": [...]}
+    // for bad credentials, or {"<field>": [...]} for a missing field.
+    // Only checking "error" silently swallowed those into a useless
+    // "Server returned 400." -- a real bug caught by an actual bad
+    // login (autocorrect turned "Ownwer" into "Owner" in the seed
+    // username), not a hypothetical.
+    private fun errorMessage(body: String, code: Int): String = runCatching {
+        val json = JSONObject(body)
+        json.optString("error").takeIf { it.isNotEmpty() }
+            ?: json.optJSONArray("non_field_errors")?.optString(0)?.takeIf { it.isNotEmpty() }
+            ?: json.keys().asSequence().firstNotNullOfOrNull { key -> json.optJSONArray(key)?.optString(0) }
+            ?: "Server returned $code."
+    }.getOrDefault("Server returned $code.")
 }
