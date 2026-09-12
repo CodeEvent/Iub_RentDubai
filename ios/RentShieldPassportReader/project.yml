@@ -2,7 +2,7 @@ name: RentShieldPassportReader
 options:
   bundleIdPrefix: com.rentshield
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "16.0" # NavigationStack (RootFlowView.swift) needs 16+
 
 packages:
   NFCPassportReader:
