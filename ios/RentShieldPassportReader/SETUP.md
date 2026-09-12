@@ -17,23 +17,22 @@ between the live selfie and the passport photo -- here, that photo comes
 straight off the chip (DG2), which is cleaner data than a phone photo of
 the printed page.
 
-## This was written without a Mac or Xcode available
+## Compile-verified, not device-verified
 
-Everything in `Sources/` is real Swift written against the documented
-CoreNFC, LocalAuthentication, CoreLocation, and URLSession APIs (stable,
-unlikely to have shifted), plus the third-party `NFCPassportReader`
-package. **None of it has been compiled or run** -- this sandbox has no
-Swift toolchain at all. Before trusting it:
+This sandbox has no Mac and no Swift toolchain, so nothing here has ever
+been run. What *is* real: `.github/workflows/build-ios.yml` builds this
+project on an actual macOS GitHub Actions runner (free -- this repo is
+public) on every push, targeting the iOS Simulator with no code signing.
+`PassportNFCService.swift`'s use of `NFCPassportReader` was checked
+against that library's real tagged 2.3.3 source (not guessed) after an
+earlier CI run caught a wrong package version/API shape -- see the CI
+run history for the actual back-and-forth. The MRZ check-digit math is
+the standardized ICAO 9303 algorithm and doesn't depend on the library
+at all.
 
-1. Open the project in Xcode (steps below) and fix any build errors --
-   most likely spot: `PassportNFCService.swift`'s call to
-   `reader.readPassport(mrzKey:tags:completed:)`, which was written from
-   memory of `NFCPassportReader`'s API and should be checked against
-   whatever version SPM actually resolves. The MRZ check-digit math above
-   it is the standardized ICAO 9303 algorithm and doesn't depend on the
-   library.
-2. Test on a real iPhone 7 or later running iOS 15+. NFC reading does not
-   work in the iOS Simulator at all -- this needs physical hardware.
+What CI *can't* verify: NFC doesn't work in the Simulator at all -- it
+needs a real iPhone 7 or later on iOS 15+, which also needs real code
+signing (see below).
 
 ## What you need to actually build and run this
 

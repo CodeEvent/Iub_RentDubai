@@ -9,12 +9,12 @@ import UIKit
 /// project -- there's no reason to hand-roll ICAO 9303 crypto when a
 /// mature library already does it.
 ///
-/// NOTE: written without access to a Swift toolchain to compile against,
-/// so `PassportReader`'s exact method signature below should be checked
-/// against whatever version Swift Package Manager actually resolves the
-/// first time this is opened in Xcode -- the MRZ composite-key algorithm
-/// itself (computeMRZKey below) is the standardized ICAO 9303 one and
-/// doesn't depend on the library at all.
+/// `PassportReader.readPassport(mrzKey:tags:...)`'s signature and
+/// `NFCPassportModel`'s properties below were checked against the actual
+/// tagged 2.3.3 source (github.com/AndyQ/NFCPassportReader), not
+/// guessed -- it's `async throws`, not completion-handler based. The MRZ
+/// composite-key algorithm (computeMRZKey below) is the standardized
+/// ICAO 9303 one and doesn't depend on the library at all.
 struct PassportReadResult {
     let documentNumber: String
     let firstName: String
@@ -44,14 +44,11 @@ final class PassportNFCService {
             dateOfExpiry: Self.mrzDate(dateOfExpiry)
         )
 
-        let model = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NFCPassportModel, Error>) in
-            reader.readPassport(mrzKey: mrzKey, tags: [.COM, .DG1, .DG2]) { model, error in
-                if let model {
-                    continuation.resume(returning: model)
-                } else {
-                    continuation.resume(throwing: PassportNFCError.readFailed(error?.localizedDescription ?? "Could not read the passport chip -- hold it flat against the top of your phone and try again."))
-                }
-            }
+        let model: NFCPassportModel
+        do {
+            model = try await reader.readPassport(mrzKey: mrzKey, tags: [.COM, .DG1, .DG2])
+        } catch {
+            throw PassportNFCError.readFailed(error.localizedDescription)
         }
 
         return PassportReadResult(
