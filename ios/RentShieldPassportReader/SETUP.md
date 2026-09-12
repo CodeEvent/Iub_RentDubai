@@ -17,30 +17,37 @@ between the live selfie and the passport photo -- here, that photo comes
 straight off the chip (DG2), which is cleaner data than a phone photo of
 the printed page.
 
-## Compile-verified, not device-verified
+## Compile-verified in CI, not device-verified
 
-This sandbox has no Mac and no Swift toolchain, so nothing here has ever
-been run. What *is* real: `.github/workflows/build-ios.yml` builds this
-project on an actual macOS GitHub Actions runner (free -- this repo is
-public) on every push, targeting the iOS Simulator with no code signing.
-`PassportNFCService.swift`'s use of `NFCPassportReader` was checked
-against that library's real tagged 2.3.3 source (not guessed) after an
-earlier CI run caught a wrong package version/API shape -- see the CI
-run history for the actual back-and-forth. The MRZ check-digit math is
-the standardized ICAO 9303 algorithm and doesn't depend on the library
-at all.
+This sandbox has no Mac and no Swift toolchain, so nothing here was ever
+built locally. Instead, `.github/workflows/build-ios.yml` builds this
+project for real on a macOS GitHub Actions runner (free -- this repo is
+public) on every push, targeting the iOS Simulator with no code signing
+-- **currently green**: https://github.com/CodeEvent/Iub_RentDubai/actions/workflows/build-ios.yml.
+Getting there took three real, CI-caught fixes, not guesswork left
+uncorrected: `NFCPassportReader`'s version pin was wrong (4.0.0 doesn't
+exist; fixed to the real latest, 2.3.3) and its actual API is
+`async throws`, not completion-handler based -- both found by cloning
+the tagged 2.3.3 source directly and reading it, not by re-guessing; and
+the deployment target had to move from iOS 15 to 16 for
+`NavigationStack`.
 
 What CI *can't* verify: NFC doesn't work in the Simulator at all -- it
-needs a real iPhone 7 or later on iOS 15+, which also needs real code
+needs a real iPhone 7 or later on iOS 16+, which also needs real code
 signing (see below).
 
-## What you need to actually build and run this
+## What you need to actually run this on your phone
 
-1. **A Mac with Xcode installed** (or a cloud Mac CI, e.g. a GitHub
-   Actions macOS runner or Codemagic -- ask if you want that set up
-   instead; it still needs everything below).
+The CI build above proves the code compiles -- getting it onto a real
+iPhone with working NFC/Face ID/camera additionally needs:
+
+1. **A Mac with Xcode**, OR extending the existing CI workflow to
+   produce a signed, installable build (e.g. via TestFlight) instead of
+   just a Simulator build -- ask if you want that set up; it still needs
+   everything below.
 2. **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** (`brew install
-   xcodegen`) -- this repo ships a `project.yml`, not a hand-authored
+   xcodegen`) if building locally on a Mac -- CI already installs it
+   itself. This repo ships a `project.yml`, not a hand-authored
    `.xcodeproj` (those are fragile to write by hand without Xcode itself
    generating them; XcodeGen is the standard tool for this).
 3. **An Apple Developer account enrolled in the Apple Developer Program
