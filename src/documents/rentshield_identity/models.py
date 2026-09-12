@@ -19,10 +19,22 @@ class IdentityVerification(models.Model):
     never returns these once processed, and the admin review page
     (rentshield_identity/admin_views.py) needs something to actually
     show a reviewer. Idswyft's own IDs/session tokens stay in
-    `verification_id`, unrelated to Django storage."""
+    `verification_id`, unrelated to Django storage.
+
+    Full pipeline (2026-09-13): photograph the card -> Idswyft OCRs it
+    (card_ocr_*) and RentShield auto-updates the user's first/last name
+    from that -> NFC chip read (chip_*) cross-checked against the OCR
+    fields -> selfie face-match against the card photo -> a short
+    recorded video -> a human (Notary Public role) reviews everything
+    and is the one who actually sets `status` to VERIFIED. Idswyft's own
+    automated result (`automated_result`) only ever short-circuits to
+    FAILED on a hard reject -- anything else reaches the Notary queue,
+    per this project's explicit choice to keep human review as the
+    final word rather than trust the automated match alone."""
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
+        AWAITING_NOTARY_REVIEW = "awaiting_notary_review", "Awaiting Notary Public review"
         VERIFIED = "verified", "Verified"
         FAILED = "failed", "Failed"
         MANUAL_REVIEW = "manual_review", "Needs manual review"
@@ -35,7 +47,7 @@ class IdentityVerification(models.Model):
     provider = models.CharField(max_length=32, default="idswyft")
     verification_id = models.CharField(max_length=255, blank=True, default="")
     hosted_url = models.URLField(blank=True, default="")
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.PENDING)
 
     passport_photo = models.FileField(upload_to="rentshield_identity/passports/", blank=True, null=True)
     selfie_photo = models.FileField(upload_to="rentshield_identity/selfies/", blank=True, null=True)
@@ -48,6 +60,48 @@ class IdentityVerification(models.Model):
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     location_accuracy_m = models.FloatField(null=True, blank=True)
+
+    # Idswyft's own OCR read of the photographed card (from `ocr_data` in
+    # its front-document response -- MRZ-backfilled and checksum-scored
+    # when the document has one, per idswyft's own newVerification.ts).
+    # Stored as text, not a DateField: OCR dates arrive in whatever
+    # format the source document/MRZ used, and a failed strict parse
+    # would silently lose real evidence a reviewer could still read.
+    card_ocr_full_name = models.CharField(max_length=255, blank=True, default="")
+    card_ocr_date_of_birth = models.CharField(max_length=32, blank=True, default="")
+    card_ocr_document_number = models.CharField(max_length=64, blank=True, default="")
+
+    # The same fields as read directly off the NFC chip (DG1/MRZ) by the
+    # native Android/iOS apps -- independent of Idswyft's OCR, so
+    # disagreement between the two is real signal, not noise.
+    chip_full_name = models.CharField(max_length=255, blank=True, default="")
+    chip_date_of_birth = models.CharField(max_length=32, blank=True, default="")
+
+    # Set once the two sources above are both present -- never a hard
+    # gate (OCR misreads happen), just something the Notary reviewer
+    # below needs to see and weigh.
+    identity_mismatch_notes = models.TextField(blank=True, default="")
+
+    # Idswyft's own final_result (verified/failed/manual_review) --
+    # kept as reference context for the Notary reviewer, distinct from
+    # `status` above, which now tracks the whole pipeline including
+    # their review, not just the automated result.
+    automated_result = models.CharField(max_length=16, blank=True, default="")
+
+    # A short user-recorded confirmation clip, reviewed by a real person
+    # (Notary Public role) within 24h before `status` can ever become
+    # VERIFIED -- see roles.py's IsNotaryPublic and admin_views.py's
+    # notary_confirm_view/notary_reject_view.
+    video = models.FileField(upload_to="rentshield_identity/videos/", blank=True, null=True)
+    notary_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rentshield_notary_reviews",
+    )
+    notary_reviewed_at = models.DateTimeField(null=True, blank=True)
+    notary_notes = models.TextField(blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

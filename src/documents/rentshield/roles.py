@@ -20,12 +20,22 @@
 # paid add-on (a tag + an email an admin acts on manually), not a login
 # role; see documents/rentshield/pricing.py's "Legal Review" entry and
 # create_notice_view's add_legal_review handling.
+#
+# Notary Public (2026-09-13) is a deliberate, requested exception to
+# "no roles/permissions table" above -- reviewing an identity
+# verification's video before it can become VERIFIED. Explicitly NOT a
+# repeat of the old Lawyer mistake: it's a flat Group membership check
+# (NOTARY_PUBLIC_GROUP_NAME below) with no per-object grant of any kind,
+# because IdentityVerification has no Document-style ownership/visibility
+# model to begin with -- a Notary either can or can't see the review
+# queue, there's no "which specific rows" layer to get wrong.
 from __future__ import annotations
 
 from django.contrib.auth.models import User
 from rest_framework.permissions import BasePermission
 
 PROPERTY_OWNER_GROUP_NAME = "Property Owner"
+NOTARY_PUBLIC_GROUP_NAME = "Notary Public"
 
 # Model-level Django permissions (paperless-ngx's own auto-generated
 # add/view/change/delete_document) granted to the Property Owner Group.
@@ -35,6 +45,11 @@ PROPERTY_OWNER_GROUP_NAME = "Property Owner"
 # creation) -- there is no other role/object-grant layer any more.
 ROLE_DOCUMENT_PERMISSIONS: dict[str, list[str]] = {
     PROPERTY_OWNER_GROUP_NAME: ["add_document", "view_document", "change_document"],
+    # No Document permissions at all -- a Notary reviews
+    # IdentityVerification rows (admin_views.py), a separate model with
+    # no Document/tag involvement, so only the baseline permissions
+    # every logged-in RentShield account needs (below) apply.
+    NOTARY_PUBLIC_GROUP_NAME: [],
 }
 
 # Every one of these role groups also needs paperless-ngx's own baseline
@@ -124,3 +139,24 @@ class IsRentshieldAdmin(BasePermission):
 
     def has_permission(self, request, view) -> bool:
         return bool(request.user and request.user.is_staff)
+
+
+def is_notary_public(user: User | None) -> bool:
+    """Flat Group membership only -- see this file's header comment on
+    why that's a real, different thing from the old Lawyer role's
+    per-object grants. Staff/superusers can always act too (an admin
+    should never be locked out of a queue a lower-privileged Notary
+    account can reach)."""
+    if not user or not user.is_authenticated:
+        return False
+    return user.is_staff or user_in_group(user, NOTARY_PUBLIC_GROUP_NAME)
+
+
+class IsNotaryPublic(BasePermission):
+    """DRF permission for the identity-verification video review queue
+    (admin_views.py's notary_confirm_view/notary_reject_view, and the
+    admin list view also accepts this so a Notary can see what they're
+    reviewing)."""
+
+    def has_permission(self, request, view) -> bool:
+        return is_notary_public(request.user)

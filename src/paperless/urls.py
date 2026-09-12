@@ -21,9 +21,13 @@ from documents.rentshield_billing.views import create_checkout_view
 from documents.rentshield_billing.views import stripe_webhook_view
 from documents.rentshield_identity.admin_views import admin_list_verifications_view
 from documents.rentshield_identity.views import idswyft_webhook_view
+from documents.rentshield_identity.views import notary_confirm_view
+from documents.rentshield_identity.views import notary_reject_view
 from documents.rentshield_identity.views import start_verification_view
+from documents.rentshield_identity.views import submit_chip_data_view
 from documents.rentshield_identity.views import upload_front_document_view
 from documents.rentshield_identity.views import upload_live_capture_view
+from documents.rentshield_identity.views import upload_video_view
 from documents.rentshield_identity.views import verification_status_view
 from documents.rentshield_views import analyze_document_view
 from documents.rentshield_views import analyze_uploaded_view
@@ -282,6 +286,26 @@ urlpatterns = [
                                 r"^identity/verify/admin/list/$",
                                 admin_list_verifications_view,
                                 name="rentshield-identity-verify-admin-list",
+                            ),
+                            re_path(
+                                r"^identity/verify/chip-data/$",
+                                submit_chip_data_view,
+                                name="rentshield-identity-verify-chip-data",
+                            ),
+                            re_path(
+                                r"^identity/verify/video/$",
+                                upload_video_view,
+                                name="rentshield-identity-verify-video",
+                            ),
+                            re_path(
+                                r"^identity/verify/notary/(?P<verification_id>\d+)/confirm/$",
+                                notary_confirm_view,
+                                name="rentshield-identity-verify-notary-confirm",
+                            ),
+                            re_path(
+                                r"^identity/verify/notary/(?P<verification_id>\d+)/reject/$",
+                                notary_reject_view,
+                                name="rentshield-identity-verify-notary-reject",
                             ),
                             re_path(
                                 "^bulk_edit/",
