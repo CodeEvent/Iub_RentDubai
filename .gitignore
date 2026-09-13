@@ -63,6 +63,7 @@ virtualenv
 /consume/
 /export/
 /src/documents/static/frontend/
+/src/documents/static/downloads/
 celerybeat-schedule*
 .pnpm-store/
 .worktrees

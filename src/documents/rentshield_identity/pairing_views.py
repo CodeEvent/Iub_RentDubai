@@ -13,6 +13,7 @@ import base64
 import secrets
 from datetime import timedelta
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import urlencode
 
 import qrcode
@@ -29,6 +30,29 @@ from documents.rentshield_identity.models import DevicePairingCode
 from documents.rentshield_identity.models import IdentityVerification
 
 PAIRING_CODE_TTL = timedelta(minutes=5)
+
+# Wherever the current CI-built debug APK actually is, dropped there by
+# hand after each Android build (see README) -- served as a completely
+# ordinary static file (documents/static/ is already served this same
+# way for the compiled frontend bundle, no new URL wiring needed).
+# Overwriting this file is what makes the download link always point
+# at "whatever's newest" without editing any URL/setting -- exactly the
+# problem with repeatedly sending the APK as a chat attachment, where a
+# phone's own stale duplicate downloads kept shadowing the real update.
+_APK_STATIC_PATH = Path(settings.BASE_DIR) / "documents" / "static" / "downloads" / "rentshield-app-debug.apk"
+
+
+def _apk_download_url(request) -> str | None:
+    """None when the file genuinely isn't there -- settings.
+    RENTSHIELD_ANDROID_APK_URL (a real Play Store/hosted link, once one
+    exists) takes priority when set; otherwise falls back to this
+    server's own copy so the download link works today, on the same
+    LAN the phone already has to reach to scan the QR at all."""
+    if settings.RENTSHIELD_ANDROID_APK_URL:
+        return settings.RENTSHIELD_ANDROID_APK_URL
+    if not _APK_STATIC_PATH.exists():
+        return None
+    return request.build_absolute_uri(settings.STATIC_URL + "downloads/rentshield-app-debug.apk")
 
 
 def _is_live(pairing: DevicePairingCode) -> bool:
@@ -132,11 +156,7 @@ def pair_start_view(request):
             "code": code,
             "qr_data_uri": qr_data_uri,
             "expires_at": pairing.created_at + PAIRING_CODE_TTL,
-            # None when unset (see settings.RENTSHIELD_ANDROID_APK_URL's
-            # own comment on why there's no real default here) -- the
-            # frontend hides the download button rather than link
-            # somewhere fake.
-            "apk_url": settings.RENTSHIELD_ANDROID_APK_URL or None,
+            "apk_url": _apk_download_url(request),
         },
     )
 
