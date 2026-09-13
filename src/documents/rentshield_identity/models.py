@@ -84,6 +84,19 @@ class IdentityVerification(models.Model):
     # MainActivity.kt's onScanClicked() comment on the Android side).
     chip_document_number = models.CharField(max_length=64, blank=True, default="")
 
+    # The chip's own DG2 photo (read straight off the passport/CIE chip,
+    # cryptographically signed) -- kept separately from passport_photo
+    # (the photographed card, used for OCR/Idswyft's own face match) so
+    # a second, independent face comparison against the selfie can run
+    # (documents/rentshield_identity/face_match.py) alongside Idswyft's.
+    chip_photo = models.FileField(upload_to="rentshield_identity/chip_photos/", blank=True, null=True)
+    # Cosine similarity from that comparison, or null if either photo
+    # had no detectable face -- never an automatic pass/fail (see
+    # face_match.py's SAME_PERSON_THRESHOLD comment), just more context
+    # alongside Idswyft's own card-photo-vs-selfie result
+    # (automated_result below) for the Notary reviewer to weigh.
+    chip_selfie_match_score = models.FloatField(null=True, blank=True)
+
     # Set once the two sources above are both present -- never a hard
     # gate (OCR misreads happen), just something the Notary reviewer
     # below needs to see and weigh.

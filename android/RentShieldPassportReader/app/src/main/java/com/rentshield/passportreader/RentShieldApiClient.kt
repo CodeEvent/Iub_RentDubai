@@ -94,25 +94,36 @@ class RentShieldApiClient(private val baseUrl: String) {
         uploadMultipart("/api/documents/identity/verify/live-capture/", "selfie", "selfie.jpg", selfieBytes, "image/jpeg", location, callback)
     }
 
-    /** The name/DOB read straight off the NFC chip (DG1/MRZ) -- plain
-     * JSON, no file, cross-checked server-side against the card photo's
-     * own OCR read (see views.py's _check_identity_mismatch). */
-    fun submitChipData(fullName: String, dateOfBirth: String, documentNumber: String, callback: (Result<VerificationStatus>) -> Unit) {
-        val currentToken = token
-        if (currentToken == null) return callback(Result.failure(ApiException("Not logged in.")))
-        val body = JSONObject()
-            .put("full_name", fullName)
-            .put("date_of_birth", dateOfBirth)
-            .put("document_number", documentNumber)
-            .toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder()
-            .url(url("/api/documents/identity/verify/chip-data/"))
-            .header("Authorization", "Token $currentToken")
-            .post(body)
-            .build()
-        client.newCall(request).enqueue(jsonCallback(callback) { json ->
-            VerificationStatus(json.optNullableString("status"), null)
-        })
+    /** The name/DOB/document number read straight off the NFC chip
+     * (DG1/MRZ), cross-checked server-side against the card photo's own
+     * OCR read (see views.py's _check_identity_mismatch). [chipPhotoBytes]
+     * is the chip's own DG2 photo -- optional (a chip read can succeed
+     * on the text data while DG2 parsing fails) -- used server-side for
+     * an independent second face match against the selfie
+     * (face_match.py), separate from Idswyft's own card-photo-vs-selfie
+     * match. Multipart, not JSON, specifically to carry that optional
+     * file alongside the text fields. */
+    fun submitChipData(
+        fullName: String,
+        dateOfBirth: String,
+        documentNumber: String,
+        chipPhotoBytes: ByteArray?,
+        chipPhotoMimeType: String?,
+        callback: (Result<VerificationStatus>) -> Unit,
+    ) {
+        uploadMultipartTextOnly(
+            path = "/api/documents/identity/verify/chip-data/",
+            textFields = mapOf(
+                "full_name" to fullName,
+                "date_of_birth" to dateOfBirth,
+                "document_number" to documentNumber,
+            ),
+            fileFieldName = if (chipPhotoBytes != null) "chip_photo" else null,
+            filename = "chip-photo.jpg",
+            fileBytes = chipPhotoBytes,
+            mimeType = chipPhotoMimeType,
+            callback = callback,
+        )
     }
 
     fun uploadVideo(videoBytes: ByteArray, callback: (Result<VerificationStatus>) -> Unit) {
@@ -138,6 +149,7 @@ class RentShieldApiClient(private val baseUrl: String) {
         mimeType: String?,
         location: CapturedLocation?,
         callback: (Result<VerificationStatus>) -> Unit,
+        extraTextFields: Map<String, String> = emptyMap(),
     ) {
         val currentToken = token ?: return callback(Result.failure(ApiException("Not logged in.")))
         val bodyBuilder = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -146,10 +158,43 @@ class RentShieldApiClient(private val baseUrl: String) {
             bodyBuilder.addFormDataPart("longitude", it.longitude.toString())
             it.accuracyMeters?.let { accuracy -> bodyBuilder.addFormDataPart("location_accuracy_m", accuracy.toString()) }
         }
+        extraTextFields.forEach { (key, value) -> bodyBuilder.addFormDataPart(key, value) }
         bodyBuilder.addFormDataPart(
             fieldName, filename,
             fileBytes.toRequestBody((mimeType ?: "image/jpeg").toMediaType()),
         )
+        val request = Request.Builder()
+            .url(url(path))
+            .header("Authorization", "Token $currentToken")
+            .post(bodyBuilder.build())
+            .build()
+        client.newCall(request).enqueue(jsonCallback(callback) { json ->
+            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"))
+        })
+    }
+
+    /** Same as uploadMultipart, but the file is optional -- used by
+     * submitChipData(), where a chip photo might genuinely be absent
+     * (extraction failure, or a document whose DG2 didn't parse) while
+     * the text fields (name/DOB/document number) are still required. */
+    private fun uploadMultipartTextOnly(
+        path: String,
+        textFields: Map<String, String>,
+        fileFieldName: String? = null,
+        filename: String? = null,
+        fileBytes: ByteArray? = null,
+        mimeType: String? = null,
+        callback: (Result<VerificationStatus>) -> Unit,
+    ) {
+        val currentToken = token ?: return callback(Result.failure(ApiException("Not logged in.")))
+        val bodyBuilder = MultipartBody.Builder().setType(MultipartBody.FORM)
+        textFields.forEach { (key, value) -> bodyBuilder.addFormDataPart(key, value) }
+        if (fileFieldName != null && fileBytes != null) {
+            bodyBuilder.addFormDataPart(
+                fileFieldName, filename ?: "file.jpg",
+                fileBytes.toRequestBody((mimeType ?: "image/jpeg").toMediaType()),
+            )
+        }
         val request = Request.Builder()
             .url(url(path))
             .header("Authorization", "Token $currentToken")

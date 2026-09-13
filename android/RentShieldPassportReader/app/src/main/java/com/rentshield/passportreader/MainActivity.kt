@@ -294,7 +294,7 @@ class MainActivity : AppCompatActivity() {
         sectionDocument.visibility = View.GONE
         statusText.text = "Checking chip details against your card photo…"
         val fullName = "${result.firstName} ${result.lastName}".trim()
-        api.submitChipData(fullName, result.dateOfBirth, result.documentNumber) { chipResult ->
+        api.submitChipData(fullName, result.dateOfBirth, result.documentNumber, result.photoBytes, result.photoMimeType) { chipResult ->
             runOnUiThread {
                 chipResult.onSuccess {
                     statusText.text = "Chip read: $fullName. Now take a selfie."

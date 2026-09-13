@@ -105,6 +105,8 @@ export interface AdminVerificationRecord {
   passport_photo_url: string | null
   selfie_photo_url: string | null
   video_url: string | null
+  chip_photo_url: string | null
+  chip_selfie_match_score: number | null
   latitude: number | null
   longitude: number | null
   location_accuracy_m: number | null

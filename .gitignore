@@ -1,3 +1,9 @@
+# Face-recognition ONNX models (rentshield_identity/face_match.py) --
+# downloaded on first use from OpenCV Zoo, same "don't commit large
+# binaries, fetch at runtime" pattern Idswyft's own PaddleOCR provider
+# already uses for its models.
+/src/documents/rentshield_identity/models/*.onnx
+
 # --- paperless-ngx foundation (repo root: src/, src-ui/) ---
 __pycache__/
 *.py[cod]

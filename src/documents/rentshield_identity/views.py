@@ -20,6 +20,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from documents.rentshield.roles import IsNotaryPublic
+from documents.rentshield_identity import face_match
 from documents.rentshield_identity import idswyft_client
 from documents.rentshield_identity.models import IdentityVerification
 
@@ -130,6 +131,22 @@ def _check_identity_mismatch(record: IdentityVerification) -> str:
                 f'chip read "{record.chip_document_number}".',
             )
     return " ".join(notes)
+
+
+def _run_chip_selfie_match(chip_photo_bytes: bytes, selfie_bytes: bytes) -> float | None:
+    """Independent second face match (face_match.py), alongside
+    Idswyft's own card-photo-vs-selfie match -- never a hard gate here
+    either, same reasoning as _check_identity_mismatch(): a failed
+    detection just means "couldn't compare", left for the Notary
+    reviewer to see and weigh, not a verification failure."""
+    try:
+        return face_match.compare_faces(chip_photo_bytes, selfie_bytes)
+    except face_match.NoFaceDetectedError:
+        logger.warning("Chip-vs-selfie face match: no face detected in one of the images")
+        return None
+    except Exception:
+        logger.exception("Chip-vs-selfie face match failed unexpectedly")
+        return None
 
 
 @api_view(["POST"])
@@ -288,7 +305,11 @@ def upload_live_capture_view(request):
     file_bytes, content_type = idswyft_client.normalize_image_for_idswyft(uploaded.read(), uploaded.content_type)
     record.selfie_photo.save(_filename_for_content_type(uploaded.name, content_type), ContentFile(file_bytes), save=False)
     _save_geolocation(record, request.POST)
-    record.save(update_fields=["selfie_photo", "latitude", "longitude", "location_accuracy_m", "updated_at"])
+    update_fields = ["selfie_photo", "latitude", "longitude", "location_accuracy_m"]
+    if record.chip_photo:
+        record.chip_selfie_match_score = _run_chip_selfie_match(record.chip_photo.read(), file_bytes)
+        update_fields.append("chip_selfie_match_score")
+    record.save(update_fields=[*update_fields, "updated_at"])
 
     try:
         result = idswyft_client.upload_live_capture(
@@ -322,13 +343,17 @@ def upload_live_capture_view(request):
 def submit_chip_data_view(request):
     """POST /api/documents/identity/verify/chip-data/ -- the name/date
     of birth read directly off the NFC chip's DG1 (MRZ) by the native
-    Android/iOS app, sent as plain JSON text (already extracted
-    client-side by NfcChipReader.kt/PassportNFCService.swift -- no file
-    upload here). Cross-checked against Idswyft's own OCR of the
-    photographed card (card_ocr_*, set by upload_front_document_view
-    above) -- see _check_identity_mismatch()'s comment on why a
-    disagreement is surfaced for the Notary reviewer rather than
-    treated as a hard failure."""
+    Android/iOS app, sent as multipart form data: `full_name`/
+    `date_of_birth`/`document_number` as text fields (already extracted
+    client-side by NfcChipReader.kt/PassportNFCService.swift), plus an
+    optional `chip_photo` file -- the chip's own DG2 photo, used for an
+    independent second face match against the selfie (face_match.py),
+    separate from Idswyft's own card-photo-vs-selfie match. Text fields
+    are cross-checked against Idswyft's own OCR of the photographed card
+    (card_ocr_*, set by upload_front_document_view above) -- see
+    _check_identity_mismatch()'s comment on why a disagreement is
+    surfaced for the Notary reviewer rather than treated as a hard
+    failure."""
     try:
         record = request.user.rentshield_identity_verification
     except IdentityVerification.DoesNotExist:
@@ -342,12 +367,15 @@ def submit_chip_data_view(request):
     record.chip_date_of_birth = (request.data.get("date_of_birth") or "").strip()[:32]
     record.chip_document_number = (request.data.get("document_number") or "").strip()[:64]
     record.identity_mismatch_notes = _check_identity_mismatch(record)
-    record.save(
-        update_fields=[
-            "chip_full_name", "chip_date_of_birth", "chip_document_number",
-            "identity_mismatch_notes", "updated_at",
-        ],
-    )
+    update_fields = ["chip_full_name", "chip_date_of_birth", "chip_document_number", "identity_mismatch_notes"]
+
+    chip_photo = request.FILES.get("chip_photo")
+    if chip_photo:
+        file_bytes, content_type = idswyft_client.normalize_image_for_idswyft(chip_photo.read(), chip_photo.content_type)
+        record.chip_photo.save(_filename_for_content_type(chip_photo.name, content_type), ContentFile(file_bytes), save=False)
+        update_fields.append("chip_photo")
+
+    record.save(update_fields=[*update_fields, "updated_at"])
     return Response({"status": record.status, "mismatch": bool(record.identity_mismatch_notes)})
 
 

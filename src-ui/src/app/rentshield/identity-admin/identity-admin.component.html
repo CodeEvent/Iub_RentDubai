@@ -29,6 +29,13 @@
             } @else {
               <div class="rs-evidence-thumb rs-evidence-empty">No card photo</div>
             }
+            @if (record.chip_photo_url) {
+              <a [href]="record.chip_photo_url" target="_blank" rel="noopener">
+                <img [src]="record.chip_photo_url" alt="Passport/CIE chip photo (DG2)" class="rs-evidence-thumb" />
+              </a>
+            } @else {
+              <div class="rs-evidence-thumb rs-evidence-empty">No chip photo</div>
+            }
             @if (record.selfie_photo_url) {
               <a [href]="record.selfie_photo_url" target="_blank" rel="noopener">
                 <img [src]="record.selfie_photo_url" alt="Submitted selfie" class="rs-evidence-thumb" />
@@ -77,6 +84,24 @@
             <div>Name: {{ record.chip_full_name || '--' }}</div>
             <div>DOB: {{ record.chip_date_of_birth || '--' }}</div>
             <div>Doc #: {{ record.chip_document_number || '--' }}</div>
+          </div>
+        </div>
+
+        <div class="row small g-2">
+          <div class="col-md-6">
+            <div class="fw-semibold text-muted">Card photo vs. selfie (Idswyft)</div>
+            <div>{{ record.automated_result ? record.automated_result : 'not yet run' }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="fw-semibold text-muted">Chip photo vs. selfie (independent check)</div>
+            @if (record.chip_selfie_match_score !== null) {
+              <div>
+                {{ record.chip_selfie_match_score | number: '1.2-2' }} similarity
+                ({{ record.chip_selfie_match_score >= 0.363 ? 'likely same person' : 'likely different person' }})
+              </div>
+            } @else {
+              <div>not yet run / no face detected</div>
+            }
           </div>
         </div>
 
