@@ -106,7 +106,6 @@ class MainActivity : AppCompatActivity() {
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION))
 
         findViewById<Button>(R.id.button_scan_pairing_qr).setOnClickListener { onScanPairingQrClicked() }
-        findViewById<Button>(R.id.button_login).setOnClickListener { onLoginClicked() }
         findViewById<Button>(R.id.button_biometric).setOnClickListener { runBiometricGate() }
         findViewById<RadioGroup>(R.id.radio_document_type).setOnCheckedChangeListener { _, checkedId ->
             val isCie = checkedId == R.id.radio_cie
@@ -180,39 +179,6 @@ class MainActivity : AppCompatActivity() {
         val parts = iso.split("-")
         if (parts.size != 3 || parts[0].length < 2) return ""
         return parts[0].takeLast(2) + parts[1] + parts[2]
-    }
-
-    // MARK: -- Login
-
-    private fun onLoginClicked() {
-        val serverUrl = findViewById<EditText>(R.id.input_server_url).text.toString().trim()
-        val username = findViewById<EditText>(R.id.input_username).text.toString().trim()
-        val password = findViewById<EditText>(R.id.input_password).text.toString().trim()
-        if (serverUrl.isEmpty() || username.isEmpty() || password.isEmpty()) {
-            toast("Fill in server address, username, and password.")
-            return
-        }
-        // Real crash reported here: a typo ("gttp://" for "http://")
-        // reached OkHttp's URL parser as-is and threw an uncaught
-        // IllegalArgumentException, crashing the whole app over a single
-        // mistyped character. Validated up front now so a bad address
-        // is just a message, not a crash.
-        if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
-            toast("Server address must start with http:// or https:// -- check for typos.")
-            return
-        }
-        // Deliberately not defaulted to localhost -- this device is
-        // separate hardware on the network, the exact bug already hit
-        // once with Idswyft's QR code pointing at a laptop-only address.
-        api = RentShieldApiClient(serverUrl)
-        api.login(username, password) { result ->
-            runOnUiThread {
-                result.onSuccess {
-                    sectionLogin.visibility = View.GONE
-                    sectionBiometric.visibility = View.VISIBLE
-                }.onFailure { toast(it.message ?: "Login failed.") }
-            }
-        }
     }
 
     // MARK: -- Biometric gate

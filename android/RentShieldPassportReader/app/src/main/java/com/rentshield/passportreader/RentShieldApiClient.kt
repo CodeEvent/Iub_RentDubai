@@ -43,10 +43,11 @@ class ApiException(message: String) : Exception(message)
 /**
  * Talks to the same Django/DRF endpoints the Angular web app and the iOS
  * build already use (documents/rentshield_identity/views.py) -- no new
- * backend surface, just another native front door. DRF token auth
- * (POST /api/token/, then Authorization: Token ...) rather than session
- * cookies, same reasoning as the iOS client: no shared cookie jar with a
- * browser from a native app.
+ * backend surface, just another native front door. Gets its DRF auth
+ * token by claiming a QR pairing code (claimPairing below) rather than
+ * a username/password login -- Authorization: Token ... on every call
+ * after that, same as any other DRF token client, just obtained a
+ * different way; no shared cookie jar with a browser from a native app.
  */
 class RentShieldApiClient(private val baseUrl: String) {
     // OkHttp's default 10s read timeout is shorter than Idswyft's real
@@ -65,10 +66,6 @@ class RentShieldApiClient(private val baseUrl: String) {
     private var token: String? = null
 
     private fun url(path: String) = baseUrl.trimEnd('/') + path
-
-    fun login(username: String, password: String, callback: (Result<String>) -> Unit) {
-        postForToken("/api/token/", JSONObject().put("username", username).put("password", password), callback)
-    }
 
     // "Scan to sign in" -- called right after the QR scanner returns the
     // code (see MainActivity.onPairingQrScanned), instead of the phone
@@ -101,26 +98,6 @@ class RentShieldApiClient(private val baseUrl: String) {
                         can = json.optString("declared_can"),
                     )
                     callback(Result.success(PairingClaimResult(token!!, declared)))
-                }
-            }
-        })
-    }
-
-    private fun postForToken(path: String, body: JSONObject, callback: (Result<String>) -> Unit) {
-        val request = Request.Builder().url(url(path))
-            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) = callback(Result.failure(e))
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    val bodyString = it.body?.string().orEmpty()
-                    if (!it.isSuccessful) {
-                        callback(Result.failure(ApiException(errorMessage(bodyString, it.code))))
-                        return
-                    }
-                    val received = JSONObject(bodyString).getString("token")
-                    token = received
-                    callback(Result.success(received))
                 }
             }
         })
