@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import re
 from itertools import combinations
 from pathlib import Path
 
@@ -64,6 +65,21 @@ def _filename_for_content_type(name: str, content_type: str) -> str:
     if not guessed_ext:
         return name
     return Path(name).stem + guessed_ext
+
+
+def _looks_like_a_name(value: str) -> bool:
+    """Real bug found live: Idswyft's OCR occasionally returns
+    implausible garbage for the name field specifically -- confirmed
+    directly in its own logs, on real photographed documents, at HIGH
+    reported confidence (0.87-0.95): "A", "ET", "E Y E", and "∞".
+    Confidence alone can't be trusted to filter these out. A plausible
+    human name has at least two actual letters; anything short of that
+    is treated as "OCR couldn't read this" rather than a comparable
+    value -- otherwise a confidently-wrong OCR read produces a false
+    "name mismatch" alarm for the Notary, and (via
+    _update_user_profile_from_ocr below) could silently overwrite the
+    property owner's own account name with a single symbol."""
+    return len(re.findall(r"[A-Za-z]", value)) >= 2
 
 
 def _update_user_profile_from_ocr(user, full_name: str) -> None:
@@ -307,7 +323,8 @@ def upload_front_document_view(request):
 
     ocr_data = result.get("ocr_data") or {}
     if ocr_data:
-        record.card_ocr_full_name = (ocr_data.get("name") or "")[:255]
+        ocr_name = (ocr_data.get("name") or "").strip()
+        record.card_ocr_full_name = ocr_name[:255] if _looks_like_a_name(ocr_name) else ""
         record.card_ocr_date_of_birth = (ocr_data.get("date_of_birth") or "")[:32]
         record.card_ocr_document_number = (ocr_data.get("document_number") or "")[:64]
         record.identity_mismatch_notes = _check_identity_mismatch(record)
