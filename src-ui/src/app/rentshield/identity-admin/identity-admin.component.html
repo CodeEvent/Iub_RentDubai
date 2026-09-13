@@ -204,6 +204,19 @@
             </div>
           </div>
         }
+
+        @if (permissionsService.isAdmin()) {
+          <div class="d-flex justify-content-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              [disabled]="isBusy(record.id)"
+              (click)="resetVerification(record)"
+            >
+              <i-bs name="arrow-clockwise" class="me-1"></i-bs>Reset verification
+            </button>
+          </div>
+        }
       </div>
     }
   </div>

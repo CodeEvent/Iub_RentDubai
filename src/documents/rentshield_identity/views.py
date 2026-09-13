@@ -22,6 +22,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from documents.rentshield.roles import IsNotaryPublic
+from documents.rentshield.roles import IsRentshieldAdmin
 from documents.rentshield_identity import face_match
 from documents.rentshield_identity import idswyft_client
 from documents.rentshield_identity.models import IdentityVerification
@@ -628,6 +629,73 @@ def _get_reviewable_record_or_error(verification_id):
             status=400,
         )
     return record
+
+
+def _reset_verification(record: IdentityVerification) -> None:
+    """Wipes a verification back to a clean slate so the user can redo
+    the whole pipeline from scratch -- every uploaded file, every OCR/
+    chip/declared field, the mismatch notes, the AI summary, and any
+    Notary review decision. Admin-only (see admin_reset_verification_view
+    below): this is meaningfully destructive (real evidence is deleted,
+    not just hidden), unlike anything a Notary can do. Also clears any
+    pending/claimed DevicePairingCode rows for the same user -- a stale
+    one would otherwise let a resumed session skip straight past the
+    fresh QR this reset is meant to force."""
+    from documents.rentshield_identity.models import DevicePairingCode
+
+    for field in (record.passport_photo, record.selfie_photo, record.chip_photo, record.video, record.additional_id_photo):
+        if field:
+            field.delete(save=False)
+
+    record.verification_id = ""
+    record.hosted_url = ""
+    record.status = IdentityVerification.Status.PENDING
+    record.latitude = None
+    record.longitude = None
+    record.location_accuracy_m = None
+    record.declared_document_type = ""
+    record.declared_document_number = ""
+    record.declared_date_of_birth = ""
+    record.declared_expiry_date = ""
+    record.declared_can = ""
+    record.card_ocr_full_name = ""
+    record.card_ocr_date_of_birth = ""
+    record.card_ocr_document_number = ""
+    record.chip_full_name = ""
+    record.chip_date_of_birth = ""
+    record.chip_document_number = ""
+    record.chip_selfie_match_score = None
+    record.identity_mismatch_notes = ""
+    record.automated_result = ""
+    record.notary_reviewed_by = None
+    record.notary_reviewed_at = None
+    record.notary_notes = ""
+    record.ai_prescreen_summary = ""
+    record.additional_id_type = ""
+    record.save()
+
+    DevicePairingCode.objects.filter(user=record.user).delete()
+
+
+@api_view(["POST"])
+@permission_classes([IsRentshieldAdmin])
+def admin_reset_verification_view(request, verification_id):
+    """POST /api/documents/identity/verify/admin/<id>/reset/ -- lets an
+    admin restart a user's whole identity verification from scratch
+    (wrong document scanned, evidence needs redoing, testing, ...)
+    without a shell session -- this is exactly what was being done by
+    hand via `manage.py shell` before this endpoint existed. Admin-only,
+    not available to a Notary: reviewing/deciding is their job,
+    permanently deleting evidence is a different, more destructive
+    action this project doesn't want the Notary role to carry (see
+    roles.py's header comment on keeping Notary Public deliberately
+    narrow)."""
+    try:
+        record = IdentityVerification.objects.get(pk=verification_id)
+    except (IdentityVerification.DoesNotExist, ValueError, TypeError):
+        return Response({"error": "No such verification."}, status=404)
+    _reset_verification(record)
+    return Response({"status": record.status})
 
 
 @api_view(["POST"])

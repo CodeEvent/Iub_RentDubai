@@ -146,6 +146,20 @@
                   <i-bs class="me-2" name="inbox"></i-bs><span class="nav-link-label"><ng-container i18n>Notary Guide</ng-container></span>
                 </a>
               </li>
+            }
+          </ul>
+        </div>
+
+        <!-- Deliberately its own top-level nav-group, not nested inside
+             the Notices group above: that whole group (and the link
+             below used to live inside it) is gated on documents.
+             view_document, a permission the Notary Public role
+             deliberately has none of (see roles.py) -- nesting it there
+             meant a real, non-staff Notary account could never see this
+             link at all, no matter what isNotaryPublic() said. -->
+        @if (permissionsService.isAdmin() || isNotaryPublic()) {
+          <div class="nav-group mt-3 mb-1">
+            <ul class="nav flex-column mb-2">
               <li class="nav-item app-link">
                 <a class="nav-link" routerLink="identity-verification/admin" routerLinkActive="active" (click)="closeMenu()"
                   ngbPopover="Identity Verification Admin" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
@@ -153,9 +167,9 @@
                   <i-bs class="me-2" name="shield-check"></i-bs><span class="nav-link-label"><ng-container i18n>Identity Verification Admin</ng-container></span>
                 </a>
               </li>
-            }
-          </ul>
-        </div>
+            </ul>
+          </div>
+        }
 
         <div class="nav-group mt-3 mb-1" *pngxIfPermissions="{ action: PermissionAction.View, type: PermissionType.SavedView }">
           @if (savedViewService.sidebarViews?.length > 0) {

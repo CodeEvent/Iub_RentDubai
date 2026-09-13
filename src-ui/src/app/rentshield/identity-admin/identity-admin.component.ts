@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common'
 import { Component, inject, signal } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
+import { PermissionsService } from 'src/app/services/permissions.service'
 import { AdminVerificationRecord, RentshieldApiService } from '../services/rentshield-api.service'
 
 // Admin/Notary Public review page: every property owner who has gone
@@ -16,13 +17,14 @@ import { AdminVerificationRecord, RentshieldApiService } from '../services/rents
 // rentshield_identity/admin_views.py, IsRentshieldAdmin | IsNotaryPublic)
 // enforces the real check regardless.
 //
-// Known gap: the frontend nav link/route still gate on isAdmin()
-// (is_staff) alone, same as before this page could be reached by a
-// non-staff Notary Public group member too -- fine today since every
-// seeded Notary account happens to also be is_staff, but a real
-// non-staff-only Notary account wouldn't see the nav link even though
-// the backend would let them act. Fix: thread a real is_notary_public
-// flag through UiSettings the same way is_staff already is.
+// Fixed (2026-09-13): the nav link used to gate on isAdmin() alone,
+// which broke the moment the seeded `notary` account was correctly
+// stripped of is_staff/is_superuser (a real over-privilege bug found
+// separately -- see roles.py's create_rentshield_roles.py comment) --
+// app-frame.component.ts now also checks a real is_notary_public flag
+// (documents/rentshield_identity/admin_views.py's notary_status_view)
+// fetched once at app load, not tied to is_staff at all.
+//
 // Fields the Notary can correct on the review page before deciding --
 // keys match views.py's _NOTARY_EDITABLE_FIELDS, prefixed `edit_` on
 // the wire (see confirmIdentityVerification/rejectIdentityVerification).
@@ -44,6 +46,7 @@ const EDITABLE_FIELDS = [
 })
 export class IdentityAdminComponent {
   private api = inject(RentshieldApiService)
+  permissionsService = inject(PermissionsService)
 
   records = signal<AdminVerificationRecord[]>([])
   loading = signal(true)
@@ -160,6 +163,29 @@ export class IdentityAdminComponent {
         next: (res) => this.applyReviewResult(record, res.status),
         error: (err) => this.handleReviewError(record.id, err),
       })
+  }
+
+  // Admin-only (see admin_reset_verification_view's own docstring for
+  // why this is deliberately not something a Notary can do) -- wipes
+  // every uploaded file and every OCR/chip/declared field back to a
+  // clean slate so the user can redo the whole pipeline from scratch.
+  // Real destructive action, confirmed before firing.
+  resetVerification(record: AdminVerificationRecord): void {
+    if (!confirm(`Reset ${record.username}'s identity verification? This permanently deletes every photo/video they've uploaded so far.`)) {
+      return
+    }
+    this.setBusy(record.id, true)
+    this.api.resetIdentityVerification(record.id).subscribe({
+      // Reload rather than patch the record in place -- every OCR/chip/
+      // declared field and every photo/video URL changed (cleared), not
+      // just `status`, so a local patch would leave stale thumbnails and
+      // text showing next to the now-correct status.
+      next: () => {
+        this.setBusy(record.id, false)
+        this.loadRecords()
+      },
+      error: (err) => this.handleReviewError(record.id, err),
+    })
   }
 
   private applyReviewResult(record: AdminVerificationRecord, status: string): void {

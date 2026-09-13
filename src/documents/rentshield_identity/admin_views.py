@@ -14,11 +14,29 @@ from __future__ import annotations
 
 from rest_framework.decorators import api_view
 from rest_framework.decorators import permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from documents.rentshield.roles import IsNotaryPublic
 from documents.rentshield.roles import IsRentshieldAdmin
+from documents.rentshield.roles import is_notary_public
 from documents.rentshield_identity.models import IdentityVerification
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def notary_status_view(request):
+    """GET /api/documents/identity/verify/notary-status/ -- lets the
+    frontend show the "Identity Verification Admin" nav link to a
+    Notary Public account, not just is_staff admins. Real gap this
+    closes: is_notary_public() is a plain Group-membership check with
+    no equivalent exposed anywhere in what the frontend already gets
+    about the logged-in user (is_staff/is_superuser only), and every
+    seeded Notary account used to also happen to be is_staff -- masking
+    this -- until the notary account was correctly stripped down to
+    non-staff (2026-09-13), at which point it could no longer even find
+    its way to the review page it has real backend access to."""
+    return Response({"is_notary_public": is_notary_public(request.user)})
 
 
 @api_view(["GET"])

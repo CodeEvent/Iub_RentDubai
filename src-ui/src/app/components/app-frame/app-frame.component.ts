@@ -29,6 +29,7 @@ import {
   DjangoMessageLevel,
   DjangoMessagesService,
 } from 'src/app/services/django-messages.service'
+import { RentshieldApiService } from 'src/app/rentshield/services/rentshield-api.service'
 import { OpenDocumentsService } from 'src/app/services/open-documents.service'
 import {
   PermissionAction,
@@ -92,6 +93,17 @@ export class AppFrameComponent
   private readonly toastService = inject(ToastService)
   private modalService = inject(NgbModal)
   permissionsService = inject(PermissionsService)
+  private rentshieldApiService = inject(RentshieldApiService)
+
+  // A Notary Public account has real backend access to the identity-
+  // verification review page (documents/rentshield_identity/
+  // admin_views.py, IsRentshieldAdmin | IsNotaryPublic) without
+  // necessarily being is_staff -- permissionsService.isAdmin() alone
+  // can't see that, so this is fetched once here to also show that
+  // page's nav link to a Notary. Defaults false (link stays hidden) if
+  // the call fails or hasn't resolved yet -- the safer default, and the
+  // backend's own permission check is the real gate regardless.
+  readonly isNotaryPublic = signal(false)
   private djangoMessagesService = inject(DjangoMessagesService)
 
   readonly appRemoteVersion = signal<AppRemoteVersion>(null)
@@ -142,6 +154,11 @@ export class AppFrameComponent
   ngOnInit(): void {
     this.lastScrollY = window.scrollY
     this.detectClassicScrollbars()
+
+    this.rentshieldApiService.getNotaryStatus().subscribe({
+      next: (res) => this.isNotaryPublic.set(res.is_notary_public),
+      error: () => {}, // stays false -- an admin still sees the link via isAdmin()
+    })
 
     if (this.settingsService.get(SETTINGS_KEYS.UPDATE_CHECKING_ENABLED)) {
       this.checkForUpdates()

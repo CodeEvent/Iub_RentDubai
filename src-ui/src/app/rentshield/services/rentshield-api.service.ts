@@ -501,6 +501,15 @@ export class RentshieldApiService {
     )
   }
 
+  // Lets the frontend show the "Identity Verification Admin" nav link
+  // to a Notary Public account too, not just is_staff admins -- see
+  // admin_views.py's notary_status_view docstring for why this exists
+  // (a Notary account with no is_staff has real backend access to the
+  // review page but no other way to know that / find the nav link).
+  getNotaryStatus(): Observable<{ is_notary_public: boolean }> {
+    return this.http.get<{ is_notary_public: boolean }>(`${this.base}documents/identity/verify/notary-status/`)
+  }
+
   // Admin-only review list (documents/rentshield_identity/admin_views.py)
   // -- defaults to only the records actually awaiting a Notary's
   // review; pass includeAll to see the full history instead.
@@ -539,6 +548,16 @@ export class RentshieldApiService {
       `${this.base}documents/identity/verify/notary/${id}/reject/`,
       { notes, ...edits }
     )
+  }
+
+  // Admin-only (documents/rentshield_identity/views.py's
+  // admin_reset_verification_view) -- wipes a user's whole verification
+  // back to a clean slate (every uploaded file, every OCR/chip/declared
+  // field, any Notary decision) so they can redo the pipeline from
+  // scratch. Deliberately not available to a Notary -- reviewing is
+  // their job, permanently deleting evidence is a different action.
+  resetIdentityVerification(id: number): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${this.base}documents/identity/verify/admin/${id}/reset/`, {})
   }
 
   listLegalSkills(): Observable<{ skills: LegalSkillSummary[] }> {
