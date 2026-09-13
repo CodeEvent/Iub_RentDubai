@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="selfies" path="selfies/" />
+    <!-- Real crash (reported by a user, IllegalArgumentException:
+         "Failed to find configured root"): only "selfies/" was declared
+         here, but launchCamera()/launchVideoCamera() also write to
+         "cards/" and "videos/", and FileProvider throws for any
+         undeclared subdirectory. Declaring the whole cache root once
+         instead of one entry per capture type, so adding a future
+         capture kind can't reintroduce this exact bug. -->
+    <cache-path name="captures" path="." />
 </paths>
