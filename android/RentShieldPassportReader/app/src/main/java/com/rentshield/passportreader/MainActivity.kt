@@ -269,8 +269,22 @@ class MainActivity : AppCompatActivity() {
             try {
                 val result = NfcChipReader.read(isoDep, paceKey, pendingBacFallback)
                 runOnUiThread { onChipReadSuccess(result) }
-            } catch (e: Exception) {
-                runOnUiThread { statusText.text = "Could not read the chip: ${e.message}" }
+            } catch (t: Throwable) {
+                // Throwable, not Exception -- a real crash was reported
+                // here (app crash + logout) that this didn't catch.
+                // PACE-IM's cryptography (needed for CIE, added when
+                // JMRTD was upgraded from 0.7.18 to 0.8.1) is heavier
+                // than passports' Generic Mapping and pulls in a much
+                // newer BouncyCastle (jdk18on) that has never been
+                // exercised on real Android hardware before now -- an
+                // Error subtype (NoSuchMethodError, OutOfMemoryError,
+                // ...) from that combination wouldn't have been caught
+                // by `catch (e: Exception)` and would kill the whole
+                // process, which also explains the reported "logs me
+                // out" (the in-memory login token doesn't survive a
+                // process restart). Whatever this actually is will now
+                // show on screen instead of crashing blind.
+                runOnUiThread { statusText.text = "Could not read the chip: ${t::class.simpleName}: ${t.message}" }
             }
         }.start()
     }

@@ -14,6 +14,7 @@
          LAN during development. Tighten to a network-security-config
          scoped to the real server's domain once it's behind HTTPS. -->
     <application
+        android:name=".CrashReportingApplication"
         android:allowBackup="true"
         android:label="RentShield Verification"
         android:theme="@style/Theme.RentShieldPassportReader"
@@ -29,6 +30,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".CrashDisplayActivity"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
