@@ -125,6 +125,15 @@ class MainActivity : AppCompatActivity() {
             toast("Fill in server address, username, and password.")
             return
         }
+        // Real crash reported here: a typo ("gttp://" for "http://")
+        // reached OkHttp's URL parser as-is and threw an uncaught
+        // IllegalArgumentException, crashing the whole app over a single
+        // mistyped character. Validated up front now so a bad address
+        // is just a message, not a crash.
+        if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
+            toast("Server address must start with http:// or https:// -- check for typos.")
+            return
+        }
         // Deliberately not defaulted to localhost -- this device is
         // separate hardware on the network, the exact bug already hit
         // once with Idswyft's QR code pointing at a laptop-only address.
