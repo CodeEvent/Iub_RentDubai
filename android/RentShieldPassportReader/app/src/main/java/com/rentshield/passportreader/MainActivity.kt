@@ -152,11 +152,34 @@ class MainActivity : AppCompatActivity() {
         api.claimPairing(code) { result ->
             runOnUiThread {
                 result.onSuccess {
+                    prefillDeclaredDocument(it.declared)
                     sectionLogin.visibility = View.GONE
                     sectionBiometric.visibility = View.VISIBLE
                 }.onFailure { toast(it.message ?: "That code is invalid or expired -- get a new one on the website.") }
             }
         }
+    }
+
+    // Pre-fills (still editable, never locked) the same fields
+    // section_document already had -- typed once on the web's real
+    // keyboard instead of asking for them again from scratch here. The
+    // web's date inputs are ISO (YYYY-MM-DD); BACKey needs yyMMdd.
+    private fun prefillDeclaredDocument(declared: DeclaredDocument) {
+        if (declared.documentType == "cie") {
+            findViewById<RadioGroup>(R.id.radio_document_type).check(R.id.radio_cie)
+            findViewById<EditText>(R.id.input_can).setText(declared.can)
+        } else {
+            findViewById<RadioGroup>(R.id.radio_document_type).check(R.id.radio_passport)
+            findViewById<EditText>(R.id.input_passport_number).setText(declared.documentNumber)
+            findViewById<EditText>(R.id.input_date_of_birth).setText(isoDateToYyMMdd(declared.dateOfBirth))
+            findViewById<EditText>(R.id.input_expiration_date).setText(isoDateToYyMMdd(declared.expiryDate))
+        }
+    }
+
+    private fun isoDateToYyMMdd(iso: String): String {
+        val parts = iso.split("-")
+        if (parts.size != 3 || parts[0].length < 2) return ""
+        return parts[0].takeLast(2) + parts[1] + parts[2]
     }
 
     // MARK: -- Login

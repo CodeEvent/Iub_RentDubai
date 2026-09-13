@@ -1,10 +1,11 @@
 import { CommonModule } from '@angular/common'
 import { Component, OnDestroy, inject, signal } from '@angular/core'
+import { FormsModule } from '@angular/forms'
 import { RouterModule } from '@angular/router'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
 import { Subscription, interval } from 'rxjs'
 import { switchMap } from 'rxjs/operators'
-import { RentshieldApiService } from '../services/rentshield-api.service'
+import { DeclaredDocument, RentshieldApiService } from '../services/rentshield-api.service'
 
 interface PairingState {
   code: string
@@ -25,7 +26,7 @@ interface PairingState {
 @Component({
   selector: 'app-identity-verification',
   standalone: true,
-  imports: [CommonModule, RouterModule, NgxBootstrapIconsModule],
+  imports: [CommonModule, FormsModule, RouterModule, NgxBootstrapIconsModule],
   templateUrl: './identity-verification.component.html',
   styleUrl: './identity-verification.component.scss',
 })
@@ -37,6 +38,20 @@ export class IdentityVerificationComponent implements OnDestroy {
   status = signal<string | null>(null)
   pairing = signal<PairingState | null>(null)
   pairingStatus = signal<string | null>(null)
+
+  // "Declare your document" step -- shown after "Start Verification",
+  // before the QR: typed on a real keyboard specifically to cut down
+  // the CAN/document-number typos that kept happening when this was
+  // only ever typed on the app's own small screen (see
+  // pairing_views.py's _validate_declared_document). Required before a
+  // QR is ever generated -- there is no "skip this and type it on the
+  // phone instead" path anymore, by design.
+  declaring = signal(false)
+  documentType: 'passport' | 'cie' = 'passport'
+  documentNumber = ''
+  dateOfBirth = ''
+  expiryDate = ''
+  can = ''
 
   private statusPollSubscription?: Subscription
   private pairingPollSubscription?: Subscription
@@ -86,11 +101,33 @@ export class IdentityVerificationComponent implements OnDestroy {
     this.pairingPollSubscription?.unsubscribe()
     this.pairing.set(null)
     this.pairingStatus.set(null)
+    this.declaring.set(false)
     this.error.set(null)
     this.start()
   }
 
   start(): void {
+    this.error.set(null)
+    this.declaring.set(true)
+  }
+
+  // CAN must be exactly 6 digits -- immediate feedback here instead of
+  // only finding out after a round trip (or worse, after the app
+  // itself fails a PACE handshake with whatever got typed).
+  canLooksValid(): boolean {
+    return /^\d{6}$/.test(this.can)
+  }
+
+  submitDeclaration(): void {
+    if (this.documentType === 'passport' && (!this.documentNumber || !this.dateOfBirth || !this.expiryDate)) {
+      this.error.set('Fill in document number, date of birth, and expiry date.')
+      return
+    }
+    if (this.documentType === 'cie' && (!this.documentNumber || !this.canLooksValid())) {
+      this.error.set('Fill in the document number and a 6-digit CAN.')
+      return
+    }
+
     this.starting.set(true)
     this.error.set(null)
     // Ensures an IdentityVerification row (and Idswyft session) exists
@@ -114,9 +151,17 @@ export class IdentityVerificationComponent implements OnDestroy {
   }
 
   private beginPairing(): void {
-    this.api.startDevicePairing().subscribe({
+    const declared: DeclaredDocument = {
+      declared_document_type: this.documentType,
+      declared_document_number: this.documentNumber,
+      ...(this.documentType === 'passport'
+        ? { declared_date_of_birth: this.dateOfBirth, declared_expiry_date: this.expiryDate }
+        : { declared_can: this.can }),
+    }
+    this.api.startDevicePairing(declared).subscribe({
       next: (res) => {
         this.starting.set(false)
+        this.declaring.set(false)
         this.pairing.set({ code: res.code, qrDataUri: res.qr_data_uri, apkUrl: res.apk_url ?? null })
         this.pairingStatus.set('pending')
         this.startPairingPolling()

@@ -49,6 +49,25 @@ class IdentityVerification(models.Model):
     hosted_url = models.URLField(blank=True, default="")
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.PENDING)
 
+    # What the user typed on the WEB page's "declare your document" step
+    # (identity-verification.component.ts), before ever scanning the QR
+    # -- typed on a real keyboard, not a phone's, specifically to cut
+    # down the CAN/document-number typos that kept happening when this
+    # was only ever typed on the app's own small screen. Carried to the
+    # app via pair_claim_view's response so the app can pre-fill (still
+    # editable, never blindly trusted) instead of asking from scratch,
+    # and cross-checked against card_ocr_*/chip_* below (see
+    # views.py's _check_identity_mismatch) as a third independent
+    # source, not just OCR-vs-chip. declared_expiry_date/declared_can
+    # are only ever used to build the app's own PACE/BAC key -- neither
+    # is echoed back by the chip, so neither has anything to cross-check
+    # against.
+    declared_document_type = models.CharField(max_length=16, blank=True, default="")
+    declared_document_number = models.CharField(max_length=64, blank=True, default="")
+    declared_date_of_birth = models.CharField(max_length=32, blank=True, default="")
+    declared_expiry_date = models.CharField(max_length=32, blank=True, default="")
+    declared_can = models.CharField(max_length=16, blank=True, default="")
+
     passport_photo = models.FileField(upload_to="rentshield_identity/passports/", blank=True, null=True)
     selfie_photo = models.FileField(upload_to="rentshield_identity/selfies/", blank=True, null=True)
 

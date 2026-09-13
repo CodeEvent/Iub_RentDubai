@@ -5,7 +5,7 @@
     </h3>
 
     @if (!status() || status() === 'failed') {
-      @if (!pairing()) {
+      @if (!declaring() && !pairing()) {
         <p class="text-muted small mb-0">
           Confirm you're the real owner of this property. This requires the RentShield mobile
           app -- it reads your passport/Emirates ID chip directly, which no browser can do.
@@ -18,13 +18,81 @@
         <button
           type="button"
           class="btn rs-btn-emerald align-self-start d-flex align-items-center gap-2"
-          [disabled]="starting()"
           (click)="start()"
         >
-          <span class="spinner-border spinner-border-sm" *ngIf="starting()"></span>
-          <i-bs name="phone" *ngIf="!starting()"></i-bs>
-          {{ starting() ? 'Preparing…' : 'Start Verification' }}
+          <i-bs name="phone"></i-bs>
+          Start Verification
         </button>
+        @if (error()) {
+          <p class="text-danger small mb-0">{{ error() }}</p>
+        }
+      } @else if (declaring() && !pairing()) {
+        <p class="text-muted small mb-0">
+          Type your document details here first -- a real keyboard is easier and less error-prone
+          than the phone, especially for the CAN. You'll scan a QR to send this to the app next.
+        </p>
+
+        <div class="d-flex gap-3">
+          <label class="d-flex align-items-center gap-1">
+            <input type="radio" name="documentType" value="passport" [(ngModel)]="documentType" />
+            Passport
+          </label>
+          <label class="d-flex align-items-center gap-1">
+            <input type="radio" name="documentType" value="cie" [(ngModel)]="documentType" />
+            Italian Digital ID (CIE)
+          </label>
+        </div>
+
+        @if (documentType === 'passport') {
+          <input
+            class="form-control"
+            placeholder="Passport number"
+            [(ngModel)]="documentNumber"
+          />
+          <input
+            class="form-control"
+            type="date"
+            placeholder="Date of birth"
+            [(ngModel)]="dateOfBirth"
+          />
+          <input
+            class="form-control"
+            type="date"
+            placeholder="Passport expiry date"
+            [(ngModel)]="expiryDate"
+          />
+        } @else {
+          <input
+            class="form-control"
+            placeholder="Document/ID number"
+            [(ngModel)]="documentNumber"
+          />
+          <input
+            class="form-control"
+            placeholder="CAN -- the 6-digit number only (NOT the card's longer ID/serial number)"
+            inputmode="numeric"
+            maxlength="6"
+            [(ngModel)]="can"
+          />
+          @if (can && !canLooksValid()) {
+            <p class="text-danger small mb-0">CAN must be exactly 6 digits.</p>
+          }
+        }
+
+        <div class="d-flex gap-2">
+          <button
+            type="button"
+            class="btn rs-btn-emerald d-flex align-items-center gap-2"
+            [disabled]="starting()"
+            (click)="submitDeclaration()"
+          >
+            <span class="spinner-border spinner-border-sm" *ngIf="starting()"></span>
+            {{ starting() ? 'Preparing…' : 'Continue to QR' }}
+          </button>
+          <button type="button" class="btn btn-link btn-sm text-muted" (click)="declaring.set(false)">
+            Back
+          </button>
+        </div>
         @if (error()) {
           <p class="text-danger small mb-0">{{ error() }}</p>
         }

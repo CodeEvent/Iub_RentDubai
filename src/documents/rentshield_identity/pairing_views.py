@@ -26,6 +26,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from documents.rentshield_identity.models import DevicePairingCode
+from documents.rentshield_identity.models import IdentityVerification
 
 PAIRING_CODE_TTL = timedelta(minutes=5)
 
@@ -34,15 +35,75 @@ def _is_live(pairing: DevicePairingCode) -> bool:
     return pairing.created_at >= timezone.now() - PAIRING_CODE_TTL
 
 
+def _validate_declared_document(data) -> tuple[dict, str | None]:
+    """The user types these on the web -- a real keyboard, with real
+    field-level validation -- specifically instead of on the app's own
+    small screen, where a mistyped CAN or the card's printed serial
+    number typed into the CAN field (see MainActivity.kt's onScanClicked
+    comment) was this whole project's single most repeated support
+    issue. Returns (fields, error) -- fields is empty when error is set,
+    matching this module's existing (dict, error-or-None) convention."""
+    document_type = (data.get("declared_document_type") or "").strip()
+    if document_type not in ("passport", "cie"):
+        return {}, 'declared_document_type must be "passport" or "cie".'
+
+    document_number = (data.get("declared_document_number") or "").strip()
+    if not document_number:
+        return {}, "A document/ID number is required."
+
+    fields = {
+        "declared_document_type": document_type,
+        "declared_document_number": document_number[:64],
+    }
+
+    if document_type == "passport":
+        dob = (data.get("declared_date_of_birth") or "").strip()
+        expiry = (data.get("declared_expiry_date") or "").strip()
+        if not dob or not expiry:
+            return {}, "Date of birth and expiry date are required for a passport."
+        fields["declared_date_of_birth"] = dob[:32]
+        fields["declared_expiry_date"] = expiry[:32]
+    else:
+        can = (data.get("declared_can") or "").strip()
+        # The chip's own firmware only ever accepts a 6-digit CAN as a
+        # PACE key -- rejecting anything else here, on the web, with an
+        # immediate message is strictly better than the app silently
+        # trying and failing a PACE handshake with the card's serial
+        # number instead (the exact confusion this session hit three
+        # separate times).
+        if not (can.isdigit() and len(can) == 6):
+            return {}, "CAN must be exactly 6 digits (not the card's longer ID/serial number)."
+        fields["declared_can"] = can
+
+    return fields, None
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def pair_start_view(request):
     """POST /api/documents/identity/pair/start/ -- the web page calls
-    this when the property owner reaches the "download the app" step.
-    Any of this user's still-pending codes are invalidated first: only
-    one QR should ever be live at a time, otherwise an old, already-
-    displayed QR would keep working after the page generated a fresh
-    one (e.g. on a page reload)."""
+    this once the property owner has declared their document (passport
+    number/DOB/expiry, or CIE CAN/document number) and is ready for a
+    QR. Requires an IdentityVerification row to already exist (the web
+    page always calls startIdentityVerification() first) -- the
+    declared fields get stored on that same row, not on the pairing
+    code itself, since they're identity evidence that outlives one
+    pairing attempt. Any of this user's still-pending codes are
+    invalidated first: only one QR should ever be live at a time,
+    otherwise an old, already-displayed QR would keep working after the
+    page generated a fresh one (e.g. on a page reload)."""
+    try:
+        record = request.user.rentshield_identity_verification
+    except IdentityVerification.DoesNotExist:
+        return Response({"error": "Start identity verification first."}, status=400)
+
+    declared_fields, error = _validate_declared_document(request.data)
+    if error:
+        return Response({"error": error}, status=400)
+    for field, value in declared_fields.items():
+        setattr(record, field, value)
+    record.save(update_fields=[*declared_fields.keys(), "updated_at"])
+
     DevicePairingCode.objects.filter(
         user=request.user, status=DevicePairingCode.Status.PENDING,
     ).delete()
@@ -124,4 +185,17 @@ def pair_claim_view(request):
     # pairing code is a different way to obtain it, not a different
     # kind of access.
     token, _ = Token.objects.get_or_create(user=pairing.user)
-    return Response({"token": token.key, "username": pairing.user.username})
+
+    # What the user typed on the web (pair_start_view above), handed
+    # back so the app can pre-fill its own document-entry screen
+    # instead of asking from scratch -- still shown as editable fields
+    # there, never blindly trusted, but no longer blank.
+    record = IdentityVerification.objects.filter(user=pairing.user).first()
+    declared = {
+        "declared_document_type": record.declared_document_type if record else "",
+        "declared_document_number": record.declared_document_number if record else "",
+        "declared_date_of_birth": record.declared_date_of_birth if record else "",
+        "declared_expiry_date": record.declared_expiry_date if record else "",
+        "declared_can": record.declared_can if record else "",
+    }
+    return Response({"token": token.key, "username": pairing.user.username, **declared})

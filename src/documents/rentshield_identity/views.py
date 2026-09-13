@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+from itertools import combinations
 from pathlib import Path
 
 from dateutil import parser as dateutil_parser
@@ -99,38 +100,68 @@ def _normalize_dob(value: str) -> str | None:
         return None
 
 
-def _check_identity_mismatch(record: IdentityVerification) -> str:
-    """Never a hard gate -- OCR/MRZ misreads happen on both sides of
-    this comparison -- just something surfaced for the Notary reviewer
-    (admin_views.py) to see and weigh alongside everything else."""
+def _pairwise_mismatches(field_label: str, raw: dict[str, str], normalized: dict[str, str | None]) -> list[str]:
+    """Every pair of non-empty sources that disagree, as one note each
+    -- generalizes the old two-source (card OCR vs chip) check to three
+    (declared vs card OCR vs chip) without three near-duplicate
+    functions. Compares on `normalized` (so format differences like
+    DD/MM/YYYY vs YYYY-MM-DD don't read as a mismatch) but displays the
+    `raw` value -- a Notary needs to see what was actually typed/read,
+    not a normalized stand-in for it."""
     notes = []
-    if record.card_ocr_full_name and record.chip_full_name:
-        if _normalize_name_tokens(record.card_ocr_full_name) != _normalize_name_tokens(record.chip_full_name):
-            notes.append(
-                f'Name mismatch: card photo OCR read "{record.card_ocr_full_name}", '
-                f'chip read "{record.chip_full_name}".',
-            )
-    if record.card_ocr_date_of_birth and record.chip_date_of_birth:
-        card_dob = _normalize_dob(record.card_ocr_date_of_birth)
-        chip_dob = _normalize_dob(record.chip_date_of_birth)
-        if card_dob and chip_dob and card_dob != chip_dob:
-            notes.append(
-                f'Date of birth mismatch: card photo OCR read "{record.card_ocr_date_of_birth}", '
-                f'chip read "{record.chip_date_of_birth}".',
-            )
-    if record.card_ocr_document_number and record.chip_document_number:
-        # The document number the chip unlocked itself with a key that's
-        # NOT this number (see chip_document_number's own field comment)
-        # -- this only ever runs after a successful PACE/BAC handshake,
-        # so a mismatch here means the OCR misread the printed number,
-        # not that the wrong document was scanned.
-        card_doc_number = record.card_ocr_document_number.strip().upper().replace(" ", "")
-        chip_doc_number = record.chip_document_number.strip().upper().replace(" ", "")
-        if card_doc_number != chip_doc_number:
-            notes.append(
-                f'Document number mismatch: card photo OCR read "{record.card_ocr_document_number}", '
-                f'chip read "{record.chip_document_number}".',
-            )
+    present = [label for label, value in normalized.items() if value]
+    for label_a, label_b in combinations(present, 2):
+        if normalized[label_a] != normalized[label_b]:
+            notes.append(f'{field_label} mismatch: {label_a} says "{raw[label_a]}", {label_b} says "{raw[label_b]}".')
+    return notes
+
+
+def _check_identity_mismatch(record: IdentityVerification) -> str:
+    """Never a hard gate -- OCR/MRZ misreads happen on any side of these
+    comparisons, and a typo is still possible even on the web's own
+    declare-a-document step -- just something surfaced for the Notary
+    reviewer (admin_views.py) to see and weigh alongside everything
+    else. Three independent sources where available: what the user
+    typed on the web before ever touching the app (declared_*), Idswyft's
+    OCR of the photographed card (card_ocr_*), and the NFC chip's own
+    signed data (chip_*) -- a disagreement between any two is real
+    signal, not just OCR-vs-chip like before declared_* existed."""
+    notes = []
+
+    names = {
+        "card photo OCR": record.card_ocr_full_name,
+        "chip": record.chip_full_name,
+    }
+    normalized_names = {label: _normalize_name_tokens(value) if value else None for label, value in names.items()}
+    for label_a, label_b in combinations([label for label, value in normalized_names.items() if value], 2):
+        if normalized_names[label_a] != normalized_names[label_b]:
+            notes.append(f'Name mismatch: {label_a} read "{names[label_a]}", {label_b} read "{names[label_b]}".')
+
+    dobs = {
+        "declared": record.declared_date_of_birth,
+        "card photo OCR": record.card_ocr_date_of_birth,
+        "chip": record.chip_date_of_birth,
+    }
+    notes += _pairwise_mismatches(
+        "Date of birth", dobs, {label: _normalize_dob(value) if value else None for label, value in dobs.items()},
+    )
+
+    # The document number the chip unlocked itself with a key that's
+    # NOT this number (see chip_document_number's own field comment) --
+    # this only ever runs after a successful PACE/BAC handshake, so a
+    # mismatch here means one of the three sources misread/mistyped the
+    # printed number, not that the wrong document was scanned.
+    doc_numbers = {
+        "declared": record.declared_document_number,
+        "card photo OCR": record.card_ocr_document_number,
+        "chip": record.chip_document_number,
+    }
+    notes += _pairwise_mismatches(
+        "Document number",
+        doc_numbers,
+        {label: value.strip().upper().replace(" ", "") if value else None for label, value in doc_numbers.items()},
+    )
+
     return " ".join(notes)
 
 

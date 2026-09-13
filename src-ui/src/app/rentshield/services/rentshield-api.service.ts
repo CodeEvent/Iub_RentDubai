@@ -95,6 +95,20 @@ export interface DocumentAnalysisResult {
   citation_graph: CitationGraph
 }
 
+// What the property owner declares on the web before scanning the QR
+// (identity-verification.component.ts) -- field names match the
+// `declared_*` keys pairing_views.py's pair_start_view validates and
+// stores. Passport needs the BAC key components (document number, DOB,
+// expiry); CIE needs its PACE key (the CAN, never the card's longer
+// printed serial number) plus its own document number.
+export interface DeclaredDocument {
+  declared_document_type: 'passport' | 'cie'
+  declared_document_number: string
+  declared_date_of_birth?: string
+  declared_expiry_date?: string
+  declared_can?: string
+}
+
 export interface AdminVerificationRecord {
   id: number
   username: string
@@ -110,6 +124,9 @@ export interface AdminVerificationRecord {
   latitude: number | null
   longitude: number | null
   location_accuracy_m: number | null
+  declared_document_type: string
+  declared_document_number: string
+  declared_date_of_birth: string
   card_ocr_full_name: string
   card_ocr_date_of_birth: string
   card_ocr_document_number: string
@@ -416,7 +433,13 @@ export class RentshieldApiService {
   // video) only exists in the native app, so the web page's job here is
   // just to get the app authenticated as this same user, via a QR code
   // instead of the property owner typing a password on their phone.
-  startDevicePairing(): Observable<{
+  // `declared` is what the user just typed in the "declare your
+  // document" step -- typed on a real keyboard specifically to cut
+  // down the CAN/document-number typos that kept happening when this
+  // was only ever typed on the app's own small screen; the backend
+  // stores it and hands it back to the app on claim so it can pre-fill
+  // instead of asking again from scratch (see pairing_views.py).
+  startDevicePairing(declared: DeclaredDocument): Observable<{
     code: string
     qr_data_uri: string
     expires_at: string
@@ -424,7 +447,7 @@ export class RentshieldApiService {
   }> {
     return this.http.post<{ code: string; qr_data_uri: string; expires_at: string; apk_url: string | null }>(
       `${this.base}documents/identity/pair/start/`,
-      {}
+      declared
     )
   }
 

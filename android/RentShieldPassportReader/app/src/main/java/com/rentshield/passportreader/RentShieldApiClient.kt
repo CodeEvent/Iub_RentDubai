@@ -14,6 +14,24 @@ import java.util.concurrent.TimeUnit
 
 data class VerificationStatus(val status: String?, val step: String?, val detail: String? = null)
 
+// What the property owner typed on the web's "declare your document"
+// step (identity-verification.component.ts), handed back on claim so
+// the app can pre-fill its own document screen instead of asking from
+// scratch -- see pairing_views.py's pair_claim_view. dateOfBirth/
+// expiryDate arrive as ISO (YYYY-MM-DD, from the web's <input
+// type="date">) -- MainActivity converts to the yyMMdd BACKey needs
+// right before use, not stored pre-converted, since ISO is also what
+// _normalize_dob on the backend parses most reliably for the mismatch
+// cross-check.
+data class DeclaredDocument(
+    val documentType: String,
+    val documentNumber: String,
+    val dateOfBirth: String,
+    val expiryDate: String,
+    val can: String,
+)
+data class PairingClaimResult(val token: String, val declared: DeclaredDocument)
+
 // org.json's optString returns the literal string "null" for a JSON null
 // value rather than a real null -- the backend genuinely sends step: null
 // whenever a session isn't mid-capture, so this isn't a hypothetical.
@@ -57,9 +75,35 @@ class RentShieldApiClient(private val baseUrl: String) {
     // typing a username/password. Deliberately no Authorization header
     // needed for this one call: the phone genuinely has no token yet,
     // that's the whole point (see pairing_views.py's pair_claim_view
-    // docstring for why that's safe).
-    fun claimPairing(code: String, callback: (Result<String>) -> Unit) {
-        postForToken("/api/documents/identity/pair/claim/", JSONObject().put("code", code), callback)
+    // docstring for why that's safe). Unlike login(), the response also
+    // carries what was declared on the web, so the caller can pre-fill
+    // the document screen instead of asking again from scratch.
+    fun claimPairing(code: String, callback: (Result<PairingClaimResult>) -> Unit) {
+        val body = JSONObject().put("code", code)
+        val request = Request.Builder().url(url("/api/documents/identity/pair/claim/"))
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) = callback(Result.failure(e))
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    val bodyString = it.body?.string().orEmpty()
+                    if (!it.isSuccessful) {
+                        callback(Result.failure(ApiException(errorMessage(bodyString, it.code))))
+                        return
+                    }
+                    val json = JSONObject(bodyString)
+                    token = json.getString("token")
+                    val declared = DeclaredDocument(
+                        documentType = json.optString("declared_document_type"),
+                        documentNumber = json.optString("declared_document_number"),
+                        dateOfBirth = json.optString("declared_date_of_birth"),
+                        expiryDate = json.optString("declared_expiry_date"),
+                        can = json.optString("declared_can"),
+                    )
+                    callback(Result.success(PairingClaimResult(token!!, declared)))
+                }
+            }
+        })
     }
 
     private fun postForToken(path: String, body: JSONObject, callback: (Result<String>) -> Unit) {
