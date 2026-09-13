@@ -51,6 +51,8 @@ def admin_list_verifications_view(request):
                     "selfie_photo_url": record.selfie_photo.url if record.selfie_photo else None,
                     "video_url": record.video.url if record.video else None,
                     "chip_photo_url": record.chip_photo.url if record.chip_photo else None,
+                    "additional_id_type": record.additional_id_type,
+                    "additional_id_photo_url": record.additional_id_photo.url if record.additional_id_photo else None,
                     "chip_selfie_match_score": record.chip_selfie_match_score,
                     "latitude": record.latitude,
                     "longitude": record.longitude,

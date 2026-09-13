@@ -28,6 +28,7 @@ from documents.rentshield_identity.views import notary_confirm_view
 from documents.rentshield_identity.views import notary_reject_view
 from documents.rentshield_identity.views import start_verification_view
 from documents.rentshield_identity.views import submit_chip_data_view
+from documents.rentshield_identity.views import upload_additional_id_view
 from documents.rentshield_identity.views import upload_front_document_view
 from documents.rentshield_identity.views import upload_live_capture_view
 from documents.rentshield_identity.views import upload_video_view
@@ -299,6 +300,11 @@ urlpatterns = [
                                 r"^identity/verify/video/$",
                                 upload_video_view,
                                 name="rentshield-identity-verify-video",
+                            ),
+                            re_path(
+                                r"^identity/verify/additional-id/$",
+                                upload_additional_id_view,
+                                name="rentshield-identity-verify-additional-id",
                             ),
                             re_path(
                                 r"^identity/verify/notary/(?P<verification_id>\d+)/confirm/$",

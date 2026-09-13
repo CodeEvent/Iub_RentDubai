@@ -177,5 +177,46 @@
         notified once it's complete.
       </div>
     }
+
+    @if (status()) {
+      <hr class="my-1" />
+      <div class="d-flex flex-column gap-2">
+        <h4 class="fs-6 fw-semibold mb-0">Additional ID (optional)</h4>
+        <p class="text-muted small mb-0">
+          Add a second document -- a driving licence, national ID, or another passport -- as
+          extra evidence for the Notary. Just a photo, no app needed.
+        </p>
+        @if (additionalIdUploaded()) {
+          <div class="alert alert-success py-2 px-3 mb-0 small d-flex align-items-center gap-2">
+            <i-bs name="check-circle"></i-bs> Uploaded.
+          </div>
+        } @else {
+          <input
+            class="form-control form-control-sm"
+            placeholder="What kind of document is this? (e.g. Driving licence)"
+            [(ngModel)]="additionalIdType"
+          />
+          <label
+            class="btn btn-outline-secondary btn-sm align-self-start d-flex align-items-center gap-2 mb-0"
+            [class.disabled]="additionalIdUploading()"
+          >
+            <span class="spinner-border spinner-border-sm" *ngIf="additionalIdUploading()"></span>
+            <i-bs name="camera" *ngIf="!additionalIdUploading()"></i-bs>
+            {{ additionalIdUploading() ? 'Uploading…' : 'Take or choose a photo' }}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              hidden
+              [disabled]="additionalIdUploading()"
+              (change)="onAdditionalIdFileSelected($event)"
+            />
+          </label>
+          @if (additionalIdError()) {
+            <p class="text-danger small mb-0">{{ additionalIdError() }}</p>
+          }
+        }
+      </div>
+    }
   </div>
 </div>

@@ -121,6 +121,16 @@ class IdentityVerification(models.Model):
     # below needs to see and weigh.
     identity_mismatch_notes = models.TextField(blank=True, default="")
 
+    # A second, independent ID document (e.g. a driving licence, a
+    # national ID, a second passport) -- a plain photo upload, no NFC/
+    # OCR pipeline of its own, requested explicitly as extra supporting
+    # evidence on top of the primary document above rather than a
+    # replacement for it. `additional_id_type` is free text (what kind
+    # of document this is) since there's no fixed list of acceptable
+    # secondary documents to constrain it to.
+    additional_id_type = models.CharField(max_length=100, blank=True, default="")
+    additional_id_photo = models.FileField(upload_to="rentshield_identity/additional_ids/", blank=True, null=True)
+
     # Idswyft's own final_result (verified/failed/manual_review) --
     # kept as reference context for the Notary reviewer, distinct from
     # `status` above, which now tracks the whole pipeline including

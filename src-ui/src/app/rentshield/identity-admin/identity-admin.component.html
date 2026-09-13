@@ -55,6 +55,15 @@
             } @else {
               <div class="rs-evidence-thumb rs-evidence-empty">No video</div>
             }
+            @if (record.additional_id_photo_url) {
+              <a [href]="record.additional_id_photo_url" target="_blank" rel="noopener">
+                <img
+                  [src]="record.additional_id_photo_url"
+                  [alt]="'Additional ID: ' + record.additional_id_type"
+                  class="rs-evidence-thumb"
+                />
+              </a>
+            }
           </div>
 
           <div class="flex-grow-1">
@@ -68,6 +77,9 @@
             <div class="small text-muted">{{ record.email }}</div>
             <div class="small text-muted">Provider: {{ record.provider }}</div>
             <div class="small text-muted">Updated: {{ record.updated_at | date: 'medium' }}</div>
+            @if (record.additional_id_type) {
+              <div class="small text-muted">Additional ID: {{ record.additional_id_type }}</div>
+            }
             @if (mapLink(record)) {
               <a class="small" [href]="mapLink(record)" target="_blank" rel="noopener">
                 <i-bs name="geo-alt" class="me-1"></i-bs>View location

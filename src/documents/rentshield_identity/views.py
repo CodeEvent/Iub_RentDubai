@@ -457,6 +457,39 @@ def upload_video_view(request):
     return Response({"status": record.status})
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upload_additional_id_view(request):
+    """POST /api/documents/identity/verify/additional-id/ -- a second,
+    independent ID document (driving licence, national ID, a second
+    passport, ...) as extra supporting evidence for the Notary,
+    requested explicitly as a plain photo upload with no NFC/OCR
+    pipeline of its own -- unlike the primary document, this is never
+    cross-checked or used to gate anything, and can be added at any
+    point (before, during, or after the main flow) since it doesn't
+    depend on it. Available from the web directly, not just the app --
+    there's no chip to read, so there's no reason to require the native
+    app for this one."""
+    try:
+        record = request.user.rentshield_identity_verification
+    except IdentityVerification.DoesNotExist:
+        return Response({"error": "Start identity verification first."}, status=400)
+
+    uploaded = request.FILES.get("photo")
+    if not uploaded:
+        return Response({"error": "A photo of the additional ID document is required."}, status=400)
+
+    id_type = (request.data.get("id_type") or "").strip()[:100]
+    if not id_type:
+        return Response({"error": "Say what kind of document this is (e.g. \"Driving licence\")."}, status=400)
+
+    file_bytes, content_type = idswyft_client.normalize_image_for_idswyft(uploaded.read(), uploaded.content_type)
+    record.additional_id_photo.save(_filename_for_content_type(uploaded.name, content_type), ContentFile(file_bytes), save=False)
+    record.additional_id_type = id_type
+    record.save(update_fields=["additional_id_photo", "additional_id_type", "updated_at"])
+    return Response({"status": "ok"})
+
+
 # The only fields a Notary can correct on the review page -- the OCR/
 # chip text RentShield itself already populated, never `status` or any
 # photo/video (those come from the pipeline, not a reviewer's own
