@@ -36,6 +36,7 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -86,6 +87,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sectionAdditionalId: View
     private lateinit var inputAdditionalIdType: EditText
     private lateinit var buttonAdditionalId: Button
+    private lateinit var buttonSignOut: Button
+    private lateinit var sectionStepHeader: View
+    private lateinit var stepLabel: TextView
+    private lateinit var stepProgress: LinearProgressIndicator
 
     // Pending NFC read request, set once "Ready to scan" is tapped and
     // consumed in onNewIntent when the actual tap happens.
@@ -146,6 +151,10 @@ class MainActivity : AppCompatActivity() {
         sectionAdditionalId = findViewById(R.id.section_additional_id)
         inputAdditionalIdType = findViewById(R.id.input_additional_id_type)
         buttonAdditionalId = findViewById(R.id.button_additional_id)
+        buttonSignOut = findViewById(R.id.button_sign_out)
+        sectionStepHeader = findViewById(R.id.section_step_header)
+        stepLabel = findViewById(R.id.step_label)
+        stepProgress = findViewById(R.id.step_progress)
 
         permissionLauncher.launch(
             arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO),
@@ -153,6 +162,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.button_scan_pairing_qr).setOnClickListener { onScanPairingQrClicked() }
         findViewById<Button>(R.id.button_biometric).setOnClickListener { runBiometricGate() }
+        buttonSignOut.setOnClickListener { signOut() }
         findViewById<RadioGroup>(R.id.radio_document_type).setOnCheckedChangeListener { _, checkedId ->
             val isCie = checkedId == R.id.radio_cie
             fieldsPassport.visibility = if (isCie) View.GONE else View.VISIBLE
@@ -218,6 +228,34 @@ class MainActivity : AppCompatActivity() {
         sectionLogin.visibility = View.GONE
         sectionBiometric.visibility = View.VISIBLE
         sectionAdditionalId.visibility = View.VISIBLE
+        buttonSignOut.visibility = View.VISIBLE
+        updateStep(1, "Confirm it's you")
+    }
+
+    // "Where am I" indicator -- the flow has no sense of progress
+    // otherwise, one of the concrete UX gaps raised directly: "each
+    // steps must be more userfriendly and intuitive".
+    private fun updateStep(step: Int, label: String, total: Int = 6) {
+        sectionStepHeader.visibility = View.VISIBLE
+        stepLabel.text = "Step $step of $total -- $label"
+        stepProgress.max = total
+        stepProgress.setProgressCompat(step, true)
+    }
+
+    // "once the qr was scanned the user must have the ability to reset
+    // the qr code at any time" -- requested explicitly. Clears the
+    // persisted session (so a relaunch doesn't just resume back into
+    // it) and returns to the QR-scan screen from wherever the user
+    // currently is in the flow, not just the very first launch.
+    private fun signOut() {
+        sessionPrefs().edit().clear().apply()
+        clearCaptureState()
+        sectionBiometric.visibility = View.GONE
+        sectionDocument.visibility = View.GONE
+        sectionAdditionalId.visibility = View.GONE
+        sectionStepHeader.visibility = View.GONE
+        buttonSignOut.visibility = View.GONE
+        sectionLogin.visibility = View.VISIBLE
     }
 
     // MARK: -- Scan to sign in (documents/rentshield_identity/pairing_views.py)
@@ -300,6 +338,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     sectionBiometric.visibility = View.GONE
                     sectionDocument.visibility = View.VISIBLE
+                    updateStep(2, "Confirm your document details")
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -348,6 +387,7 @@ class MainActivity : AppCompatActivity() {
                                 } else {
                                     statusText.text = "Card read. Now tap the chip: hold it flat against the back of your phone."
                                     buttonScan.visibility = View.VISIBLE
+                                    updateStep(3, "Tap your document for the NFC read")
                                 }
                             }
                             result.onFailure {
@@ -466,6 +506,7 @@ class MainActivity : AppCompatActivity() {
                 chipResult.onSuccess {
                     statusText.text = "Chip read: $fullName. Now take a selfie."
                     buttonSelfie.visibility = View.VISIBLE
+                    updateStep(4, "Take a selfie")
                 }
                 chipResult.onFailure {
                     statusText.text = it.message
@@ -512,6 +553,7 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             statusText.text = "Selfie submitted. Last step: record a short confirmation video."
                             buttonVideo.visibility = View.VISIBLE
+                            updateStep(5, "Record your confirmation video")
                         }
                     }
                     result.onFailure { statusText.text = it.message }
@@ -556,6 +598,7 @@ class MainActivity : AppCompatActivity() {
         videoPromptOverlay.text = confirmationSentence()
         buttonRecordToggle.visibility = View.VISIBLE
         buttonRecordToggle.text = "Start Recording"
+        updateStep(6, "Recording your video")
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(
@@ -705,9 +748,14 @@ class MainActivity : AppCompatActivity() {
         // an unexplained dead end.
         statusText.text = if (status.detail != null) "$summary ${status.detail}" else summary
         buttonDone.visibility = View.VISIBLE
+        sectionStepHeader.visibility = View.GONE
     }
 
-    private fun resetToBiometricGate() {
+    // Shared by resetToBiometricGate() (start a fresh document within
+    // the same session) and signOut() (leave the session entirely) --
+    // both need every capture-in-progress flag and UI element cleared,
+    // they just differ on which section to land on afterward.
+    private fun clearCaptureState() {
         pendingCaptureFile = null
         pendingCaptureKind = null
         pendingPaceKey = null
@@ -724,8 +772,13 @@ class MainActivity : AppCompatActivity() {
         buttonRecordToggle.visibility = View.GONE
         photoPreview.setImageDrawable(null)
         statusText.text = ""
+    }
+
+    private fun resetToBiometricGate() {
+        clearCaptureState()
         sectionDocument.visibility = View.GONE
         sectionBiometric.visibility = View.VISIBLE
+        updateStep(1, "Confirm it's you")
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
