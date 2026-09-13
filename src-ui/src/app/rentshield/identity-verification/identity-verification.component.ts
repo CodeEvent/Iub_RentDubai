@@ -103,6 +103,14 @@ export class IdentityVerificationComponent implements OnDestroy {
     this.pairingStatus.set(null)
     this.declaring.set(false)
     this.error.set(null)
+    // Real bug caught live: without this, clicking "Reset and start
+    // over" while status() was "pending" did nothing VISIBLE at all --
+    // start() below just flips declaring() to true, but the template's
+    // outer @if (!status() || status() === 'failed') guard around the
+    // whole declare/QR panel was still false (status() was still
+    // "pending"), so that panel stayed hidden no matter what declaring()
+    // was set to.
+    this.status.set(null)
     this.start()
   }
 

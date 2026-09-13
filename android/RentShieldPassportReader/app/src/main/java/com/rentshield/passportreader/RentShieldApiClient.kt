@@ -49,7 +49,7 @@ class ApiException(message: String) : Exception(message)
  * after that, same as any other DRF token client, just obtained a
  * different way; no shared cookie jar with a browser from a native app.
  */
-class RentShieldApiClient(private val baseUrl: String) {
+class RentShieldApiClient(private val baseUrl: String, initialToken: String? = null) {
     // OkHttp's default 10s read timeout is shorter than Idswyft's real
     // OCR processing time (typically 15-30s, up to the 60s the Django
     // backend itself allows -- see idswyft_client.py's _upload()) --
@@ -63,7 +63,7 @@ class RentShieldApiClient(private val baseUrl: String) {
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(90, TimeUnit.SECONDS)
         .build()
-    private var token: String? = null
+    private var token: String? = initialToken
 
     private fun url(path: String) = baseUrl.trimEnd('/') + path
 

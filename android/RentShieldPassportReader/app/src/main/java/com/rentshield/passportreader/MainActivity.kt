@@ -117,6 +117,58 @@ class MainActivity : AppCompatActivity() {
         buttonSelfie.setOnClickListener { launchCamera(CaptureKind.SELFIE) }
         buttonVideo.setOnClickListener { launchVideoCamera() }
         buttonDone.setOnClickListener { resetToBiometricGate() }
+
+        resumeSessionIfAvailable()
+    }
+
+    // MARK: -- Session persistence
+    //
+    // Real bug, reported live: launching the system camera app for the
+    // card photo (launchCamera below) is exactly the kind of foreground
+    // activity Android can reclaim memory from by killing this app's
+    // whole process while it's backgrounded -- common on real devices,
+    // not a hypothetical. `api` was only ever an in-memory lateinit var,
+    // so returning from the camera to a freshly recreated MainActivity
+    // meant `sectionLogin` (VISIBLE by default in the layout, and never
+    // otherwise reset) was the only thing left to show -- the user was
+    // sent all the way back to "scan the QR", losing a token a pairing
+    // code can't even be reused to get back (it's single-use). Persists
+    // just enough (server, token, and what was declared on the web) to
+    // resume straight into the biometric gate instead -- a fresh face/
+    // fingerprint check plus retaking the card photo is real but minor
+    // friction, versus needing an entirely new QR from the website.
+    private fun sessionPrefs() = getSharedPreferences("rentshield_session", MODE_PRIVATE)
+
+    private fun persistSession(server: String, token: String, declared: DeclaredDocument) {
+        sessionPrefs().edit()
+            .putString("server", server)
+            .putString("token", token)
+            .putString("declared_document_type", declared.documentType)
+            .putString("declared_document_number", declared.documentNumber)
+            .putString("declared_date_of_birth", declared.dateOfBirth)
+            .putString("declared_expiry_date", declared.expiryDate)
+            .putString("declared_can", declared.can)
+            .apply()
+    }
+
+    private fun resumeSessionIfAvailable() {
+        val prefs = sessionPrefs()
+        val server = prefs.getString("server", null)
+        val token = prefs.getString("token", null)
+        if (server == null || token == null) return
+
+        api = RentShieldApiClient(server, token)
+        prefillDeclaredDocument(
+            DeclaredDocument(
+                documentType = prefs.getString("declared_document_type", "").orEmpty(),
+                documentNumber = prefs.getString("declared_document_number", "").orEmpty(),
+                dateOfBirth = prefs.getString("declared_date_of_birth", "").orEmpty(),
+                expiryDate = prefs.getString("declared_expiry_date", "").orEmpty(),
+                can = prefs.getString("declared_can", "").orEmpty(),
+            ),
+        )
+        sectionLogin.visibility = View.GONE
+        sectionBiometric.visibility = View.VISIBLE
     }
 
     // MARK: -- Scan to sign in (documents/rentshield_identity/pairing_views.py)
@@ -151,6 +203,7 @@ class MainActivity : AppCompatActivity() {
         api.claimPairing(code) { result ->
             runOnUiThread {
                 result.onSuccess {
+                    persistSession(server, it.token, it.declared)
                     prefillDeclaredDocument(it.declared)
                     sectionLogin.visibility = View.GONE
                     sectionBiometric.visibility = View.VISIBLE
