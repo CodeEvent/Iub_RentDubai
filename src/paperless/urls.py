@@ -20,6 +20,9 @@ from documents.rentshield_billing.views import checkout_status_view
 from documents.rentshield_billing.views import create_checkout_view
 from documents.rentshield_billing.views import stripe_webhook_view
 from documents.rentshield_identity.admin_views import admin_list_verifications_view
+from documents.rentshield_identity.pairing_views import pair_claim_view
+from documents.rentshield_identity.pairing_views import pair_start_view
+from documents.rentshield_identity.pairing_views import pair_status_view
 from documents.rentshield_identity.views import idswyft_webhook_view
 from documents.rentshield_identity.views import notary_confirm_view
 from documents.rentshield_identity.views import notary_reject_view
@@ -306,6 +309,23 @@ urlpatterns = [
                                 r"^identity/verify/notary/(?P<verification_id>\d+)/reject/$",
                                 notary_reject_view,
                                 name="rentshield-identity-verify-notary-reject",
+                            ),
+                            # "Scan to sign in" device pairing --
+                            # documents/rentshield_identity/pairing_views.py
+                            re_path(
+                                r"^identity/pair/start/$",
+                                pair_start_view,
+                                name="rentshield-identity-pair-start",
+                            ),
+                            re_path(
+                                r"^identity/pair/status/$",
+                                pair_status_view,
+                                name="rentshield-identity-pair-status",
+                            ),
+                            re_path(
+                                r"^identity/pair/claim/$",
+                                pair_claim_view,
+                                name="rentshield-identity-pair-claim",
                             ),
                             re_path(
                                 "^bulk_edit/",

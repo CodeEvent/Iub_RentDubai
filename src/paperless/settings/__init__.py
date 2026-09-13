@@ -1284,6 +1284,19 @@ RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL = os.getenv(
     "",
 )
 
+# Where a property owner can actually get the RentShield Android app
+# (the one that does real NFC chip reading -- see
+# rentshield_identity/pairing_views.py) -- there's no Play Store listing
+# yet, only a debug APK produced by .github/workflows/build-android.yml
+# as a CI artifact, which isn't a link a property owner could use.
+# Empty/unset is a deliberate no-op (the web pairing step just won't
+# show a download link) until this is set to wherever the APK is
+# actually hosted -- a Play Store listing, or the org's own site.
+RENTSHIELD_ANDROID_APK_URL = os.getenv(
+    "PAPERLESS_RENTSHIELD_ANDROID_APK_URL",
+    "",
+)
+
 # Scrapfly (https://scrapfly.io) API key for the notary-provider research
 # scan (documents/rentshield/notary_research/) -- a recurring background
 # check of a small, real, verified-by-live-search list of UAE notary

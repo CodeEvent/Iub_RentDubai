@@ -67,4 +67,13 @@ dependencies {
     // check itself), backend upload, and JSON responses.
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // "Scan to sign in" -- Google Play Services' own full-screen QR
+    // scanner module (GmsBarcodeScanning), not CameraX + ML Kit's
+    // barcode detector: this one needs no camera permission of our own
+    // (Google's module handles it), no preview UI to build, just
+    // .startScan() and a callback with the decoded string. Confirmed
+    // real/latest against Google's Maven repo directly (dl.google.com),
+    // not guessed.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }

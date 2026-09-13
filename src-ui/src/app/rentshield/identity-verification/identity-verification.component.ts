@@ -6,20 +6,22 @@ import { Subscription, interval } from 'rxjs'
 import { switchMap } from 'rxjs/operators'
 import { RentshieldApiService } from '../services/rentshield-api.service'
 
-type CaptureStep = 'idle' | 'awaiting_front' | 'awaiting_live' | 'processing'
+interface PairingState {
+  code: string
+  qrDataUri: string
+  apkUrl: string | null
+}
 
-// Property-owner identity verification. The capture itself (passport
-// photo, then a selfie) happens right here, inside RentShield's own
-// page -- backed by a self-hosted Idswyft instance
-// (documents/rentshield_identity/) for the actual OCR/liveness/face-
-// match work, but the property owner never leaves this page or sees
-// Idswyft's own branding (their hosted page can't be white-labeled
-// without an enterprise license -- see README).
-//
-// Deliberately NOT NFC chip reading: that needs either a native app
-// with hardware NFC access or a physical PC/SC reader, neither of which
-// this project has -- see README's 2026-09-12 identity-verification
-// section for the full reasoning.
+// Property-owner identity verification. Real NFC chip reading (ICAO
+// 9303 PACE/BAC) needs a native app -- no browser on any platform can
+// do it -- so this page's own job is just to get the property owner
+// onto that app, authenticated as themself, via a QR code ("scan to
+// sign in", documents/rentshield_identity/pairing_views.py) instead of
+// typing a password on their phone. Everything past that (card photo,
+// NFC tap, selfie, video, Notary review) happens entirely in the app;
+// this page just reflects where that process currently stands by
+// polling the same status endpoint the app's own progress updates,
+// same mechanism as before this page stopped doing its own capture.
 @Component({
   selector: 'app-identity-verification',
   standalone: true,
@@ -31,59 +33,35 @@ export class IdentityVerificationComponent implements OnDestroy {
   private api = inject(RentshieldApiService)
 
   starting = signal(false)
-  uploading = signal(false)
   error = signal<string | null>(null)
   status = signal<string | null>(null)
-  step = signal<CaptureStep>('idle')
+  pairing = signal<PairingState | null>(null)
+  pairingStatus = signal<string | null>(null)
 
-  private pollSubscription?: Subscription
-  // Captured once via the browser's own Geolocation API when
-  // verification starts -- evidence of where it happened for the admin
-  // review page, never a gate on the result. Null (permission
-  // denied/unsupported) is a normal, silently-accepted outcome, same as
-  // this project's other optional-evidence fields.
-  private position: GeolocationPosition | null = null
+  private statusPollSubscription?: Subscription
+  private pairingPollSubscription?: Subscription
 
   constructor() {
     // A user who's already mid-verification (or already verified) from
-    // a previous visit should resume at the right capture step
-    // immediately, not a blank "start" button or a spinner with no way
-    // forward -- that used to be lost on reload entirely.
+    // a previous visit -- most likely from the app itself, since that's
+    // the only place capture happens now -- should see that immediately,
+    // not a blank "start" button.
     this.api.getIdentityVerificationStatus().subscribe((res) => {
       if (res.status) this.status.set(res.status)
-      if (res.status === 'pending') {
-        this.step.set(this.mapStep(res.step))
-        this.startPolling()
-      }
+      if (res.status === 'pending') this.startStatusPolling()
     })
   }
 
   ngOnDestroy(): void {
-    this.pollSubscription?.unsubscribe()
+    this.statusPollSubscription?.unsubscribe()
+    this.pairingPollSubscription?.unsubscribe()
   }
 
-  private mapStep(rawStep: string | null): CaptureStep {
-    switch (rawStep) {
-      case 'AWAITING_FRONT':
-        return 'awaiting_front'
-      case 'AWAITING_LIVE':
-        return 'awaiting_live'
-      case 'FRONT_PROCESSING':
-      case 'LIVE_PROCESSING':
-      case 'FACE_MATCHING':
-        return 'processing'
-      default:
-        // COMPLETE/HARD_REJECTED land here -- status() (final_result)
-        // already carries the real outcome by the time this matters.
-        return 'processing'
-    }
-  }
-
-  // Reset is just start() again -- the backend already generates a
-  // fresh Idswyft session and overwrites the stored one whenever it's
-  // not already verified, so there's no separate "clear" step needed.
   reset(): void {
-    this.pollSubscription?.unsubscribe()
+    this.statusPollSubscription?.unsubscribe()
+    this.pairingPollSubscription?.unsubscribe()
+    this.pairing.set(null)
+    this.pairingStatus.set(null)
     this.error.set(null)
     this.start()
   }
@@ -91,19 +69,18 @@ export class IdentityVerificationComponent implements OnDestroy {
   start(): void {
     this.starting.set(true)
     this.error.set(null)
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => (this.position = position),
-        () => (this.position = null),
-        { timeout: 8000 }
-      )
-    }
+    // Ensures an IdentityVerification row (and Idswyft session) exists
+    // for this user before the app ever touches it -- the app's own
+    // startVerification() call is a no-op get_or_create on top of this,
+    // matching the resume-safe pattern already used elsewhere here.
     this.api.startIdentityVerification().subscribe({
       next: (res) => {
-        this.starting.set(false)
-        this.status.set(res.status)
-        if (res.status === 'verified') return
-        this.step.set(this.mapStep(res.step))
+        if (res.status === 'verified') {
+          this.starting.set(false)
+          this.status.set(res.status)
+          return
+        }
+        this.beginPairing()
       },
       error: (err) => {
         this.starting.set(false)
@@ -112,53 +89,43 @@ export class IdentityVerificationComponent implements OnDestroy {
     })
   }
 
-  onFrontFileSelected(event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0]
-    if (!file) return
-    this.uploading.set(true)
-    this.error.set(null)
-    this.api.uploadIdentityFrontDocument(file, this.position).subscribe({
+  private beginPairing(): void {
+    this.api.startDevicePairing().subscribe({
       next: (res) => {
-        this.uploading.set(false)
-        this.status.set(res.status)
-        this.step.set(this.mapStep(res.step))
+        this.starting.set(false)
+        this.pairing.set({ code: res.code, qrDataUri: res.qr_data_uri, apkUrl: res.apk_url ?? null })
+        this.pairingStatus.set('pending')
+        this.startPairingPolling()
       },
       error: (err) => {
-        this.uploading.set(false)
-        this.error.set(err?.error?.error || err?.message || 'Could not process that photo -- try again.')
+        this.starting.set(false)
+        this.error.set(err?.error?.error || err?.message || 'Could not generate a sign-in code -- try again.')
       },
     })
   }
 
-  onSelfieFileSelected(event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0]
-    if (!file) return
-    this.uploading.set(true)
-    this.error.set(null)
-    this.api.uploadIdentityLiveCapture(file, this.position).subscribe({
-      next: (res) => {
-        this.uploading.set(false)
-        this.status.set(res.status)
-        this.step.set(this.mapStep(res.step))
-        if (res.status === 'pending') this.startPolling()
-      },
-      error: (err) => {
-        this.uploading.set(false)
-        this.error.set(err?.error?.error || err?.message || 'Could not process that selfie -- try again.')
-      },
-    })
+  private startPairingPolling(): void {
+    this.pairingPollSubscription?.unsubscribe()
+    this.pairingPollSubscription = interval(3000)
+      .pipe(switchMap(() => this.api.getDevicePairingStatus()))
+      .subscribe((res) => {
+        this.pairingStatus.set(res.status)
+        if (res.status === 'claimed') {
+          this.pairingPollSubscription?.unsubscribe()
+          this.status.set('pending')
+          this.startStatusPolling()
+        }
+      })
   }
 
-  private startPolling(): void {
-    this.pollSubscription?.unsubscribe()
-    this.pollSubscription = interval(4000)
+  private startStatusPolling(): void {
+    this.statusPollSubscription?.unsubscribe()
+    this.statusPollSubscription = interval(4000)
       .pipe(switchMap(() => this.api.getIdentityVerificationStatus()))
       .subscribe((res) => {
         this.status.set(res.status)
         if (res.status !== 'pending') {
-          this.pollSubscription?.unsubscribe()
-        } else {
-          this.step.set(this.mapStep(res.step))
+          this.statusPollSubscription?.unsubscribe()
         }
       })
   }

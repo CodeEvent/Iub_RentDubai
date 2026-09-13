@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
@@ -23,6 +24,9 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import org.jmrtd.AccessKeySpec
 import org.jmrtd.BACKey
 import org.jmrtd.PACEKeySpec
@@ -101,6 +105,7 @@ class MainActivity : AppCompatActivity() {
 
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION))
 
+        findViewById<Button>(R.id.button_scan_pairing_qr).setOnClickListener { onScanPairingQrClicked() }
         findViewById<Button>(R.id.button_login).setOnClickListener { onLoginClicked() }
         findViewById<Button>(R.id.button_biometric).setOnClickListener { runBiometricGate() }
         findViewById<RadioGroup>(R.id.radio_document_type).setOnCheckedChangeListener { _, checkedId ->
@@ -113,6 +118,45 @@ class MainActivity : AppCompatActivity() {
         buttonSelfie.setOnClickListener { launchCamera(CaptureKind.SELFIE) }
         buttonVideo.setOnClickListener { launchVideoCamera() }
         buttonDone.setOnClickListener { resetToBiometricGate() }
+    }
+
+    // MARK: -- Scan to sign in (documents/rentshield_identity/pairing_views.py)
+
+    private fun onScanPairingQrClicked() {
+        val scanner = GmsBarcodeScanning.getClient(
+            this,
+            GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build(),
+        )
+        scanner.startScan()
+            .addOnSuccessListener { barcode -> onPairingQrScanned(barcode.rawValue) }
+            .addOnFailureListener { toast(it.message ?: "Could not scan that code -- try again.") }
+        // No addOnCanceledListener: the user backing out of the scanner
+        // (no QR found, changed their mind) just returns them to this
+        // same login screen, nothing to handle.
+    }
+
+    private fun onPairingQrScanned(rawValue: String?) {
+        // rentshieldpair://pair?server=<url-encoded>&code=<code> -- see
+        // pairing_views.py's pair_start_view for why this is a real URI
+        // (survives a server address that itself contains a colon)
+        // instead of a hand-split string.
+        val uri = rawValue?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        val server = uri?.getQueryParameter("server")
+        val code = uri?.getQueryParameter("code")
+        if (uri?.scheme != "rentshieldpair" || server.isNullOrEmpty() || code.isNullOrEmpty()) {
+            toast("That doesn't look like a RentShield sign-in code -- try again.")
+            return
+        }
+
+        api = RentShieldApiClient(server)
+        api.claimPairing(code) { result ->
+            runOnUiThread {
+                result.onSuccess {
+                    sectionLogin.visibility = View.GONE
+                    sectionBiometric.visibility = View.VISIBLE
+                }.onFailure { toast(it.message ?: "That code is invalid or expired -- get a new one on the website.") }
+            }
+        }
     }
 
     // MARK: -- Login

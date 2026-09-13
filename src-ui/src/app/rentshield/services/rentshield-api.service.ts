@@ -411,6 +411,27 @@ export class RentshieldApiService {
     )
   }
 
+  // "Scan to sign in" device pairing (documents/rentshield_identity/
+  // pairing_views.py) -- the whole capture flow (NFC chip, selfie,
+  // video) only exists in the native app, so the web page's job here is
+  // just to get the app authenticated as this same user, via a QR code
+  // instead of the property owner typing a password on their phone.
+  startDevicePairing(): Observable<{
+    code: string
+    qr_data_uri: string
+    expires_at: string
+    apk_url: string | null
+  }> {
+    return this.http.post<{ code: string; qr_data_uri: string; expires_at: string; apk_url: string | null }>(
+      `${this.base}documents/identity/pair/start/`,
+      {}
+    )
+  }
+
+  getDevicePairingStatus(): Observable<{ status: string | null }> {
+    return this.http.get<{ status: string | null }>(`${this.base}documents/identity/pair/status/`)
+  }
+
   private appendGeolocation(formData: FormData, position: GeolocationPosition | null): void {
     if (!position) return
     formData.append('latitude', String(position.coords.latitude))

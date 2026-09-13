@@ -49,9 +49,22 @@ class RentShieldApiClient(private val baseUrl: String) {
     private fun url(path: String) = baseUrl.trimEnd('/') + path
 
     fun login(username: String, password: String, callback: (Result<String>) -> Unit) {
-        val body = JSONObject().put("username", username).put("password", password)
-            .toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url(url("/api/token/")).post(body).build()
+        postForToken("/api/token/", JSONObject().put("username", username).put("password", password), callback)
+    }
+
+    // "Scan to sign in" -- called right after the QR scanner returns the
+    // code (see MainActivity.onPairingQrScanned), instead of the phone
+    // typing a username/password. Deliberately no Authorization header
+    // needed for this one call: the phone genuinely has no token yet,
+    // that's the whole point (see pairing_views.py's pair_claim_view
+    // docstring for why that's safe).
+    fun claimPairing(code: String, callback: (Result<String>) -> Unit) {
+        postForToken("/api/documents/identity/pair/claim/", JSONObject().put("code", code), callback)
+    }
+
+    private fun postForToken(path: String, body: JSONObject, callback: (Result<String>) -> Unit) {
+        val request = Request.Builder().url(url(path))
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) = callback(Result.failure(e))
             override fun onResponse(call: Call, response: Response) {

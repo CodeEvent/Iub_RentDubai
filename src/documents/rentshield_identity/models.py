@@ -136,3 +136,38 @@ class IdentityVerification(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id}: {self.status} ({self.provider})"
+
+
+class DevicePairingCode(models.Model):
+    """A short-lived, single-use code that lets the native Android/iOS
+    app sign a user in by scanning a QR code shown on this web app's
+    identity-verification page, instead of typing a username/password
+    on the phone -- the same "scan to sign in" pattern as WhatsApp Web
+    or the GitHub CLI's device flow. See
+    rentshield_identity/pairing_views.py for the full start/status/claim
+    flow; safety here rests entirely on the code itself (192 bits of
+    entropy via secrets.token_urlsafe, single-use, PAIRING_CODE_TTL
+    expiry) since the claim step has to be reachable with no auth at
+    all -- the phone genuinely has no account yet at that point.
+
+    Claiming one only ever grants the same DRF auth Token a normal
+    password login already would (see pairing_views.py's
+    pair_claim_view) -- this is a different way to obtain that token,
+    not a higher-privileged one."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        CLAIMED = "claimed", "Claimed"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="rentshield_pairing_codes",
+    )
+    code = models.CharField(max_length=64, unique=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.user_id}: {self.status}"

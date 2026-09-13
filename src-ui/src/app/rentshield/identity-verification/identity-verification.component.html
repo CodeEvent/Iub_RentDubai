@@ -5,84 +5,83 @@
     </h3>
 
     @if (!status() || status() === 'failed') {
-      <p class="text-muted small mb-0">
-        Confirm you're the real owner of this property: take a photo of your passport and a
-        quick live selfie to match against it.
-      </p>
-      @if (status() === 'failed') {
-        <div class="alert alert-danger small mb-0">
-          Verification didn't succeed last time. You can try again below.
+      @if (!pairing()) {
+        <p class="text-muted small mb-0">
+          Confirm you're the real owner of this property. This requires the RentShield mobile
+          app -- it reads your passport/Emirates ID chip directly, which no browser can do.
+        </p>
+        @if (status() === 'failed') {
+          <div class="alert alert-danger small mb-0">
+            Verification didn't succeed last time. You can try again below.
+          </div>
+        }
+        <button
+          type="button"
+          class="btn rs-btn-emerald align-self-start d-flex align-items-center gap-2"
+          [disabled]="starting()"
+          (click)="start()"
+        >
+          <span class="spinner-border spinner-border-sm" *ngIf="starting()"></span>
+          <i-bs name="phone" *ngIf="!starting()"></i-bs>
+          {{ starting() ? 'Preparing…' : 'Start Verification' }}
+        </button>
+        @if (error()) {
+          <p class="text-danger small mb-0">{{ error() }}</p>
+        }
+      } @else {
+        <div class="d-flex flex-column align-items-center gap-3 text-center">
+          @if (pairingStatus() === 'claimed') {
+            <i-bs name="check-circle" width="2rem" height="2rem" class="text-success"></i-bs>
+            <p class="small mb-0">
+              Connected -- continue on your phone. This page updates automatically from here.
+            </p>
+          } @else {
+            <p class="small mb-0">
+              1. Don't have the app yet?
+              @if (pairing()!.apkUrl) {
+                <a [href]="pairing()!.apkUrl" target="_blank" rel="noopener">Download RentShield</a>
+              } @else {
+                Ask your property manager for the RentShield app
+              }
+              , then open it.
+            </p>
+            <img
+              [src]="pairing()!.qrDataUri"
+              alt="QR code to sign in on the RentShield app"
+              width="180"
+              height="180"
+            />
+            <p class="small text-muted mb-0">2. Scan this code in the app to sign in automatically.</p>
+            <p class="small text-muted mb-0">
+              Can't scan? Enter this code in the app instead:
+              <code>{{ pairing()!.code }}</code>
+            </p>
+            @if (pairingStatus() === 'expired') {
+              <div class="alert alert-warning small mb-0 w-100">
+                This code expired.
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" (click)="reset()">
+                  Get a new one
+                </button>
+              </div>
+            } @else {
+              <p class="small text-muted mb-0 d-flex align-items-center gap-2">
+                <i-bs name="qr-code-scan" class="text-muted"></i-bs>
+                <span class="spinner-border spinner-border-sm"></span> Waiting for the app…
+              </p>
+            }
+          }
         </div>
-      }
-      <button
-        type="button"
-        class="btn rs-btn-emerald align-self-start d-flex align-items-center gap-2"
-        [disabled]="starting()"
-        (click)="start()"
-      >
-        <span class="spinner-border spinner-border-sm" *ngIf="starting()"></span>
-        <i-bs name="shield-check" *ngIf="!starting()"></i-bs>
-        {{ starting() ? 'Starting…' : 'Start Verification' }}
-      </button>
-      @if (error()) {
-        <p class="text-danger small mb-0">{{ error() }}</p>
       }
     }
 
     @if (status() === 'pending') {
       <div class="d-flex flex-column align-items-center gap-3 text-center">
-        @if (step() === 'awaiting_front') {
-          <i-bs name="camera" width="2rem" height="2rem" class="text-muted"></i-bs>
-          <p class="small mb-0">Take a clear photo of your passport's photo page.</p>
-          <label class="btn rs-btn-emerald d-flex align-items-center gap-2 mb-0" [class.disabled]="uploading()">
-            <span class="spinner-border spinner-border-sm" *ngIf="uploading()"></span>
-            <i-bs name="camera" *ngIf="!uploading()"></i-bs>
-            {{ uploading() ? 'Processing…' : 'Take Photo of Passport' }}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              hidden
-              [disabled]="uploading()"
-              (change)="onFrontFileSelected($event)"
-            />
-          </label>
-        }
-
-        @if (step() === 'awaiting_live') {
-          <i-bs name="person-circle" width="2rem" height="2rem" class="text-muted"></i-bs>
-          <p class="small mb-0">Now take a quick selfie to match against your passport photo.</p>
-          <label class="btn rs-btn-emerald d-flex align-items-center gap-2 mb-0" [class.disabled]="uploading()">
-            <span class="spinner-border spinner-border-sm" *ngIf="uploading()"></span>
-            <i-bs name="camera" *ngIf="!uploading()"></i-bs>
-            {{ uploading() ? 'Processing…' : 'Take Selfie' }}
-            <input
-              type="file"
-              accept="image/*"
-              capture="user"
-              hidden
-              [disabled]="uploading()"
-              (change)="onSelfieFileSelected($event)"
-            />
-          </label>
-        }
-
-        @if (step() === 'processing') {
-          <p class="small text-muted mb-0 d-flex align-items-center gap-2">
-            <span class="spinner-border spinner-border-sm"></span> Verifying…
-          </p>
-        }
-
-        @if (error()) {
-          <p class="text-danger small mb-0">{{ error() }}</p>
-        }
-
-        <button
-          type="button"
-          class="btn btn-link btn-sm text-muted"
-          [disabled]="starting()"
-          (click)="reset()"
-        >
+        <i-bs name="hourglass-split" width="2rem" height="2rem" class="text-muted"></i-bs>
+        <p class="small mb-0">
+          Continue on your phone -- capture your document, tap it for the NFC read, take a
+          selfie, and record your confirmation video there.
+        </p>
+        <button type="button" class="btn btn-link btn-sm text-muted" [disabled]="starting()" (click)="reset()">
           <i-bs name="arrow-clockwise" class="me-1"></i-bs>Reset and start over
         </button>
       </div>

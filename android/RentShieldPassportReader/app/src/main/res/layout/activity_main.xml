@@ -24,6 +24,21 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
+        <Button
+            android:id="@+id/button_scan_pairing_qr"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="Scan QR to sign in" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:gravity="center"
+            android:text="-- or sign in manually --"
+            android:textColor="#888888" />
+
         <EditText
             android:id="@+id/input_server_url"
             android:layout_width="match_parent"
