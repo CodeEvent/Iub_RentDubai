@@ -15,6 +15,33 @@ android {
         versionName = "0.1"
     }
 
+    // Real bug found live: without this, the Android Gradle Plugin
+    // auto-generates ~/.android/debug.keystore on first use -- fine on
+    // a single dev machine, but .github/workflows/build-android.yml
+    // runs on a fresh, throwaway GitHub Actions VM every time, so every
+    // single CI-built APK was signed with a brand-new, different random
+    // key. Android refuses to install an update whose signature doesn't
+    // match what's already on the device (silently, or with a bare "App
+    // not installed" toast easy to miss) -- so a user installing a new
+    // CI artifact over an old one saw no change at all, because the
+    // install itself was being silently rejected. A committed debug
+    // keystore (debug keystores are meant to be shared -- this is not a
+    // release signing key) makes every CI build share one stable
+    // signature, so updates after this one install cleanly.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
