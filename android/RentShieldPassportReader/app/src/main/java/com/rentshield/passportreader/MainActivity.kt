@@ -62,7 +62,7 @@ class MainActivity : AppCompatActivity() {
     // intent this enum still drives for the other two capture kinds,
     // specifically so the confirmation sentence can be shown on screen
     // while recording (the system camera app's own UI can't display it).
-    private enum class CaptureKind { CARD_PHOTO, SELFIE }
+    private enum class CaptureKind { CARD_PHOTO, SELFIE, ADDITIONAL_ID }
 
     private lateinit var api: RentShieldApiClient
 
@@ -83,6 +83,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoPreviewView: PreviewView
     private lateinit var videoPromptOverlay: TextView
     private lateinit var buttonRecordToggle: Button
+    private lateinit var sectionAdditionalId: View
+    private lateinit var inputAdditionalIdType: EditText
+    private lateinit var buttonAdditionalId: Button
 
     // Pending NFC read request, set once "Ready to scan" is tapped and
     // consumed in onNewIntent when the actual tap happens.
@@ -113,6 +116,7 @@ class MainActivity : AppCompatActivity() {
             when (kind) {
                 CaptureKind.CARD_PHOTO -> onCardPhotoCaptured(file.readBytes())
                 CaptureKind.SELFIE -> onSelfieCaptured(file.readBytes())
+                CaptureKind.ADDITIONAL_ID -> onAdditionalIdPhotoCaptured(file.readBytes())
             }
         } else {
             statusText.text = "Capture was cancelled -- try again."
@@ -139,6 +143,9 @@ class MainActivity : AppCompatActivity() {
         videoPreviewView = findViewById(R.id.video_preview)
         videoPromptOverlay = findViewById(R.id.video_prompt_overlay)
         buttonRecordToggle = findViewById(R.id.button_record_toggle)
+        sectionAdditionalId = findViewById(R.id.section_additional_id)
+        inputAdditionalIdType = findViewById(R.id.input_additional_id_type)
+        buttonAdditionalId = findViewById(R.id.button_additional_id)
 
         permissionLauncher.launch(
             arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO),
@@ -157,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         buttonVideo.setOnClickListener { showVideoInstructionsThenRecord() }
         buttonRecordToggle.setOnClickListener { onRecordToggleClicked() }
         buttonDone.setOnClickListener { resetToBiometricGate() }
+        buttonAdditionalId.setOnClickListener { onAdditionalIdClicked() }
 
         resumeSessionIfAvailable()
     }
@@ -209,6 +217,7 @@ class MainActivity : AppCompatActivity() {
         )
         sectionLogin.visibility = View.GONE
         sectionBiometric.visibility = View.VISIBLE
+        sectionAdditionalId.visibility = View.VISIBLE
     }
 
     // MARK: -- Scan to sign in (documents/rentshield_identity/pairing_views.py)
@@ -247,6 +256,7 @@ class MainActivity : AppCompatActivity() {
                     prefillDeclaredDocument(it.declared)
                     sectionLogin.visibility = View.GONE
                     sectionBiometric.visibility = View.VISIBLE
+                    sectionAdditionalId.visibility = View.VISIBLE
                 }.onFailure { toast(it.message ?: "That code is invalid or expired -- get a new one on the website.") }
             }
         }
@@ -625,6 +635,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // MARK: -- Additional ID (optional, plain photo, no NFC/OCR pipeline)
+
+    private fun onAdditionalIdClicked() {
+        val idType = inputAdditionalIdType.text.toString().trim()
+        if (idType.isEmpty()) {
+            toast("Say what kind of document this is first (e.g. \"Driving licence\").")
+            return
+        }
+        launchCamera(CaptureKind.ADDITIONAL_ID)
+    }
+
+    private fun onAdditionalIdPhotoCaptured(photoBytes: ByteArray) {
+        val idType = inputAdditionalIdType.text.toString().trim()
+        buttonAdditionalId.isEnabled = false
+        buttonAdditionalId.text = "Uploading…"
+        api.uploadAdditionalId(idType, photoBytes, "image/jpeg") { result ->
+            runOnUiThread {
+                buttonAdditionalId.isEnabled = true
+                result.onSuccess {
+                    buttonAdditionalId.text = "Additional ID uploaded"
+                }
+                result.onFailure {
+                    buttonAdditionalId.text = "Take additional ID photo"
+                    toast(it.message ?: "Could not upload that document -- try again.")
+                }
+            }
+        }
+    }
+
     // MARK: -- Shared camera helper (card photo + selfie both take a still photo)
 
     private fun launchCamera(kind: CaptureKind) {
@@ -633,7 +672,11 @@ class MainActivity : AppCompatActivity() {
             permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
             return
         }
-        val dirName = if (kind == CaptureKind.CARD_PHOTO) "cards" else "selfies"
+        val dirName = when (kind) {
+            CaptureKind.CARD_PHOTO -> "cards"
+            CaptureKind.SELFIE -> "selfies"
+            CaptureKind.ADDITIONAL_ID -> "additional_ids"
+        }
         val dir = File(cacheDir, dirName).apply { mkdirs() }
         val file = File(dir, "${dirName}_${System.currentTimeMillis()}.jpg")
         pendingCaptureFile = file

@@ -233,5 +233,38 @@
         android:text="Done"
         android:visibility="gone" />
 
+    <!-- A second, independent ID document as extra evidence for the
+         Notary: a plain photo, no NFC/OCR of its own, so it isn't
+         tied to any particular step, available any time from signing
+         in onward, matching the web page's own equivalent. -->
+    <LinearLayout
+        android:id="@+id/section_additional_id"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="24dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Additional ID (optional)"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/input_additional_id_type"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="What kind of document is this? (e.g. Driving licence)" />
+
+        <Button
+            android:id="@+id/button_additional_id"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Take additional ID photo" />
+    </LinearLayout>
+
 </LinearLayout>
 </ScrollView>

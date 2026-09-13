@@ -164,6 +164,19 @@ class RentShieldApiClient(private val baseUrl: String, initialToken: String? = n
         uploadMultipart("/api/documents/identity/verify/video/", "video", "confirmation.mp4", videoBytes, "video/mp4", location = null, callback = callback)
     }
 
+    // A second, independent ID document (driving licence, national ID,
+    // another passport) as extra evidence for the Notary -- a plain
+    // photo, no NFC/OCR pipeline of its own, and no cross-check against
+    // anything else (see views.py's upload_additional_id_view). Can be
+    // called any time after signing in, independent of where the main
+    // flow currently stands.
+    fun uploadAdditionalId(idType: String, photoBytes: ByteArray, mimeType: String?, callback: (Result<VerificationStatus>) -> Unit) {
+        uploadMultipart(
+            "/api/documents/identity/verify/additional-id/", "photo", "additional-id.jpg", photoBytes, mimeType,
+            location = null, callback = callback, extraTextFields = mapOf("id_type" to idType),
+        )
+    }
+
     // MARK: internals
 
     private fun authed(path: String, method: String, callback: (Result<VerificationStatus>) -> Unit) {
