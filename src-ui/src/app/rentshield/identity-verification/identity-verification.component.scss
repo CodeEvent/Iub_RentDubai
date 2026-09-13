@@ -1,1 +1,86 @@
-// No custom styles needed -- the capture UI uses Bootstrap classes only.
+@use '../rentshield-shared' as *;
+
+// Step indicator -- matches the emerald/navy palette already
+// established in rentshield-shared.scss instead of introducing a new
+// one, and mirrors the native app's own step indicator added alongside
+// this so the two feel like the same product mid-flow.
+.rs-step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #94a3b8;
+  border: 2px solid transparent;
+  flex-shrink: 0;
+}
+
+.rs-step-circle.rs-step-done {
+  background: #10b981;
+  color: #fff;
+}
+
+.rs-step-circle.rs-step-active {
+  background: #fff;
+  color: #10b981;
+  border-color: #10b981;
+}
+
+.rs-step-label {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 0.35rem;
+  line-height: 1.15;
+}
+
+.rs-step-label.rs-step-label-active {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+// The QR code and its fallback text code -- given a real bordered,
+// padded frame instead of a bare <img> floating in the page, so it
+// reads as "the important thing to scan" rather than incidental
+// decoration.
+.rs-qr-frame {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: inline-block;
+}
+
+.rs-qr-code-chip {
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+.rs-numbered-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  text-align: left;
+}
+
+.rs-numbered-step-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #d1fae5;
+  color: #059669;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}

@@ -1,8 +1,27 @@
-<div class="rs-panel" style="max-width: 32rem">
+<div class="rs-panel" style="max-width: 34rem">
+  <div class="rs-panel-header">
+    <span class="d-flex align-items-center gap-2">
+      <i-bs name="person-badge" class="rs-emerald"></i-bs> Identity Verification
+    </span>
+  </div>
   <div class="rs-panel-body d-flex flex-column gap-3">
-    <h3 class="fs-6 fw-bold mb-0 d-flex align-items-center gap-2">
-      <i-bs name="person-badge" class="text-muted"></i-bs> Identity Verification
-    </h3>
+    <!-- "Where am I" indicator -- mirrors the native app's own step
+         indicator so the web and app halves of this flow feel like one
+         product, not two disconnected experiences. -->
+    <div class="d-flex justify-content-between mb-1">
+      @for (label of stepLabels; track label; let i = $index) {
+        <div class="d-flex flex-column align-items-center" style="width: 25%">
+          <div class="rs-step-circle" [class.rs-step-done]="i < stepIndex()" [class.rs-step-active]="i === stepIndex()">
+            @if (i < stepIndex()) {
+              <i-bs name="check"></i-bs>
+            } @else {
+              {{ i + 1 }}
+            }
+          </div>
+          <div class="rs-step-label text-center" [class.rs-step-label-active]="i === stepIndex()">{{ label }}</div>
+        </div>
+      }
+    </div>
 
     @if (!status() || status() === 'failed') {
       @if (!declaring() && !pairing()) {
@@ -27,10 +46,11 @@
           <p class="text-danger small mb-0">{{ error() }}</p>
         }
       } @else if (declaring() && !pairing()) {
-        <p class="text-muted small mb-0">
-          Type your document details here first -- a real keyboard is easier and less error-prone
-          than the phone, especially for the CAN. You'll scan a QR to send this to the app next.
-        </p>
+        <div class="rs-hint">
+          Type your document details here first -- a real keyboard is easier and less
+          error-prone than the phone, especially for the CAN. You'll scan a QR to send this to
+          the app next.
+        </div>
 
         <div class="d-flex gap-3">
           <label class="d-flex align-items-center gap-1">
@@ -44,39 +64,43 @@
         </div>
 
         @if (documentType === 'passport') {
-          <input
-            class="form-control"
-            placeholder="Passport number"
-            [(ngModel)]="documentNumber"
-          />
-          <input
-            class="form-control"
-            type="date"
-            placeholder="Date of birth"
-            [(ngModel)]="dateOfBirth"
-          />
-          <input
-            class="form-control"
-            type="date"
-            placeholder="Passport expiry date"
-            [(ngModel)]="expiryDate"
-          />
+          <div class="d-flex flex-column gap-2">
+            <div>
+              <label for="declare-doc-number" class="form-label small fw-semibold mb-1">Passport number</label>
+              <input id="declare-doc-number" class="form-control" [(ngModel)]="documentNumber" />
+            </div>
+            <div>
+              <label for="declare-dob" class="form-label small fw-semibold mb-1">Date of birth</label>
+              <input id="declare-dob" class="form-control" type="date" [(ngModel)]="dateOfBirth" />
+            </div>
+            <div>
+              <label for="declare-expiry" class="form-label small fw-semibold mb-1">Passport expiry date</label>
+              <input id="declare-expiry" class="form-control" type="date" [(ngModel)]="expiryDate" />
+            </div>
+          </div>
         } @else {
-          <input
-            class="form-control"
-            placeholder="Document/ID number"
-            [(ngModel)]="documentNumber"
-          />
-          <input
-            class="form-control"
-            placeholder="CAN -- the 6-digit number only (NOT the card's longer ID/serial number)"
-            inputmode="numeric"
-            maxlength="6"
-            [(ngModel)]="can"
-          />
-          @if (can && !canLooksValid()) {
-            <p class="text-danger small mb-0">CAN must be exactly 6 digits.</p>
-          }
+          <div class="d-flex flex-column gap-2">
+            <div>
+              <label for="declare-doc-number-cie" class="form-label small fw-semibold mb-1">Document/ID number</label>
+              <input id="declare-doc-number-cie" class="form-control" [(ngModel)]="documentNumber" />
+            </div>
+            <div>
+              <label for="declare-can" class="form-label small fw-semibold mb-1">
+                CAN
+                <span class="text-muted fw-normal">-- the 6-digit number only (NOT the card's longer ID/serial number)</span>
+              </label>
+              <input
+                id="declare-can"
+                class="form-control"
+                inputmode="numeric"
+                maxlength="6"
+                [(ngModel)]="can"
+              />
+              @if (can && !canLooksValid()) {
+                <div class="text-danger small mt-1">CAN must be exactly 6 digits.</div>
+              }
+            </div>
+          </div>
         }
 
         <div class="d-flex gap-2">
@@ -104,25 +128,35 @@
               Connected -- continue on your phone. This page updates automatically from here.
             </p>
           } @else {
-            <p class="small mb-0">
-              1. Don't have the app yet?
-              @if (pairing()!.apkUrl) {
-                <a [href]="pairing()!.apkUrl" target="_blank" rel="noopener">Download RentShield</a>
-              } @else {
-                Ask your property manager for the RentShield app
-              }
-              , then open it.
-            </p>
-            <img
-              [src]="pairing()!.qrDataUri"
-              alt="QR code to sign in on the RentShield app"
-              width="180"
-              height="180"
-            />
-            <p class="small text-muted mb-0">2. Scan this code in the app to sign in automatically.</p>
+            <div class="rs-numbered-step">
+              <span class="rs-numbered-step-badge">1</span>
+              <p class="small mb-0">
+                Don't have the app yet?
+                @if (pairing()!.apkUrl) {
+                  <a [href]="pairing()!.apkUrl" target="_blank" rel="noopener">Download RentShield</a>
+                } @else {
+                  Ask your property manager for the RentShield app
+                }
+                , then open it.
+              </p>
+            </div>
+
+            <div class="rs-qr-frame">
+              <img
+                [src]="pairing()!.qrDataUri"
+                alt="QR code to sign in on the RentShield app"
+                width="180"
+                height="180"
+              />
+            </div>
+
+            <div class="rs-numbered-step">
+              <span class="rs-numbered-step-badge">2</span>
+              <p class="small text-muted mb-0">Scan this code in the app to sign in automatically.</p>
+            </div>
             <p class="small text-muted mb-0">
               Can't scan? Enter this code in the app instead:
-              <code>{{ pairing()!.code }}</code>
+              <span class="rs-qr-code-chip">{{ pairing()!.code }}</span>
             </p>
             @if (pairingStatus() === 'expired') {
               <div class="alert alert-warning small mb-0 w-100">
@@ -181,7 +215,9 @@
     @if (status()) {
       <hr class="my-1" />
       <div class="d-flex flex-column gap-2">
-        <h4 class="fs-6 fw-semibold mb-0">Additional ID (optional)</h4>
+        <h4 class="fs-6 fw-semibold mb-0 d-flex align-items-center gap-2">
+          <i-bs name="file-earmark-plus" class="text-muted"></i-bs> Additional ID (optional)
+        </h4>
         <p class="text-muted small mb-0">
           Add a second document -- a driving licence, national ID, or another passport -- as
           extra evidence for the Notary. Just a photo, no app needed.

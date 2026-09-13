@@ -9,6 +9,32 @@
   color: #0f172a;
 }
 
+// Real bug found doing a UX pass on identity-verification.component
+// (2026-09-13): this was only ever defined in notice-form.component
+// .scss, so every OTHER component referencing the same "rs-btn-emerald"
+// class (identity-verification's own primary buttons included) got a
+// plain, unstyled Bootstrap .btn instead -- Angular's view
+// encapsulation means a class defined in one component's stylesheet
+// simply doesn't apply to another component's template, no error, no
+// warning, just a button that silently never looked like the rest of
+// the site. Moved here so every component that @use's this file
+// (as notice-form.component.scss already did) gets it consistently.
+.rs-btn-emerald {
+  background: #10b981;
+  color: #fff;
+  border-radius: 14px;
+  border: none;
+}
+
+.rs-btn-emerald:hover {
+  background: #059669;
+  color: #fff;
+}
+
+.rs-btn-emerald:disabled {
+  opacity: 0.5;
+}
+
 .rs-panel {
   background: #fff;
   border: 1px solid #e2e8f0;

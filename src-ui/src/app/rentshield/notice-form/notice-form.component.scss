@@ -59,18 +59,7 @@
   margin-top: 0.2rem;
 }
 
-.rs-btn-emerald {
-  background: #10b981;
-  color: #fff;
-  border-radius: 14px;
-  border: none;
-}
-
-.rs-btn-emerald:hover {
-  background: #059669;
-  color: #fff;
-}
-
-.rs-btn-emerald:disabled {
-  opacity: 0.5;
-}
+// .rs-btn-emerald moved to ../rentshield-shared.scss (2026-09-13) --
+// this file's own copy was the ONLY place it existed, meaning every
+// other component referencing the class (identity-verification's own
+// buttons included) silently got an unstyled plain Bootstrap .btn.

@@ -13,6 +13,13 @@ interface PairingState {
   apkUrl: string | null
 }
 
+// Only 4 phases, not a finer-grained one matching the app's own 6 --
+// this page can't see the app's internal card/NFC/selfie/video
+// sub-steps (it only polls the same coarse status endpoint the app's
+// progress updates), so showing more granularity here than the data
+// actually supports would just be misleading.
+const STEP_LABELS = ['Declare & connect', 'Complete on your phone', 'Notary review', 'Verified']
+
 // Property-owner identity verification. Real NFC chip reading (ICAO
 // 9303 PACE/BAC) needs a native app -- no browser on any platform can
 // do it -- so this page's own job is just to get the property owner
@@ -63,8 +70,20 @@ export class IdentityVerificationComponent implements OnDestroy {
   additionalIdUploaded = signal(false)
   additionalIdError = signal<string | null>(null)
 
+  readonly stepLabels = STEP_LABELS
+
   private statusPollSubscription?: Subscription
   private pairingPollSubscription?: Subscription
+
+  // Drives the step indicator -- the single biggest orientation gap
+  // this page had, matching the app's own step indicator added
+  // alongside it.
+  stepIndex(): number {
+    if (this.status() === 'verified') return 3
+    if (this.status() === 'awaiting_notary_review' || this.status() === 'manual_review') return 2
+    if (this.status() === 'pending') return 1
+    return 0
+  }
 
   constructor() {
     // A user who's already mid-verification (or already verified) from
