@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 data class VerificationStatus(val status: String?, val step: String?)
 
@@ -30,7 +31,19 @@ class ApiException(message: String) : Exception(message)
  * browser from a native app.
  */
 class RentShieldApiClient(private val baseUrl: String) {
-    private val client = OkHttpClient()
+    // OkHttp's default 10s read timeout is shorter than Idswyft's real
+    // OCR processing time (typically 15-30s, up to the 60s the Django
+    // backend itself allows -- see idswyft_client.py's _upload()) --
+    // confirmed exactly this symptom (a real user hit a timeout-then-
+    // retake loop on the front-document/card-photo upload) and it
+    // matches a documented quirk in Idswyft's own source: "a client
+    // retry triggered by a read timeout shorter than our OCR latency
+    // (Android okhttp's ~10s default vs typical 15-30s extraction)".
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(90, TimeUnit.SECONDS)
+        .build()
     private var token: String? = null
 
     private fun url(path: String) = baseUrl.trimEnd('/') + path
