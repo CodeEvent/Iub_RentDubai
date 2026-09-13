@@ -52,6 +52,13 @@ export class IdentityAdminComponent {
   loading = signal(true)
   error = signal<string | null>(null)
   showAll = signal(false)
+  // Reviews one record at a time (the riskiest first -- the backend
+  // already sorts the needs-review queue that way) instead of a long
+  // list to scroll through. Confirm/reject reloads the queue, so the
+  // next-riskiest record is simply whatever's now first -- no manual
+  // "next" bookkeeping needed. Only meaningful for the live queue, not
+  // the full history (showAll) view.
+  focusMode = signal(false)
   reviewNotes: Record<number, string> = {}
   // record id -> field name -> edited value, seeded from the record's
   // own OCR/chip values so the inputs start showing what's already
@@ -88,6 +95,19 @@ export class IdentityAdminComponent {
   toggleShowAll(): void {
     this.showAll.set(!this.showAll())
     this.loadRecords()
+  }
+
+  toggleFocusMode(): void {
+    this.focusMode.set(!this.focusMode())
+  }
+
+  // What actually renders -- just the top (riskiest) record in focus
+  // mode, the full queue otherwise.
+  visibleRecords(): AdminVerificationRecord[] {
+    if (this.focusMode() && !this.showAll() && this.records().length > 0) {
+      return [this.records()[0]]
+    }
+    return this.records()
   }
 
   statusClass(status: string): string {
@@ -150,7 +170,14 @@ export class IdentityAdminComponent {
     this.api
       .confirmIdentityVerification(record.id, this.reviewNotes[record.id] || '', this.editsFor(record.id))
       .subscribe({
-        next: (res) => this.applyReviewResult(record, res.status),
+        // Reload rather than patch in place -- this also makes focus
+        // mode's auto-advance work for free (the next call just shows
+        // records()[0], whatever that now is) and picks up fields a
+        // local patch never touched (notary_reviewed_by/at/notes).
+        next: () => {
+          this.setBusy(record.id, false)
+          this.loadRecords()
+        },
         error: (err) => this.handleReviewError(record.id, err),
       })
   }
@@ -160,7 +187,10 @@ export class IdentityAdminComponent {
     this.api
       .rejectIdentityVerification(record.id, this.reviewNotes[record.id] || '', this.editsFor(record.id))
       .subscribe({
-        next: (res) => this.applyReviewResult(record, res.status),
+        next: () => {
+          this.setBusy(record.id, false)
+          this.loadRecords()
+        },
         error: (err) => this.handleReviewError(record.id, err),
       })
   }
@@ -186,12 +216,6 @@ export class IdentityAdminComponent {
       },
       error: (err) => this.handleReviewError(record.id, err),
     })
-  }
-
-  private applyReviewResult(record: AdminVerificationRecord, status: string): void {
-    record.status = status
-    Object.assign(record, this.editValues[record.id])
-    this.setBusy(record.id, false)
   }
 
   private handleReviewError(id: number, err: any): void {

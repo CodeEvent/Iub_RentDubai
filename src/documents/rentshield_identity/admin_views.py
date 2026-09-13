@@ -39,22 +39,44 @@ def notary_status_view(request):
     return Response({"is_notary_public": is_notary_public(request.user)})
 
 
+def _risk_score(record: IdentityVerification) -> int:
+    """Higher first: a Notary triaging a real queue should see the
+    records most likely to need a closer look before the clean ones,
+    not whichever happened to update most recently. Two independent
+    risk signals, since either can exist without the other (the
+    automated cross-check is plain string comparison; Claude's own read
+    of the same fields can disagree with it -- see ai_prescreen.py's
+    system prompt on why it's told not to just trust that automated
+    note)."""
+    summary = (record.ai_prescreen_summary or "").lower()
+    if record.identity_mismatch_notes or "significant inconsistency" in summary:
+        return 2
+    if "minor inconsistency" in summary:
+        return 1
+    return 0
+
+
 @api_view(["GET"])
 @permission_classes([IsRentshieldAdmin | IsNotaryPublic])
 def admin_list_verifications_view(request):
     """GET /api/documents/identity/verify/admin/list/ -- by default only
     the records actually needing a Notary's attention (status
-    AWAITING_NOTARY_REVIEW), newest first -- showing every record
+    AWAITING_NOTARY_REVIEW), riskiest first (see _risk_score) so a
+    Notary triaging several at once sees the ones most likely to need a
+    closer look before the clean ones -- showing every record
     regardless of status made the queue useless once more than a
     handful of users had verified/failed already. Pass ?status=all to
     see the full history instead (e.g. to look back at a past
-    decision). File URLs are relative (MEDIA_URL-based, same as any
-    other Django FileField) -- the frontend resolves them against the
-    API host, same as it does for paperless-ngx's own document
-    thumbnail URLs elsewhere in this app."""
+    decision) -- that view stays newest-first, plain chronological
+    order being what you actually want when browsing decisions already
+    made. File URLs are relative (MEDIA_URL-based, same as any other
+    Django FileField) -- the frontend resolves them against the API
+    host, same as it does for paperless-ngx's own document thumbnail
+    URLs elsewhere in this app."""
     records = IdentityVerification.objects.select_related("user", "notary_reviewed_by").order_by("-updated_at")
     if request.GET.get("status") != "all":
         records = records.filter(status=IdentityVerification.Status.AWAITING_NOTARY_REVIEW)
+        records = sorted(records, key=lambda record: (-_risk_score(record), -record.updated_at.timestamp()))
     return Response(
         {
             "results": [

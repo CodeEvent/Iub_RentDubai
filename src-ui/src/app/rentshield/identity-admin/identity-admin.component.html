@@ -1,13 +1,29 @@
 <div class="rs-panel" style="max-width: 64rem">
   <div class="rs-panel-body d-flex flex-column gap-3">
-    <div class="d-flex align-items-center justify-content-between gap-2">
+    <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <h3 class="fs-6 fw-bold mb-0 d-flex align-items-center gap-2">
         <i-bs name="shield-check" class="text-muted"></i-bs> Identity Verification -- Review
       </h3>
-      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="toggleShowAll()">
-        {{ showAll() ? 'Show needs-review only' : 'Show all history' }}
-      </button>
+      <div class="d-flex gap-2">
+        @if (!showAll() && records().length > 0) {
+          <button type="button" class="btn btn-sm" [class.btn-secondary]="focusMode()"
+            [class.btn-outline-secondary]="!focusMode()" (click)="toggleFocusMode()">
+            <i-bs name="arrow-clockwise" class="me-1"></i-bs>
+            {{ focusMode() ? 'Show full queue' : 'Review one at a time' }}
+          </button>
+        }
+        <button type="button" class="btn btn-sm btn-outline-secondary" (click)="toggleShowAll()">
+          {{ showAll() ? 'Show needs-review only' : 'Show all history' }}
+        </button>
+      </div>
     </div>
+
+    @if (focusMode() && !showAll() && records().length > 0) {
+      <p class="text-muted small mb-0">
+        Riskiest first. {{ records().length }} waiting -- confirming or rejecting moves straight
+        to the next one.
+      </p>
+    }
 
     @if (loading()) {
       <p class="text-muted small mb-0 d-flex align-items-center gap-2">
@@ -25,10 +41,21 @@
       </p>
     }
 
-    @for (record of records(); track record.id) {
+    @for (record of visibleRecords(); track record.id) {
       <div class="border rounded p-3 d-flex flex-column gap-3">
         <div class="d-flex flex-column flex-md-row gap-3">
-          <div class="d-flex gap-2">
+          <!-- The video is the one piece of evidence actually being
+               manually judged here -- everything else is already
+               computed for the reviewer. Given real visual weight
+               instead of sitting as a same-size thumbnail alongside
+               four photos. -->
+          @if (record.video_url) {
+            <video [src]="record.video_url" controls class="rs-video-featured flex-shrink-0"></video>
+          } @else {
+            <div class="rs-video-featured rs-evidence-empty flex-shrink-0">No video</div>
+          }
+
+          <div class="d-flex flex-row flex-md-column gap-2 flex-shrink-0">
             @if (record.passport_photo_url) {
               <a [href]="record.passport_photo_url" target="_blank" rel="noopener">
                 <img [src]="record.passport_photo_url" alt="Photographed ID card" class="rs-evidence-thumb" />
@@ -49,11 +76,6 @@
               </a>
             } @else {
               <div class="rs-evidence-thumb rs-evidence-empty">No selfie</div>
-            }
-            @if (record.video_url) {
-              <video [src]="record.video_url" controls class="rs-evidence-thumb"></video>
-            } @else {
-              <div class="rs-evidence-thumb rs-evidence-empty">No video</div>
             }
             @if (record.additional_id_photo_url) {
               <a [href]="record.additional_id_photo_url" target="_blank" rel="noopener">

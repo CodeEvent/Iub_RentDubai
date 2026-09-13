@@ -12,8 +12,10 @@ from itertools import combinations
 from pathlib import Path
 
 from dateutil import parser as dateutil_parser
+from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.mail import send_mail
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.decorators import permission_classes
@@ -21,6 +23,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from documents.rentshield.roles import NOTARY_PUBLIC_GROUP_NAME
 from documents.rentshield.roles import IsNotaryPublic
 from documents.rentshield.roles import IsRentshieldAdmin
 from documents.rentshield_identity import face_match
@@ -454,8 +457,44 @@ def upload_video_view(request):
     from documents.tasks import run_identity_prescreen_task
 
     run_identity_prescreen_task.delay(record.id)
+    _notify_notary_queue(record)
 
     return Response({"status": record.status})
+
+
+def _notify_notary_queue(record: IdentityVerification) -> None:
+    """Fire-and-forget email to every real Notary Public (Group members
+    plus staff, matching roles.is_notary_public()'s own definition of
+    who that is) the moment a verification actually needs their
+    attention -- requested explicitly so a Notary doesn't have to keep
+    polling the dashboard to find out something is waiting. Sent
+    individually to each recipient's own address (not one email with
+    everyone in To:) so Notaries don't see each other's addresses.
+    Same "log and swallow, never block the real action" pattern as
+    _notify_identity_verification_result below."""
+    User = get_user_model()
+    recipients = (
+        User.objects.filter(Q(is_staff=True) | Q(groups__name=NOTARY_PUBLIC_GROUP_NAME))
+        .exclude(email="")
+        .values_list("email", flat=True)
+        .distinct()
+    )
+    if not recipients:
+        logger.debug("Verification %s reached AWAITING_NOTARY_REVIEW but no Notary has an email on file.", record.id)
+        return
+
+    subject = "RentShield: A new identity verification needs your review"
+    message = (
+        f"{record.user.username} has finished the verification steps -- "
+        "a Notary Public needs to watch their confirmation video and "
+        "decide.\n\n"
+        "Open the Identity Verification Admin page to review it."
+    )
+    for recipient in recipients:
+        try:
+            send_mail(subject=subject, message=message, from_email=None, recipient_list=[recipient], fail_silently=False)
+        except Exception:
+            logger.exception("Failed to send Notary queue notification email to %r", recipient)
 
 
 @api_view(["POST"])

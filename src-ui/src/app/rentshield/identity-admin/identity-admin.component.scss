@@ -15,6 +15,20 @@ video.rs-evidence-thumb {
   background: #000;
 }
 
+// The confirmation video is the one piece of evidence actually being
+// manually judged here (everything else is already computed) -- given
+// real visual weight instead of a same-size thumbnail alongside the
+// photos, matching a real 9:16 phone-recorded portrait clip's own
+// aspect ratio instead of an arbitrary fixed box.
+.rs-video-featured {
+  width: 220px;
+  height: 300px;
+  object-fit: contain;
+  background: #000;
+  border-radius: 4px;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+}
+
 .rs-evidence-empty {
   display: flex;
   align-items: center;
