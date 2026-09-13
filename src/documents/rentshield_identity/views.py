@@ -417,6 +417,11 @@ def upload_video_view(request):
     record.video.save(uploaded.name, ContentFile(uploaded.read()), save=False)
     record.status = IdentityVerification.Status.AWAITING_NOTARY_REVIEW
     record.save(update_fields=["video", "status", "updated_at"])
+
+    from documents.tasks import run_identity_prescreen_task
+
+    run_identity_prescreen_task.delay(record.id)
+
     return Response({"status": record.status})
 
 

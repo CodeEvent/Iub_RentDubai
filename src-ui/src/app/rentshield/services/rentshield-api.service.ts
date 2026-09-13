@@ -121,6 +121,7 @@ export interface AdminVerificationRecord {
   notary_reviewed_by: string | null
   notary_reviewed_at: string | null
   notary_notes: string
+  ai_prescreen_summary: string
   created_at: string
   updated_at: string
 }

@@ -1018,13 +1018,878 @@ unmodified stock steps through to the outro.
 - Several RentShield steps are `isOptional: true` (skipped, not shown, if
   their anchor isn't in the DOM) — the "New Notice" nav item only exists
   for a user with `add_document` permission (see Roles & Permissions
-  above), so a Tenant or Notary taking the tour won't see that step; this
-  is intentional, not a bug, and mirrors how the stock tour already treats
-  `tour.tags`/`tour.mail`/etc. as effectively permission-gated (their
-  anchors are behind the same `*pngxIfPermissions` checks).
-- The tour doesn't adapt its *wording* per role — a Tenant who reaches the
-  notarization add-on step reads copy written from a Property Owner's
-  perspective. Role-aware tour copy is a real, separate enhancement, not
-  attempted here.
+  above), so an account without it (an admin can still remove that
+  permission from anyone, including Property Owner) won't see that step;
+  this is intentional, not a bug, and mirrors how the stock tour already
+  treats `tour.tags`/`tour.mail`/etc. as effectively permission-gated
+  (their anchors are behind the same `*pngxIfPermissions` checks). This
+  was more load-bearing back when Tenant/Notary/Lawyer were separate,
+  more-restricted self/admin-assignable roles (see the dated "Roles
+  simplified" section below) — with only Property Owner and Admin left,
+  it's now an edge case rather than the common path.
+
+## Roles simplified: 4 login roles down to 2 (2026-09-04)
+
+**What existed before**: Tenant, Property Owner, Notary, and Lawyer as
+separate self/admin-assignable Groups (see "Roles & Permissions" above),
+alongside full-access Admin (Django's own `is_staff`/`is_superuser`).
+
+**Why cut, role by role** (a decision made after reviewing how each role
+actually got used and bugged out during testing, not a guess):
+- **Tenant** delivered no working value: `tenant_name` on a notice is
+  free text, not linked to a real user account, so a self-registered
+  Tenant saw a permanently empty Notices list — dead weight with a
+  signup form and a permission set behind it.
+- **Notary** duplicated what the DocuSeal/OpenSign e-signature
+  integration already automates end to end (see "What's in
+  `documents/rentshield/`" above) — there was never a real task for a
+  separate human "Notary" login to do inside the app.
+- **Lawyer** had real, narrow value (flagging sensitive-reason notices
+  for review), but its group-permission/object-grant machinery was this
+  project's single biggest source of real bugs — the `isnull`-vs-`exists`
+  query bug, the `UiSettings` 403, the retroactive-grant backfill, and
+  the `CanManageNotices`-checks-group-membership bug documented under
+  "Roles & Permissions" above all trace back to this one role's
+  object-permission layer.
+- **Property Owner** is the only role that ever delivered real,
+  self-evident value (generate a notice, see the notices you made) and
+  is the only one that should be a paying customer.
+
+**Decision**: collapse to 2 account types — Property Owner (self-service
+signup) and Admin (`createsuperuser`/Django admin only, unchanged).
+Lawyer's one real use, legal review, became a priced add-on instead of a
+role — same shape as the existing Notarization/AI Review add-ons
+(`documents/rentshield/pricing.py`'s `ADD_ONS["legal_review"]`, 349 AED),
+fulfilled operationally rather than through in-app RBAC: ticking it at
+notice-creation time (`create_notice_view`'s `add_legal_review`) tags the
+resulting Document `Legal Review Requested` (created the same
+`get_or_create`-by-name way as every other RentShield tag) and sends a
+plain email to `settings.RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL`
+(`PAPERLESS_RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL`, empty/no-op by
+default — notice creation never fails just because this isn't
+configured; a send failure is logged and swallowed, not raised). An
+admin filters Documents by that tag and loops in counsel outside the
+app — no new Group, no object-permission grant, no separate login.
+
+**What was removed, concretely**: `TENANT_GROUP_NAME`/
+`NOTARY_GROUP_NAME`/`LAWYER_GROUP_NAME` and their
+`ROLE_DOCUMENT_PERMISSIONS` entries (`documents/rentshield/roles.py`);
+Workflow "RentShield: restrict sensitive notices" and Workflow
+"RentShield: grant Notary access on notarization request", along with
+the `_backfill_object_permissions()` method those two workflows' object
+grants relied on (`create_rentshield_workflows.py` — nothing else called
+it, so it was deleted rather than left dead); the role radio-buttons in
+the self-service signup form and its landing-page auth-modal role-chooser
+step (`documents/rentshield/forms.py`'s `RentShieldSignupExtra`,
+`templates/account/signup.html`, `templates/rentshield/landing.html`'s
+`#rsAuthModal` — every self-serve signup now joins Property Owner
+unconditionally, with no user choice, per `RentShieldSignupExtra.signup()`).
+The landing page's public "Who it's for" section was also trimmed from 5
+role cards to 2, since leaving Tenant/Notary/Lawyer advertised there
+would have been actively misleading about what a visitor can actually
+sign up as.
+
+**What's explicitly NOT done, on purpose**:
+- **No destructive migration.** Any Tenant/Notary/Lawyer Group row that
+  already existed in a database, and any user's membership in one, is
+  left exactly as it was — `create_rentshield_roles`/
+  `create_rentshield_workflows` simply stop creating or repairing them
+  going forward. A test account like `lawyer` still logs in fine and
+  keeps whatever stale Document permissions that group happens to carry;
+  harmless, since no view or workflow gates on group membership by name
+  any more, only on the plain Django `add_document`/`change_document`
+  permission itself (`can_manage_notices()`/`can_act_on_document()` in
+  `roles.py`, unchanged by this cut).
+- **The pay-per-notice flow itself is untouched** — Notarization and AI
+  Review add-ons, the notarization review-gate pipeline (Pending Review →
+  Being Notarized → Notarized/Notarization Failed), and every dashboard/
+  workflow not tied to Tenant/Notary/Lawyer all work exactly as before.
+- Verified for real, not just read: ran `create_rentshield_roles` and
+  `create_rentshield_workflows` against this project's own dev database
+  and confirmed only the Property Owner group was created/repaired (no
+  Tenant/Notary/Lawyer group creation attempted); generated a real notice
+  as a Property Owner test account with Legal Review checked and
+  confirmed the `Legal Review Requested` tag landed on the resulting
+  Document; confirmed the existing `lawyer` test account still
+  authenticates with no error anywhere in the stack, despite its now-
+  unmaintained group membership.
+
+## Mobile responsiveness audited and fixed (2026-09-07)
+
+**Audited first, per explicit instruction not to assume anything was
+broken** — every page/component was loaded via real Chromium (Playwright,
+headless, not just reasoning about CSS) at 375px (iPhone SE), 393px
+(iPhone 14/15), and 412px (common Android), checking actual
+`document.documentElement.scrollWidth` vs. `window.innerWidth` for
+horizontal overflow, not just eyeballing screenshots.
+
+**What was actually broken — one real bug, and it was worse than
+expected**: `/welcome/`'s top nav bar (`documents/templates/rentshield/
+landing.html`'s `.rs-nav-links`/`.rs-nav-cta`) had **zero** responsive
+handling — no `@media` query at all, unlike every other section on the
+page (`.rs-hero-grid`, `.rs-steps`, `.rs-role-grid`, `.rs-pricing-grid`,
+`.rs-security-grid`, and `.rs-footer-grid` all already had correct
+stacking breakpoints from when the page was first built). Brand + 4 nav
+links + Log In + Get Started in one un-wrapping flex row forced the
+*entire page* to 543px wide on a 375px viewport (168px of horizontal
+overflow, confirmed by measurement, not estimated) — every section below
+the fold inherited that overflow even though their own grids were
+already correctly responsive.
+
+**Fixed**: added a hamburger toggle (`#rsNavToggleBtn`/`#rsNavMenu`),
+plain CSS + vanilla JS matching this file's existing style (no new
+framework/dependency) — below 768px, links + Log In/Get Started collapse
+into a full-width dropdown panel instead of squeezing into one row.
+Verified: 0px overflow at 375/393/412px both with the menu closed and
+open, 0px overflow at 1280px desktop with the nav visually unchanged
+(confirmed via screenshot diff, not assumed from the CSS alone).
+
+**What was checked and found already correct — not rebuilt, per
+instruction**: the `#rsAuthModal` signup/login modal already used
+`width: 100%; max-width: 26rem` with `overflow-y: auto` (never clips on
+a narrow screen); every signup/login `<input>` already computes to
+16px via Bootstrap's own `.form-control` (no iOS auto-zoom risk, already
+true before this audit); the `notice-form`, `notices-list`, and
+`legal-skills` Angular components all already used Bootstrap's
+`col-md-*`/`col-6 col-md-3` grid classes, meaning every field/stat
+card/checkbox already stacked to a single column below `768px` with no
+code change needed; `notices-list`'s table was already wrapped in
+Bootstrap's own `.table-responsive` (contained horizontal scroll on the
+table only, never the page — exactly the pattern paperless-ngx's own
+stock document list uses, already followed here). paperless-ngx's own
+frame (hamburger sidebar), dashboard widgets, document card grid, and
+document detail view were all confirmed already fully responsive by
+loading them for real, not assumed from paperless-ngx's reputation as a
+mature app.
+
+**Sanity swept, not just spot-checked**: grepped `landing.html` and
+every `src-ui/src/app/rentshield/**/*.scss` file for fixed `width`/
+`min-width` in pixels and for `white-space: nowrap` outside a
+scrollable container — no hits beyond `max-width` caps already paired
+with `margin: 0 auto` (never forces overflow) or an existing responsive
+override.
+
+**Real, load-bearing limitation, not glossed over**: this was verified
+via browser *emulation* (Playwright/Chromium device-size viewports), not
+an actual physical iPhone or Android handset — the agent doing this work
+has no physical device to test on. Real-device confirmation (Safari's
+own rendering quirks, actual on-screen-keyboard behavior, real touch
+target accuracy) is still outstanding and needs to happen on real
+hardware before treating this as fully closed.
+
+## Real payment collection (demo mode) + honest add-on tier split (2026-09-09)
+
+**Why**: before this, every notice generated in this project's entire
+history was free -- `total_price_aed` was computed and stored on the
+Document as a record, but nothing ever charged a card. Monetizing the
+platform genuinely starts here, not with notarization automation (see
+the notary-provider research below): no payment collection meant no
+revenue regardless of how good the product was.
+
+**What was built**: a new installed Django app,
+`documents/rentshield_billing/` (`documents.rentshield_billing.apps.RentshieldBillingConfig`
+in `INSTALLED_APPS`) -- a genuinely new app, not another plain
+subpackage like `documents/rentshield/`, because an `Order` has to
+exist *before* any Document does (payment happens before generation),
+the same reasoning a future `MonitoredProperty`/`Subscription` model
+will need.
+
+- `Order` model: owner, the exact notice-creation payload it's for,
+  `amount_aed`, `status` (pending/paid/demo_paid/failed/canceled),
+  `stripe_checkout_session_id`, `document_id` (set once generation
+  completes), `paid_at`.
+- `stripe_client.py`: thin wrapper around the real `stripe` package
+  (added as a project dependency, `stripe~=13.2.0`) -- Checkout Session
+  creation and webhook signature verification, nothing more.
+- `views.py`: `POST /api/documents/notice/checkout/` (creates the Order,
+  then either a real Stripe Checkout redirect or, in demo mode,
+  generates the notice synchronously and returns its id in the same
+  response), `GET .../checkout/<id>/status/` (polled after a real-Stripe
+  redirect returns), `POST /api/documents/notice/stripe-webhook/`
+  (`AllowAny`, Stripe calls this server-to-server; rejects anything
+  whose signature doesn't verify, same reasoning as
+  `analyze_uploaded_view`'s own docstring).
+- **Demo mode is not a separate code path bolted on** -- it's what
+  `create_checkout_view` does automatically whenever `STRIPE_SECRET_KEY`
+  is unset (`PAPERLESS_STRIPE_SECRET_KEY`, empty/no-op-safe by default,
+  same pattern as every other optional integration in this project). No
+  real charge happens; the Order is stamped `Status.DEMO_PAID`, never
+  `PAID`, so a demo run can never be mistaken for real revenue later.
+  This exists specifically so the whole pay-then-generate pipeline could
+  be built, wired into the frontend, and verified end to end without
+  waiting on a real Stripe account -- flipping it to real payments later
+  needs only `PAPERLESS_STRIPE_SECRET_KEY`/`PAPERLESS_STRIPE_WEBHOOK_SECRET`
+  set, no code change.
+- The Angular notice-form's "Generate Notice" button is now "Pay &
+  Generate Notice" and calls this checkout endpoint
+  (`RentshieldApiService.checkout()`), not `create_notice_view`
+  directly. `create_notice_view` itself is kept, unpaid, for direct/
+  scripted use (demo data, tests) -- its validation logic was factored
+  out into `validate_notice_fields()` so both paths share exactly the
+  same rules, not two copies that can drift.
+- The existing Pending Review -> Details Confirmed gate (see the AI
+  Compliance Review / notarization sections above) needed no new code
+  to sit in front of this: payment now happens *before* generation, and
+  the confirmation gate still runs *after* generation, before any
+  e-signature dispatch, exactly as before -- verified directly, not
+  assumed, by checking a real paid demo order's resulting Document still
+  picked up its `Pending Review` tag correctly.
+
+**Add-on tier split (the other must-have from this pass)**: the
+"Notarization Service" TODO flagged earlier in this README's history is
+resolved, not silently decided. `documents/rentshield/pricing.py`'s
+`ADD_ONS` key is renamed `notarization` -> `certified_esignature`, with
+an honest label ("Certified E-Signature Service") and description that
+no longer claims a licensed UAE notary -- because it still isn't one
+(DocuSeal/OpenSign, unchanged). A second entry, `real_notarization`
+("Real Notary Public (Coming Soon)", `available: False`), is listed but
+not purchasable -- `validate_notice_fields()` rejects any request that
+sets `add_real_notarization` with a clear "coming soon" error, matching
+this project's docling-service/DeepSeek-OCR precedent of degrading
+visibly rather than pretending to work. It exists at all because the
+notary-provider research (this project's own live search, not guessed)
+confirms no UAE notary currently exposes a third-party API -- see that
+section below. Every other page that repeated the old "licensed notary"
+claim (the landing page's hero line, its "How it works" step 3, its
+"Who it's for" section, and 3 of the FAQ answers added earlier) was
+swept and reworded to match, not just the pricing card itself.
+
+**Deliberately NOT renamed**: the underlying `add_notarization` fields
+key, the `RentShield: Notarization Add-on` CustomField, and the
+notarization pipeline's own tag vocabulary (`Being Notarized`,
+`Notarized`, `Notarization Failed`, etc.) are unchanged. None of these
+are customer-facing text -- the legal/chargeback risk this TODO named
+was specifically about what a paying customer reads and pays against,
+not internal Python identifiers, so renaming those would have been a
+large, blast-radius-heavy refactor (touching workflows.py's trigger
+conditions, custom-field bootstrapping, tag creation across multiple
+management commands) for no reduction in the actual risk.
+
+**Verified end-to-end, not just read**: a real Property Owner test
+account ran the full demo checkout with Certified E-Signature selected
+-- confirmed the Order's `amount_aed` (328 = 29 + 299) matches the
+generated Document's own `total_price_aed` custom field exactly, and
+confirmed that Document still picked up its `Pending Review` tag
+correctly (the confirmation gate, unaffected by the new payment layer).
+Separately confirmed a checkout attempt that only sets
+`add_real_notarization` is rejected with a clear 400 before any Order
+is even created. Confirmed a checkout request that fails validation
+creates no orphan Order row. Not verified: real Stripe Checkout Session
+creation or the real webhook path -- no live Stripe account/keys exist
+in this environment; that needs real or Stripe test-mode keys supplied
+before it can be exercised for real.
+
+## Notary-provider research scanner (2026-09-09)
+
+Built while researching whether any UAE notary service exposes a
+third-party API (the still-open question behind the `real_notarization`
+tier above) -- `documents/rentshield/notary_research/` is a small,
+recurring background check of a real, live-search-verified list of UAE
+notary and notice-delivery services (`targets.py`, 10 URLs: Dubai
+Courts' own Smart Electronic Notary, the UAE Ministry of Justice's
+E-Notary system, 7 private notary/notary-support services, and
+Emirates Post's Registered Email service) for any public sign of a
+developer/API/partner program. Runs daily (03:15 UTC by default,
+`PAPERLESS_RENTSHIELD_NOTARY_SCAN_CRON`) via
+`documents.tasks.run_notary_provider_scan_task`, and on demand via
+`manage.py scan_notary_providers`. Uses Scrapfly
+(`PAPERLESS_SCRAPFLY_API_KEY`, empty/no-op-safe like every other
+optional integration here) to fetch each page, diffs each scan against
+the previous one (a JSON snapshot per target under
+`DATA_DIR/notary_research/`, not a new database model -- this is
+exploratory research data, not product data), and emails
+`PAPERLESS_RENTSHIELD_NOTARY_RESEARCH_NOTIFY_EMAIL` only when a target
+shows a genuinely *new* signal, not on every run.
+
+**What the research already found, real and worth acting on directly**:
+no UAE notary service currently exposes a third-party API. Dubai
+Courts' and the Ministry of Justice's own e-notary systems both require
+the party themselves to verify via UAE Pass and complete a live video
+call -- a strong signal they may not be automatable by a SaaS on a
+landlord's behalf at all. The closest thing to a "notary API" found
+(e.g. OneNotary) is a US-based Remote Online Notarization platform, not
+valid under UAE Federal Decree-Law No. 20/2022. One private service,
+E-Notary Dubai (checked directly, not guessed), explicitly advertises
+"licensed notification service delivery" for eviction/legal notices
+specifically -- closer to this product's actual use case than a generic
+notary listing, and the better candidate for direct manual-partnership
+outreach than for API integration, since it doesn't expose one either.
+
+**A genuinely more promising lead, found from user-supplied source URLs
+(hhslawyers.com, poa.ae, idbooth.ae, emiratespost.ae), not this
+project's own search**: Emirates Post's Registered Email/Registered
+Digital Communication service is real, TRA-accredited, and produces
+legally admissible delivery certificates -- it's Article 25(3)'s
+"registered mail with acknowledgment of receipt" channel specifically,
+a genuinely recognized method (unlike certified e-signature, which
+isn't one of the three 25(3) channels at all). Emirates Post has a
+real, live developer API program ("EMX API", `developers.emx.ae`,
+`api@emx.ae`, sandbox at `tracking-stg.epservices.ae` /
+`local-stg.epservices.ae`) -- **confirmed on 2026-09-09** (via a
+publicly shared Postman collection plus the `developers.emx.ae`
+`/local.html` and `/faqs.html` docs pages) to cover **only** courier/
+parcel shipment: `CreateBooking`, `Tracking`, `Cancel`, label printing.
+No registered-email/registered-mail/legal-notice-delivery endpoint
+exists in that API today -- this closes the "not yet confirmed"
+question from the earlier finding. This is still the strongest lead
+found so far for automating a real, 25(3)-valid delivery channel, but
+it is now confirmed **not self-serve**: the real next step is direct
+manual outreach to `api@emx.ae` asking them to extend API access to
+the registered-email product specifically, not waiting on this scan or
+their public docs to change. A new FAQ entry on the landing page
+(`#faq`) tells visitors this option exists today (self-service via
+Emirates Post directly) while RentShield doesn't yet dispatch it on
+their behalf.
+
+The real next step this research points to is outreach, not more
+scraping.
+
+**Verified for real**: the keyword-matching and diff logic was verified
+against three simulated scan runs (mocked fetch, since no Scrapfly key
+exists in this environment) -- confirmed a baseline run reports nothing,
+a real change on one target is caught precisely, and a repeat scan with
+unchanged content does not re-report the same signal. Confirmed the
+no-key path no-ops cleanly (`manage.py scan_notary_providers` prints a
+clear message and exits 0, doesn't crash). Confirmed the notification
+email fires through the app's real configured mail backend when
+triggered. Not verified: the actual Scrapfly API or the real target
+sites -- needs a real `PAPERLESS_SCRAPFLY_API_KEY`.
+
+## Real Notary Public: human-fulfilled, not API-driven (2026-09-09)
+
+The `real_notarization` add-on (`documents/rentshield/pricing.py`) is
+now purchasable (`available: True`, was `False`). The decision behind
+it: with no UAE notary exposing a third-party API (confirmed, see the
+research above), the honest way to actually offer real notarization
+today is to have a real person fulfill it manually, the same way it
+worked before this feature existed -- and label it as exactly that, not
+dress it up as automated.
+
+**What's actually automated** (the small part that is): selecting this
+add-on at checkout tags the notice `Awaiting Notary Public`, sets
+`RentShield: Notary Public Status` to `pending`, and emails
+`PAPERLESS_RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL` (empty/unset is
+a no-op, same pattern as every other optional notify setting here) --
+see `documents/rentshield/service.py`'s `_notify_notary_fulfillment_requested()`,
+wired into `generate_and_consume()` next to the existing Legal Review
+add-on handling it mirrors exactly.
+
+**What's manual, deliberately** (everything past that email): the
+fulfiller -- a real notary-services contact, not an API -- works the
+`RentShield: Notary Public Queue` saved view
+(`manage.py create_rentshield_dashboards`, filtered to the `Awaiting
+Notary Public` tag, oldest first) entirely through paperless-ngx's own
+native document editor. No bespoke completion endpoint or Angular
+screen exists for this on purpose -- see `documents/rentshield/
+custom_fields.py`'s comment above `AWAITING_NOTARY_PUBLIC_TAG_NAME` for
+why: the old Lawyer role's object-permission-grant machinery was this
+project's biggest source of real bugs (see "Roles simplified" above),
+and there is no reason to rebuild anything like it for a single trusted
+back-office user. She:
+
+1. Opens a notice from the queue, reads the notice details (already
+   visible as custom fields -- landlord/tenant/reason/date).
+2. Does the actual physical notarization herself, exactly as before.
+3. Uploads the scanned/stamped notarized copy as a normal document
+   (paperless-ngx's own stock uploader).
+4. On the original notice: links that upload via the `RentShield:
+   Notarized Copy` field (a `documentlink` CustomField -- paperless-ngx's
+   own document-picker widget, no custom UI needed), fills in
+   `RentShield: Notary Reference No.`, sets `RentShield: Notary Public
+   Status` to `completed` (or `rejected` with a note in `RentShield:
+   Notary Notes`), and swaps the `Awaiting Notary Public` tag for
+   `Notary Public Completed` (or `Notary Public Rejected`) herself.
+
+A demo staff/superuser account was created for this (`notary` --
+also the pre-role-simplification legacy account of the same name,
+upgraded to staff/superuser and taken out of the now-vestigial
+"Notary" group rather than left as a second, confusing account;
+credentials given directly to the user, not committed here) since
+paperless-ngx's own document-visibility queryset only bypasses
+ownership filtering for an active superuser, not merely `is_staff` --
+confirmed by reading `documents/permissions.py`'s
+`permitted_object_ids()`/`user_is_unrestricted()` before assuming
+otherwise.
+
+**Verified for real**: a real `generate_and_consume()` call with
+`add_real_notarization=True` tags the resulting Document `Awaiting
+Notary Public`, sets `notary_status="pending"`, and computes the
+correct total (29 + 599 = 628 AED) -- confirmed against a real Document
+row, then cleaned up. Confirmed via a real authenticated Django test
+client call to `POST /api/documents/notice/checkout/`: omitting
+`landlord_email` with this add-on selected returns 400 with the honest
+message, and a full valid request succeeds in demo mode (no Stripe key)
+and produces the same tag/field state. Not verified: the actual manual
+completion path (linking a notarized copy, flipping status/tags) --
+that's paperless-ngx's own already-shipped document editor, not new
+code, so there's nothing here to unit-test.
+
+## Notarization *is* service on the tenant, so completion now closes the loop (2026-09-11)
+
+A process audit (see the diagram artifact from this date) surfaced a
+real gap: nothing in this codebase ever delivered a notice to the
+tenant. Certified E-Signature certifies the landlord's side; Real
+Notary Public only attached a stamped copy and stopped. Both looked
+like "notarization" but neither actually served anyone.
+
+The fix isn't a new delivery pipeline -- it's recognizing what already
+exists: under Article 25(3) of Law No. (33) of 2008
+(`documents/rentshield/service_methods.py`), a notary-public visit
+**is** one of the three legally recognized ways to serve a tenancy
+notice. So the fulfiller completing a Real Notary Public request (the
+same manual edit in paperless-ngx's own document editor described
+above -- no new UI) now *is* the legal service event, not just a
+stamped-copy upload.
+
+`documents/rentshield/signals.py` (new) watches for that one
+transition -- `RentShield: Notary Public Status` flipping into
+`completed` or `rejected` -- via a plain `pre_save`/`post_save` pair on
+`CustomFieldInstance`, wired in `apps.py`'s `ready()`. A native
+paperless-ngx Workflow couldn't do this instead: its `EMAIL` action
+type's recipient is a fixed string set at workflow-config time, and its
+Jinja2 templating only exposes a fixed allowlist of Document attributes
+(`documents/templating/workflows.py`) -- neither can reach a
+per-document `landlord_email` CustomField value, which differs on every
+notice.
+
+On that transition:
+- **`completed`**: `RentShield: Served Date` (new CustomField,
+  `0031_rentshield_service_fields.py`) is stamped with today's date
+  automatically -- one less manual field for the fulfiller, since the
+  system already knows the moment it learns completion happened -- and
+  the landlord is emailed that their notice has been notarized and
+  legally served, with the reference number and served date.
+- **`rejected`**: the landlord is emailed that it could not be
+  notarized/served, with her notes.
+
+Both are `service.py`'s new `_notify_notice_served()` -- same
+fire-and-forget shape as `_notify_legal_review_requested()`/
+`_notify_notary_fulfillment_requested()`, but reading the recipient
+from the notice's own `landlord_email` field instead of a fixed
+`settings.*` address, since every notice has a different landlord.
+
+**Verified for real**: a real `CustomFieldInstance` save simulating the
+fulfiller's edit (pending -> completed) on a real demo Document stamps
+`served_date` and produces a real outbound email (DEBUG's
+filebased backend, `src/sent_emails/`) addressed to that document's own
+landlord, with the reference number and served date in the body;
+resaving `completed` again sends no duplicate; the `rejected` path was
+also confirmed to send the correct message and not stamp `served_date`.
+
+**Not done yet**: Certified E-Signature still doesn't map to any
+Article 25(3) service method (see its own entry below) -- that add-on
+certifies a signature, it doesn't serve anyone. Also not done: this
+only handles the manual per-instance `.save()` path (the document
+editor); paperless-ngx's separate bulk-edit-multiple-documents endpoint
+writes via `bulk_update()`, which bypasses Django signals entirely --
+irrelevant today since nobody bulk-completes notarizations, but worth
+knowing if that ever changes.
+
+**Correction (2026-09-12)**: the served_date/notify write above was
+originally run inline in the signal (even behind
+`transaction.on_commit()`) -- verified for real that this does NOT
+reliably persist through the actual DRF PATCH `/api/documents/<id>/`
+path the notary officer's browser uses: the write is visible to its own
+connection immediately after, then silently gone moments later, with
+nothing raising. Moved to a real Celery task
+(`documents.tasks.notify_notice_served_task`, dispatched from the same
+`on_commit` hook) -- same reasoning `run_ai_review_task`/
+`run_notarization_task` already give for keeping this class of work off
+a request's own transaction. Confirmed fixed via the real PATCH path,
+repeatedly.
+
+**Also discovered while chasing that (not a bug in the above -- a
+pre-existing API characteristic, documented here so nobody rediscovers
+it as a live incident)**: `documents/serialisers.py`'s
+`DocumentSerializer` treats a submitted `custom_fields` list as the
+*complete* desired set for that request -- any existing custom field
+not included gets removed. The real Angular editor is not exposed to
+this: `document-detail.component.ts`'s `getChangedFields()` submits
+`this.documentForm.get('custom_fields').value`, which is the *entire*
+FormArray's current value, not a diff. It only bites a caller that
+PATCHes a hand-built partial `custom_fields` array (exactly what my own
+verification scripts did, which is how this got noticed) -- worth
+knowing before anyone builds a script or third-party integration against
+this API expecting PATCH-style partial semantics on `custom_fields`.
+
+## Legal-compliance pass: the app's own researched legal logic wasn't all enforced (2026-09-12)
+
+Prompted by wanting the platform's process to actually follow Dubai
+tenancy law rather than just cite it, audited where this codebase's own
+already-researched legal knowledge (Article 25(3) service methods,
+per-reason notice periods and prerequisites) wasn't enforced by the real
+generate/serve path. Fixed the ones that were straightforward
+correctness bugs regardless of any product-policy question; left the
+ones that are genuine business decisions (see the "not done yet" note
+above about Certified E-Signature) for a human call.
+
+**The generated notice was asserting service before service happened.**
+`documents/rentshield/notice_builder.py` printed "Served via Notary
+Public" and "...in accordance with Article 25(3)" on *every* notice, in
+both languages, at generation time -- before any add-on, let alone
+actual service, occurred. Changed to state the requirement ("must be
+served... to take legal effect") instead of a false completed-action
+claim. This is a correctness fix, not a policy choice: a document
+asserting something happened before it happened is wrong regardless of
+which add-on strategy this project eventually settles on.
+
+**Ejari number was optional, but cited as if real.** Falls back to the
+literal placeholder `"[Ejari No.]"` in `notice_builder.py` if blank,
+printed straight into the "Ejari Contract No." line. Made required on
+both `notice-form.component.ts` (`Validators.required`) and
+`rentshield_views.py`'s `validate_notice_fields()` -- same pattern as
+`landlord_name`/`tenant_name`/`notice_date`.
+
+**Reason-specific legal warnings were informational only.** Every entry
+in `documents/rentshield/constants.py`'s `ALL_REASONS` carries a
+`warning` (e.g. demolition/renovation need an RDSC-presentable permit;
+personal-use carries a 2-year non-relet restriction) -- previously
+just displayed, never gated. Added `RentShield: Reason Requirements
+Acknowledged` (new CustomField, `0032_rentshield_reason_acknowledgment.py`),
+a required checkbox next to the warning box in `notice-form.component.html`
+that resets whenever the reason changes (each reason's warning is
+distinct), enforced again server-side in `validate_notice_fields()`.
+RentShield can't verify a government permit exists -- it can require the
+landlord to affirmatively represent that it does, recorded on the
+notice for the record, instead of silently assuming it.
+
+**The property owner is now told, plainly, when a notice isn't legally
+served.** `notice-form.component.html`'s post-generation screen and
+`document-detail.component.html`'s notice banner (extending the
+existing Real Notary Public guidance alert) both distinguish three
+states: legally served (green, with the served date), queued for Real
+Notary Public (info), or not legally served at all -- Certified
+E-Signature and the no-add-on path both fall into that last bucket, and
+now say so instead of implying otherwise. `pricing.py`'s Certified
+E-Signature description was also corrected to say outright that it does
+not satisfy Article 25(3) service.
+
+## Property-owner identity verification (2026-09-12)
+
+Real NFC passport-chip reading needs either a native app with hardware
+NFC access (iOS CoreNFC / Android NFC) or a physical PC/SC reader --
+researched several options (selfxyz/self, pypassport, JMRTD,
+tananaev/passport-reader, AppliedRecognition) and none fit a pure
+Angular + Django web app without either building a whole separate
+native app or asking every landlord to install a third-party wallet
+app first. Went with the practical alternative instead: camera-based
+MRZ/document capture + liveness + face match, via a self-hosted
+[Idswyft](https://github.com/team-idswyft/idswyft-community) instance
+-- MIT licensed, works entirely in-browser, no native app, no
+per-verification vendor fee.
+
+**New app: `documents/rentshield_identity/`** -- a real Django app
+with its own model (`IdentityVerification`, one row per user), not a
+Document/CustomField (same reasoning as `rentshield_billing`: this has
+to exist independently of any notice). `idswyft_client.py` mirrors
+`documents/rentshield/esign/docuseal_client.py`'s shape exactly (thin
+`requests` wrapper, env vars read directly, not through Django
+settings -- `IDSWYFT_BASE_URL`/`IDSWYFT_API_KEY`, unset is a deliberate
+"not configured" state).
+
+**Unlike Stripe's demo-mode fallback, an unconfigured Idswyft never
+fakes a pass.** `start_verification_view` returns a clear 503 instead
+-- faking a payment for demo purposes is fine, faking a KYC/identity
+result never is, even in a dev environment.
+
+**QR-code phone handoff**: a laptop webcam is a bad way to photograph
+a passport, so the frontend (`rentshield/identity-verification/`)
+renders the hosted verification URL as a QR code -- scan it with a
+phone, or use the "continue on this device" link if already on one.
+QR rendering uses `qrcode-generator` (MIT, zero runtime deps)
+**vendored directly as a `.js` file, not installed via npm**: this
+project's `node_modules` is actually pnpm-managed (`.pnpm` store
+layout), and running plain `npm install` against it hits a real
+npm/arborist bug (`Cannot read properties of null (reading 'matches')`)
+unrelated to the package being added -- confirmed by testing with
+`qrcode-generator` specifically, likely reproducible for any new npm
+dependency added this way. Use `pnpm add`, not `npm install`, next time
+a real dependency needs adding to `src-ui`.
+
+**Verified for real**: the backend end-to-end via a real Django test
+client, not just read -- and this caught two genuine bugs, not
+hypotheticals: (1) `start_verification_view` originally checked "is
+Idswyft configured" before checking "is this user already verified,"
+so an already-verified user got a spurious 503 on every subsequent
+visit -- reordered so an existing `verified` record short-circuits
+before the configuration check; (2) the same view unconditionally
+created a `pending` `IdentityVerification` row even when Idswyft wasn't
+configured, meaning a user who tried during an unconfigured window
+would show as permanently "pending" (implying progress that never
+started) -- moved the row creation to after the configuration check, so
+an unconfigured attempt leaves no misleading trace.
+
+**Frontend verified for real, on retry once memory freed up**: two
+initial build attempts were killed by the OS's OOM killer (this
+sandbox's memory was critically low -- under 700MB free, swap nearly
+full -- from the user's own Firefox/Chrome processes, not from
+anything this feature added); a `tsc --noEmit` type-check passed
+cleanly in the meantime as a lighter partial check. Once memory freed
+up, `ng build --configuration=dev-single-origin` completed cleanly, and
+a real Playwright pass confirmed: the sidebar link navigates correctly;
+the real "not configured" 503 renders as a plain, correct message with
+no leaked internal references (an earlier draft of the copy said "see
+the README," meaningless to an actual user -- caught in review, fixed
+before this pass); and, with the network boundary mocked at exactly the
+`/identity/verify/start//status/` endpoints (Idswyft itself still isn't
+deployed anywhere -- see below), the real QR code renders correctly via
+the vendored library, the "continue on this device" link carries the
+right URL, and the pending -> verified transition renders correctly
+after two poll ticks.
+
+**Update (2026-09-12, later the same day): idswyft-community actually
+deployed and tested against for real**, once memory freed up (cloned to
+`~/idswyft-community`, sibling to this repo, not inside it -- `docker
+compose up -d` with `SANDBOX_MODE=true`, port 8090; core services only
+run ~450MB combined, well under the `mem_limit` ceilings). This is what
+real testing is for: the README's documented API contract above turned
+out to be incomplete, and reading the actual backend source
+(`backend/src/routes/newVerification.ts`) surfaced three real bugs the
+"not configured" path could never have caught:
+
+1. **`POST /api/v2/verify/initialize` requires a `user_id` (UUID)** --
+   not mentioned anywhere in the README. `idswyft_client.py` wasn't
+   sending one at all, which would have 400'd against a real instance
+   every time. Fixed: `rentshield_user_uuid()` derives a stable
+   `uuid.uuid5()` from the Django user's own id -- deterministic, no new
+   stored field needed.
+2. **The initialize response's URL field is `verification_url`**, not
+   `hosted_url` -- `_hosted_url()`'s fallback chain already checked both,
+   now checks `verification_url` first since that's what's actually
+   returned.
+3. **`GET .../status`'s `status` field is the granular session step**
+   (`AWAITING_FRONT`, `FACE_MATCHING`, `COMPLETE`, ...), never one of
+   `IdentityVerification.Status`'s values -- the field that actually
+   means "verified/failed/manual_review" is `final_result`, which stays
+   `null` until the session completes. `get_verification_status()` now
+   reads that field and returns `None` while still in progress;
+   `verification_status_view` was fixed alongside it to treat `None` as
+   "leave the stored status alone," not a value to write.
+
+**Also fixed, in Idswyft's own deployment, not this repo**: its shipped
+`docker-compose.yml` never wired `FRONTEND_URL` through to the `api`
+service at all, so the backend guessed the verification page's origin
+from request headers and produced a URL missing the port
+(`http://localhost/user-verification...` instead of `:8090`) -- added
+the env passthrough and set `FRONTEND_URL` in `.env`.
+
+**Verified for real, the whole way through**: a real authenticated
+call to `POST /api/documents/identity/verify/start/` against the live
+Idswyft instance returns a genuine `verification_id` and a working
+`hosted_url`; the real Angular page renders a real QR code pointing at
+it; following that link lands on Idswyft's actual hosted verification
+page (screenshotted) offering its own "scan QR to continue on your
+phone" / "continue on this device" choice -- confirming the whole chain
+from RentShield's UI through to Idswyft's real API and back is sound,
+not just individually mocked pieces.
+
+**Still not done**: this Idswyft deployment is local-sandbox-only (a
+sibling directory, not committed, not on a real server) and was
+created with a LIVE-type API key, not a sandbox key -- a full
+document-upload + selfie + face-match run would invoke the real
+PaddleOCR/TensorFlow pipeline (~1.5GB spike) and wasn't exercised, since
+that needs real passport-photo images this environment doesn't have.
+Webhook signature verification is also still not implemented
+(undocumented scheme) -- `verification_status_view`'s active polling is
+the real, relied-upon path regardless.
+
+## Identity verification moved fully in-platform (2026-09-12, later still)
+
+Three real user reports drove this round, in order:
+
+**1. "Still spinning" after logging back in.** Root cause: the status
+endpoint never returned the session's `hosted_url`, so a reload had
+nothing to redraw the QR from -- just a permanent spinner with no way
+out. Fixed as part of the bigger change below (redrawing is now moot;
+resuming re-fetches the right capture step instead).
+
+**2. Wanted a reset button.** `start_verification_view` already allowed
+starting a fresh session over an existing pending one (only blocks on
+already-`verified`), so `reset()` in the Angular component is just
+`start()` again -- no new backend logic needed, just a button that was
+missing from the UI.
+
+**3. Wanted Idswyft fully white-labeled as RentShield, not a redirect
+to a separate branded page.** Checked: idswyft-community's hosted
+verification page can't be white-labeled without their paid enterprise
+plan. Rather than accept that branding, rebuilt the flow to use
+Idswyft purely as a backend API -- the photo capture and selfie now
+happen directly inside RentShield's own `identity-verification` page
+(native `<input type="file" capture="environment/user">`, which opens
+the phone's camera directly, or a file picker on desktop -- no custom
+camera UI needed, no new dependency). The property owner never sees
+Idswyft's name or leaves RentShield's page. The old QR-code/redirect
+approach is gone entirely, and with it `vendor-qrcode.js`/`.d.ts` --
+deleted rather than left as dead code.
+
+**New backend contract, verified against real source again** (`backend/
+src/routes/newVerification.ts`), not assumed from docs:
+- `create_verification_session()` now always requests
+  `verification_mode: "identity"` -- the default "full" mode expects a
+  back-page document upload, which doesn't exist for a passport
+  (single-sided); "identity" mode's flow (front document -> live
+  capture -> face match -> complete) is the one that actually fits.
+- Two new endpoints, `upload_front_document_view`/
+  `upload_live_capture_view`, forward the photo/selfie as multipart
+  uploads (`document`/`selfie` field names, confirmed from source) to
+  Idswyft's `POST .../front-document` and `POST .../live-capture`.
+  Both can hard-reject on their own (bad document, no face detected) --
+  both responses are checked for `final_result` and written to the
+  stored status immediately, not just left for the next poll. This
+  closes the same "stuck forever" failure mode as fix #1, at both
+  points it could actually occur, not just the one already reported.
+- `verification_status_view` now also returns Idswyft's granular
+  session step (`AWAITING_FRONT`, `AWAITING_LIVE`, ...), which is what
+  lets the frontend resume at the correct capture step after a reload
+  instead of losing its place.
+
+**Verified for real, the whole way through, including actual ML
+inference**: generated two synthetic test images (a plain rectangle
+with drawn text standing in for a passport photo, a plain oval standing
+in for a selfie) and ran them through the real flow via Playwright.
+The engine's real OCR genuinely read the drawn text back
+(`full_name: "SAMPLE TEST"` from "Surname: TEST" / "Given Names:
+SAMPLE") and advanced the session correctly to `AWAITING_LIVE`; the
+selfie step correctly `HARD_REJECTED` (no real face in a plain oval)
+and the UI correctly showed the failure state with a working retry --
+confirming the full real pipeline (multipart upload, real OCR, real
+face-match, status write-back, UI transition) end to end, not a mocked
+approximation of it. Confirmed "Idswyft" appears nowhere in RentShield's
+own rendered page.
+
+**Still not done**: the front-document hard-reject path (fix, not yet
+independently re-tested with a real forced rejection -- it mirrors the
+already-proven live-capture handling exactly, but wasn't separately
+exercised this round). No liveness challenge (head-turn/blink) is
+requested -- Idswyft's "identity" flow doesn't require one, a single
+selfie is enough for its own liveness+face-match analysis.
+
+## Admin identity-verification review page + evidence retention (2026-09-12, later still)
+
+The property owner's uploaded passport photo and selfie were being
+forwarded to Idswyft and then discarded on RentShield's own side --
+Idswyft never returns them once processed, so there was no way for
+staff to review what was actually submitted. Fixed by having RentShield
+keep its own copy:
+
+- `IdentityVerification` gained `passport_photo`/`selfie_photo`
+  (`FileField`) plus `latitude`/`longitude`/`location_accuracy_m`
+  (migration `0002_verification_evidence`). Both upload views now save
+  the raw bytes locally (`ContentFile`, since the upload stream is
+  already consumed by the time Idswyft's own upload needs the same
+  bytes) before forwarding to Idswyft, and record the browser's
+  geolocation (captured once via `navigator.geolocation` when
+  verification starts -- evidence of where it happened, never a gate on
+  the result; a denied/unsupported permission is a normal, silently
+  accepted outcome).
+- `MEDIA_URL` was entirely undefined in this project's settings
+  (paperless-ngx's own Document storage doesn't route through Django's
+  standard static-file serving) -- added, plus DEBUG-only media serving
+  in `urls.py`, so the new evidence files are actually fetchable.
+- New `IsRentshieldAdmin` permission (`is_staff` alone, matching the
+  frontend's own `permissionsService.isAdmin()` -- not `is_superuser`)
+  gates a new `GET /api/documents/identity/verify/admin/list/`
+  (`admin_views.py`), returning every verification with its
+  photo URLs, status, and location.
+- New admin-only nav item ("Identity Verification Admin",
+  gated the same `*ngIf="permissionsService.isAdmin()"` way as the
+  existing Notary Guide link) opens `identity-admin`: passport/selfie
+  thumbnails side by side, status badge, provider, and a link to an
+  OpenStreetMap pin when location was captured.
+
+**Verified for real**: ran a full upload cycle (front-document +
+geolocation, then selfie) through the live API with synthetic test
+images, confirmed the admin list returned correct JSON with
+downloadable (200) photo URLs, and confirmed a non-admin account gets a
+real `403` from the same endpoint (not a 401/redirect). Rebuilt the
+Angular frontend and drove it with Playwright as a real logged-in
+admin: nav link present, page renders the real record with its
+thumbnails/status/location link; logged in as a non-admin property
+owner and confirmed the nav link is absent and the endpoint 403s.
+Cleaned up the synthetic test records/tokens afterward.
+
+**External repos evaluated, not adopted this round**: the user shared
+six repos (ballerine-io/ballerine, two Faceplugin-ltd repos,
+jumbojett/OpenID-Connect-PHP, CCCpan/Gebaini, FaceOnLive/
+ID-Verification-OpenKYC) hoping one would make verification "more
+efficient." None replace anything currently in use: the two
+Faceplugin-ltd repos and FaceOnLive are marketing funnels for paid
+closed-source SDKs (empty implementation folders, license-gated
+binaries, sales contact links) rather than usable open-source
+libraries; ballerine's admin case-review UI is real but the project
+self-describes as "undergoing a major rebuild and not actively
+supported," and would replace, not complement, the admin page built
+above on this project's own Django/Angular stack; jumbojett's OIDC
+client and Gebaini aren't identity-verification tools at all. If a
+genuine face-match step independent of Idswyft is ever needed (e.g.
+matching an NFC chip photo against a selfie), CompreFace
+(exadel-inc/compreface) is the one real, mature, self-hostable
+candidate identified so far.
+
+**Known, deliberate limitation, explained to the user three times this
+session**: Face ID/Android biometric unlock and NFC passport-chip
+reading are both real, but neither can be combined the way "scan a QR
+code to trigger the phone's Face ID and match it against the passport
+chip" implies. No app or website on any platform -- iOS or Android --
+can read a raw biometric signal from the OS's Face ID/fingerprint APIs;
+they only return a yes/no "the device owner unlocked this," which
+proves nothing about a passport. A QR code doesn't change this -- it
+only opens a link, and whatever loads is still bound by the same OS
+rule. Real NFC chip reading (BAC/PACE per ICAO 9303) does need a native
+app (there is no browser API for it on any platform), which is what
+`/home/giova/RentShieldPassportReader/` (a working, compiled Android
+app using JMRTD) was built for earlier this session -- but the user has
+since said they don't want property owners downloading an APK, so that
+native app is parked, not integrated, pending a decision on that
+tradeoff.
+
+## AI pre-screening for Notary review, and a real Celery infra bug found along the way (2026-09-13)
+
+First of three requested Claude-powered features (pre-screening the
+identity-verification queue, real LLM compliance reasoning on notices,
+a support chatbot) -- built this one completely, the other two are
+still to come. Confirmed first that no Claude/Anthropic integration
+existed anywhere in this codebase already: the existing "AI Compliance
+Review" add-on (`documents.rentshield.service.run_ai_review`) is a
+deterministic citation-graph/rules engine, not an LLM call.
+
+`documents/rentshield_identity/ai_prescreen.py` calls Claude (official
+`anthropic` SDK, `claude-opus-5` by default -- this project's own Claude
+API guidance says default to Opus and let the user trade down for cost
+themselves) with everything the automated pipeline already gathered --
+OCR-vs-chip cross-check, both independent face-match scores, Idswyft's
+own result -- and asks for a short advisory summary, explicitly
+prompted to never make or imply a verify/reject decision. Dispatched as
+a Celery task (`run_identity_prescreen_task`) from `upload_video_view`
+right when a verification reaches `AWAITING_NOTARY_REVIEW`, so the
+summary is usually ready before a Notary even opens the record. Shown
+in the review dashboard clearly labeled "AI pre-screen (advisory only
+-- not a decision)" -- it never sets `status`; only a human still can.
+A missing `ANTHROPIC_API_KEY` (nothing is configured yet -- this needs
+a real key from the user's own Anthropic Console account, not
+something that can be generated the way Idswyft's secrets were) or any
+API error just leaves the summary blank, same "advisory extra, never a
+pipeline blocker" pattern as the chip-vs-selfie face match.
+
+**Real bug found and fixed verifying this for real**: dispatching the
+new task failed with `SignedPickleError: HMAC verification failed`
+against a genuinely different Celery worker process, not a bug in the
+new code. Root cause: `paperless.signed_pickle` signs task messages
+with `settings.SECRET_KEY`, but the long-running dev Django server was
+originally started with an explicit `PAPERLESS_SECRET_KEY=devsecretkey`
+override on its command line, inherited across every autoreload restart
+since (Django's autoreload re-execs preserving the process's existing
+environment, and python-dotenv's `load_dotenv()` never overrides an
+already-set variable) -- while a freshly started Celery worker picked
+up `paperless.conf`'s different on-disk value instead. Two processes,
+two different signing keys, guaranteed mismatch on every task, not just
+this one -- meaning any other `.delay()` call in this app (notice-served
+notifications, the existing AI-review task, notarization dispatch) hit
+in that window would have silently failed the same way. Fixed by
+restarting Celery with the same environment overrides the Django server
+already runs with; verified by watching the exact task succeed in the
+worker's own log afterward. No shared startup script exists yet to keep
+these two processes' environments in sync automatically -- worth adding
+if this dev setup persists.
 
 ## Not done yet (named, not silently skipped)

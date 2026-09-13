@@ -123,6 +123,14 @@ class IdentityVerification(models.Model):
     notary_reviewed_at = models.DateTimeField(null=True, blank=True)
     notary_notes = models.TextField(blank=True, default="")
 
+    # Claude-generated summary of the automated evidence, produced once
+    # a verification reaches AWAITING_NOTARY_REVIEW (ai_prescreen.py) --
+    # always shown labeled as AI-generated, never a decision: the Notary
+    # remains the only one who can set VERIFIED. Blank until the
+    # background task runs, and stays blank (not an error) if
+    # ANTHROPIC_API_KEY isn't configured -- see ai_prescreen.py.
+    ai_prescreen_summary = models.TextField(blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

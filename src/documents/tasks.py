@@ -899,3 +899,205 @@ def run_ai_review_task(document_id: int, use_deepseek_ocr: bool = False) -> dict
         return {"error": f"Document {document_id} does not exist"}
 
     return run_ai_review(document, use_deepseek_ocr=use_deepseek_ocr)
+
+
+@shared_task
+def run_notarization_task(document_id: int) -> dict:
+    """Async wrapper around documents.rentshield.service.request_notarization()
+    -- the same function the manual POST .../notarize/ endpoint calls --
+    dispatched from documents/rentshield_views.py's notarize_uploaded_view
+    (a Workflow webhook action, which paperless-ngx only allows 5 seconds
+    to respond). That Workflow ("RentShield: send confirmed notice to
+    notary") only fires once a Property Owner/Lawyer has reviewed a
+    notice with notarization requested and ticked its "Details Confirmed"
+    custom field -- see manage.py create_rentshield_workflows. Imports
+    done inside the task body to avoid a documents.tasks <->
+    documents.rentshield circular import at module load time.
+    """
+    from documents.models import Document
+    from documents.rentshield.service import request_notarization
+    from documents.rentshield.service import sync_notarization_stage_tag
+
+    try:
+        document = Document.objects.get(id=document_id)
+    except Document.DoesNotExist:
+        logger.warning("run_notarization_task: no such document %s", document_id)
+        return {"error": f"Document {document_id} does not exist"}
+
+    try:
+        result = request_notarization(document)
+    except Exception as exc:
+        logger.exception(
+            "run_notarization_task: notarization dispatch failed for document %s: %s",
+            document_id,
+            exc,
+        )
+        sync_notarization_stage_tag(document, "failed")
+        return {"error": str(exc)}
+
+    sync_notarization_stage_tag(document, result["status"])
+    return result
+
+
+@shared_task
+def notify_notice_served_task(document_id: int, status: str) -> dict:
+    """Async wrapper around documents.rentshield.service's served_date
+    stamping + _notify_notice_served() -- dispatched from documents/
+    rentshield/signals.py's on_commit hook rather than run inline there.
+    Verified for real that running this inline (even via
+    transaction.on_commit()) inside the CustomFieldInstance post_save
+    signal that fires mid-save of the "Notary Public Status" field does
+    NOT reliably persist: the write is visible to its own connection
+    immediately afterward but silently absent moments later, through the
+    exact same real DRF PATCH .../api/documents/<id>/ path the notary
+    officer's browser uses -- some ambient transaction state from that
+    request appears to roll it back after the fact, even though nothing
+    raises. A Celery task gets its own fresh connection/transaction with
+    nothing ambient to interact with, same reasoning as
+    run_ai_review_task/run_notarization_task above for keeping this off
+    the request's own transaction entirely. Imports done inside the task
+    body to avoid a documents.tasks <-> documents.rentshield circular
+    import at module load time.
+    """
+    from django.utils import timezone
+
+    from documents.models import Document
+    from documents.rentshield.service import _notify_notice_served
+    from documents.rentshield.service import _set_custom_field_value
+
+    try:
+        document = Document.objects.get(id=document_id)
+    except Document.DoesNotExist:
+        logger.warning("notify_notice_served_task: no such document %s", document_id)
+        return {"error": f"Document {document_id} does not exist"}
+
+    if status == "completed":
+        _set_custom_field_value(document, "served_date", timezone.now().date())
+    _notify_notice_served(document)
+    return {"document_id": document_id, "status": status}
+
+
+@shared_task
+def run_notary_provider_scan_task() -> dict:
+    """Scheduled daily (PAPERLESS_RENTSHIELD_NOTARY_SCAN_CRON, default
+    03:15) via CELERY_BEAT_SCHEDULE in paperless/settings/__init__.py --
+    runs documents.rentshield.notary_research.scanner.scan_all_targets()
+    and emails settings.RENTSHIELD_NOTARY_RESEARCH_NOTIFY_EMAIL only
+    when a target shows a NEW api/developer/integration signal it didn't
+    have last scan, not on every run. A no-op, logged not raised, when
+    SCRAPFLY_API_KEY isn't configured -- same graceful-degradation
+    pattern as every other optional external integration here.
+    """
+    from django.conf import settings
+    from django.core.mail import send_mail
+
+    if not settings.SCRAPFLY_API_KEY:
+        logger.debug("run_notary_provider_scan_task: SCRAPFLY_API_KEY is unset -- skipping.")
+        return {"skipped": "SCRAPFLY_API_KEY not configured"}
+
+    from documents.rentshield.notary_research.scanner import scan_all_targets
+
+    result = scan_all_targets()
+    logger.info(
+        "run_notary_provider_scan_task: scanned %s target(s), %s error(s), %s new signal(s)",
+        len(result["scanned"]),
+        len(result["errors"]),
+        len(result["new_signals"]),
+    )
+
+    recipient = settings.RENTSHIELD_NOTARY_RESEARCH_NOTIFY_EMAIL
+    if result["new_signals"] and recipient:
+        lines = [
+            f"- {entry['name']} ({entry['url']}): {', '.join(entry['new_keywords'])}"
+            for entry in result["new_signals"]
+        ]
+        try:
+            send_mail(
+                subject="RentShield: new notary-provider API signal found",
+                message=(
+                    "The notary-provider research scan found new mentions of "
+                    "possible API/developer/integration access on:\n\n"
+                    + "\n".join(lines)
+                    + "\n\nWorth a manual look before assuming anything -- "
+                    "these are keyword matches, not confirmed API access."
+                ),
+                from_email=None,
+                recipient_list=[recipient],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception(
+                "run_notary_provider_scan_task: failed to send notification email to %r",
+                recipient,
+            )
+
+    return result
+
+
+@shared_task
+def finalize_paid_notice_task(order_id: int) -> dict:
+    """Async wrapper around documents.rentshield_billing.views.finalize_paid_order()
+    -- dispatched from stripe_webhook_view once a real Stripe payment is
+    confirmed, so the webhook handler itself doesn't block on notice
+    generation (same reasoning as run_ai_review_task/
+    run_notarization_task being dispatched from their own webhook
+    views). Imports done inside the task body to avoid a documents.tasks
+    <-> documents.rentshield_billing circular import at module load time.
+    """
+    from documents.rentshield_billing.models import Order
+    from documents.rentshield_billing.views import finalize_paid_order
+
+    try:
+        order = Order.objects.get(id=order_id)
+    except Order.DoesNotExist:
+        logger.warning("finalize_paid_notice_task: no such order %s", order_id)
+        return {"error": f"Order {order_id} does not exist"}
+
+    try:
+        finalize_paid_order(order)
+    except Exception as exc:
+        logger.exception(
+            "finalize_paid_notice_task: notice generation failed for paid order %s: %s",
+            order_id,
+            exc,
+        )
+        order.status = order.Status.FAILED
+        order.save(update_fields=["status"])
+        return {"error": str(exc)}
+
+    return {"order_id": order.id, "document_id": order.document_id}
+
+
+@shared_task
+def run_identity_prescreen_task(verification_id: int) -> dict:
+    """Async wrapper around documents.rentshield_identity.ai_prescreen.
+    summarize_for_notary() -- dispatched from documents/rentshield_identity/
+    views.py's upload_video_view right after a verification reaches
+    AWAITING_NOTARY_REVIEW, so the AI summary is usually already sitting
+    there by the time a Notary opens it, without making their own request
+    wait on an LLM call. Never blocks or fails the pipeline itself: a
+    missing ANTHROPIC_API_KEY or any API error just leaves
+    ai_prescreen_summary blank, same "advisory only" pattern as the
+    chip-vs-selfie face match. Imports done inside the task body to avoid
+    a documents.tasks <-> documents.rentshield_identity circular import
+    at module load time, same reasoning as this file's other tasks.
+    """
+    from documents.rentshield_identity.ai_prescreen import AiPrescreenError
+    from documents.rentshield_identity.ai_prescreen import summarize_for_notary
+    from documents.rentshield_identity.models import IdentityVerification
+
+    try:
+        record = IdentityVerification.objects.get(id=verification_id)
+    except IdentityVerification.DoesNotExist:
+        logger.warning("run_identity_prescreen_task: no such verification %s", verification_id)
+        return {"error": f"IdentityVerification {verification_id} does not exist"}
+
+    try:
+        summary = summarize_for_notary(record)
+    except AiPrescreenError as exc:
+        logger.warning("run_identity_prescreen_task: skipped for verification %s: %s", verification_id, exc)
+        return {"skipped": str(exc)}
+
+    record.ai_prescreen_summary = summary
+    record.save(update_fields=["ai_prescreen_summary", "updated_at"])
+    return {"verification_id": verification_id, "summary": summary}

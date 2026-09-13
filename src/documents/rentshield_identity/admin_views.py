@@ -59,6 +59,7 @@ def admin_list_verifications_view(request):
                     "notary_reviewed_by": record.notary_reviewed_by.username if record.notary_reviewed_by else None,
                     "notary_reviewed_at": record.notary_reviewed_at,
                     "notary_notes": record.notary_notes,
+                    "ai_prescreen_summary": record.ai_prescreen_summary,
                     "created_at": record.created_at,
                     "updated_at": record.updated_at,
                 }
