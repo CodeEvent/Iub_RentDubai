@@ -90,7 +90,17 @@
 
     @if (status() === 'verified') {
       <div class="alert alert-success d-flex align-items-center gap-2 mb-0">
-        <i-bs name="patch-check"></i-bs> Identity verified.
+        <span class="badge text-bg-success d-inline-flex align-items-center gap-1">
+          <i-bs name="patch-check"></i-bs> Verified
+        </span>
+        Your identity has been verified.
+      </div>
+    }
+
+    @if (status() === 'awaiting_notary_review') {
+      <div class="alert alert-info d-flex align-items-center gap-2 mb-0">
+        <i-bs name="hourglass-split"></i-bs> Your documents and video have been submitted -- a
+        Notary Public is reviewing them. You'll get an email once that's done.
       </div>
     }
 

@@ -23,6 +23,18 @@ import { AdminVerificationRecord, RentshieldApiService } from '../services/rents
 // non-staff-only Notary account wouldn't see the nav link even though
 // the backend would let them act. Fix: thread a real is_notary_public
 // flag through UiSettings the same way is_staff already is.
+// Fields the Notary can correct on the review page before deciding --
+// keys match views.py's _NOTARY_EDITABLE_FIELDS, prefixed `edit_` on
+// the wire (see confirmIdentityVerification/rejectIdentityVerification).
+const EDITABLE_FIELDS = [
+  'card_ocr_full_name',
+  'card_ocr_date_of_birth',
+  'card_ocr_document_number',
+  'chip_full_name',
+  'chip_date_of_birth',
+  'chip_document_number',
+] as const
+
 @Component({
   selector: 'app-identity-admin',
   standalone: true,
@@ -36,13 +48,31 @@ export class IdentityAdminComponent {
   records = signal<AdminVerificationRecord[]>([])
   loading = signal(true)
   error = signal<string | null>(null)
+  showAll = signal(false)
   reviewNotes: Record<number, string> = {}
+  // record id -> field name -> edited value, seeded from the record's
+  // own OCR/chip values so the inputs start showing what's already
+  // there, not blank boxes the Notary has to retype from scratch.
+  editValues: Record<number, Record<string, string>> = {}
   busyIds = signal<Set<number>>(new Set())
 
   constructor() {
-    this.api.getIdentityVerificationAdminList().subscribe({
+    this.loadRecords()
+  }
+
+  loadRecords(): void {
+    this.loading.set(true)
+    this.error.set(null)
+    this.api.getIdentityVerificationAdminList(this.showAll()).subscribe({
       next: (res) => {
         this.records.set(res.results)
+        for (const record of res.results) {
+          if (this.isReviewable(record) && !this.editValues[record.id]) {
+            this.editValues[record.id] = Object.fromEntries(
+              EDITABLE_FIELDS.map((field) => [field, record[field] || ''])
+            )
+          }
+        }
         this.loading.set(false)
       },
       error: (err) => {
@@ -50,6 +80,11 @@ export class IdentityAdminComponent {
         this.error.set(err?.error?.error || err?.message || 'Could not load verification records.')
       },
     })
+  }
+
+  toggleShowAll(): void {
+    this.showAll.set(!this.showAll())
+    this.loadRecords()
   }
 
   statusClass(status: string): string {
@@ -80,24 +115,34 @@ export class IdentityAdminComponent {
     return this.busyIds().has(id)
   }
 
+  private editsFor(id: number): Record<string, string> {
+    const values = this.editValues[id] || {}
+    return Object.fromEntries(Object.entries(values).map(([field, value]) => [`edit_${field}`, value]))
+  }
+
   confirm(record: AdminVerificationRecord): void {
     this.setBusy(record.id, true)
-    this.api.confirmIdentityVerification(record.id, this.reviewNotes[record.id] || '').subscribe({
-      next: (res) => this.applyReviewResult(record, res.status),
-      error: (err) => this.handleReviewError(record.id, err),
-    })
+    this.api
+      .confirmIdentityVerification(record.id, this.reviewNotes[record.id] || '', this.editsFor(record.id))
+      .subscribe({
+        next: (res) => this.applyReviewResult(record, res.status),
+        error: (err) => this.handleReviewError(record.id, err),
+      })
   }
 
   reject(record: AdminVerificationRecord): void {
     this.setBusy(record.id, true)
-    this.api.rejectIdentityVerification(record.id, this.reviewNotes[record.id] || '').subscribe({
-      next: (res) => this.applyReviewResult(record, res.status),
-      error: (err) => this.handleReviewError(record.id, err),
-    })
+    this.api
+      .rejectIdentityVerification(record.id, this.reviewNotes[record.id] || '', this.editsFor(record.id))
+      .subscribe({
+        next: (res) => this.applyReviewResult(record, res.status),
+        error: (err) => this.handleReviewError(record.id, err),
+      })
   }
 
   private applyReviewResult(record: AdminVerificationRecord, status: string): void {
     record.status = status
+    Object.assign(record, this.editValues[record.id])
     this.setBusy(record.id, false)
   }
 

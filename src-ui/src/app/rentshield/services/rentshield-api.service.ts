@@ -445,29 +445,42 @@ export class RentshieldApiService {
   }
 
   // Admin-only review list (documents/rentshield_identity/admin_views.py)
-  // -- every user's verification, their submitted passport photo and
-  // selfie, result, and where it was performed.
-  getIdentityVerificationAdminList(): Observable<{ results: AdminVerificationRecord[] }> {
+  // -- defaults to only the records actually awaiting a Notary's
+  // review; pass includeAll to see the full history instead.
+  getIdentityVerificationAdminList(
+    includeAll = false
+  ): Observable<{ results: AdminVerificationRecord[] }> {
     return this.http.get<{ results: AdminVerificationRecord[] }>(
-      `${this.base}documents/identity/verify/admin/list/`
+      `${this.base}documents/identity/verify/admin/list/`,
+      { params: includeAll ? { status: 'all' } : {} }
     )
   }
 
   // Notary Public review actions (documents/rentshield_identity/views.py's
   // notary_confirm_view/notary_reject_view) -- the only path that ever
   // sets a verification to "verified"; see IdentityVerification's own
-  // docstring on why the automated result alone no longer does.
-  confirmIdentityVerification(id: number, notes: string): Observable<{ status: string }> {
+  // docstring on why the automated result alone no longer does. `edits`
+  // carries any OCR/chip field corrections the reviewer made on the
+  // page, keyed as `edit_<field>` (see views.py's _NOTARY_EDITABLE_FIELDS).
+  confirmIdentityVerification(
+    id: number,
+    notes: string,
+    edits: Record<string, string> = {}
+  ): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(
       `${this.base}documents/identity/verify/notary/${id}/confirm/`,
-      { notes }
+      { notes, ...edits }
     )
   }
 
-  rejectIdentityVerification(id: number, notes: string): Observable<{ status: string }> {
+  rejectIdentityVerification(
+    id: number,
+    notes: string,
+    edits: Record<string, string> = {}
+  ): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(
       `${this.base}documents/identity/verify/notary/${id}/reject/`,
-      { notes }
+      { notes, ...edits }
     )
   }
 

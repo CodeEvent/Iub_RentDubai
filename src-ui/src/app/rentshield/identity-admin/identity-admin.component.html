@@ -1,8 +1,13 @@
 <div class="rs-panel" style="max-width: 64rem">
   <div class="rs-panel-body d-flex flex-column gap-3">
-    <h3 class="fs-6 fw-bold mb-0 d-flex align-items-center gap-2">
-      <i-bs name="shield-check" class="text-muted"></i-bs> Identity Verification -- Review
-    </h3>
+    <div class="d-flex align-items-center justify-content-between gap-2">
+      <h3 class="fs-6 fw-bold mb-0 d-flex align-items-center gap-2">
+        <i-bs name="shield-check" class="text-muted"></i-bs> Identity Verification -- Review
+      </h3>
+      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="toggleShowAll()">
+        {{ showAll() ? 'Show needs-review only' : 'Show all history' }}
+      </button>
+    </div>
 
     @if (loading()) {
       <p class="text-muted small mb-0 d-flex align-items-center gap-2">
@@ -15,7 +20,9 @@
     }
 
     @if (!loading() && records().length === 0) {
-      <p class="text-muted small mb-0">No verifications submitted yet.</p>
+      <p class="text-muted small mb-0">
+        {{ showAll() ? 'No verifications submitted yet.' : 'Nothing needs review right now.' }}
+      </p>
     }
 
     @for (record of records(); track record.id) {
@@ -73,18 +80,39 @@
         </div>
 
         <div class="row small g-2">
-          <div class="col-md-6">
-            <div class="fw-semibold text-muted">Card photo OCR</div>
-            <div>Name: {{ record.card_ocr_full_name || '--' }}</div>
-            <div>DOB: {{ record.card_ocr_date_of_birth || '--' }}</div>
-            <div>Doc #: {{ record.card_ocr_document_number || '--' }}</div>
-          </div>
-          <div class="col-md-6">
-            <div class="fw-semibold text-muted">NFC chip read</div>
-            <div>Name: {{ record.chip_full_name || '--' }}</div>
-            <div>DOB: {{ record.chip_date_of_birth || '--' }}</div>
-            <div>Doc #: {{ record.chip_document_number || '--' }}</div>
-          </div>
+          @if (isReviewable(record) && editValues[record.id]) {
+            <div class="col-md-6">
+              <div class="fw-semibold text-muted mb-1">Card photo OCR (editable)</div>
+              <input class="form-control form-control-sm mb-1" placeholder="Name"
+                [(ngModel)]="editValues[record.id]['card_ocr_full_name']" />
+              <input class="form-control form-control-sm mb-1" placeholder="Date of birth"
+                [(ngModel)]="editValues[record.id]['card_ocr_date_of_birth']" />
+              <input class="form-control form-control-sm" placeholder="Document #"
+                [(ngModel)]="editValues[record.id]['card_ocr_document_number']" />
+            </div>
+            <div class="col-md-6">
+              <div class="fw-semibold text-muted mb-1">NFC chip read (editable)</div>
+              <input class="form-control form-control-sm mb-1" placeholder="Name"
+                [(ngModel)]="editValues[record.id]['chip_full_name']" />
+              <input class="form-control form-control-sm mb-1" placeholder="Date of birth"
+                [(ngModel)]="editValues[record.id]['chip_date_of_birth']" />
+              <input class="form-control form-control-sm" placeholder="Document #"
+                [(ngModel)]="editValues[record.id]['chip_document_number']" />
+            </div>
+          } @else {
+            <div class="col-md-6">
+              <div class="fw-semibold text-muted">Card photo OCR</div>
+              <div>Name: {{ record.card_ocr_full_name || '--' }}</div>
+              <div>DOB: {{ record.card_ocr_date_of_birth || '--' }}</div>
+              <div>Doc #: {{ record.card_ocr_document_number || '--' }}</div>
+            </div>
+            <div class="col-md-6">
+              <div class="fw-semibold text-muted">NFC chip read</div>
+              <div>Name: {{ record.chip_full_name || '--' }}</div>
+              <div>DOB: {{ record.chip_date_of_birth || '--' }}</div>
+              <div>Doc #: {{ record.chip_document_number || '--' }}</div>
+            </div>
+          }
         </div>
 
         <div class="row small g-2">

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from dateutil import parser as dateutil_parser
 from django.core.files.base import ContentFile
+from django.core.mail import send_mail
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.decorators import permission_classes
@@ -425,6 +426,80 @@ def upload_video_view(request):
     return Response({"status": record.status})
 
 
+# The only fields a Notary can correct on the review page -- the OCR/
+# chip text RentShield itself already populated, never `status` or any
+# photo/video (those come from the pipeline, not a reviewer's own
+# input). Posted as `edit_<field>` so they can't collide with `notes`.
+_NOTARY_EDITABLE_FIELDS = (
+    "card_ocr_full_name", "card_ocr_date_of_birth", "card_ocr_document_number",
+    "chip_full_name", "chip_date_of_birth", "chip_document_number",
+)
+
+
+def _apply_notary_edits(record: IdentityVerification, data) -> list[str]:
+    """Lets the Notary fix an OCR/chip misread right on the review page
+    before deciding, instead of confirming/rejecting a record she can
+    see is wrong with no way to correct it. Recomputes
+    identity_mismatch_notes afterward since an edit can resolve (or
+    introduce) a mismatch."""
+    changed = []
+    for field in _NOTARY_EDITABLE_FIELDS:
+        key = f"edit_{field}"
+        if key not in data:
+            continue
+        max_length = record._meta.get_field(field).max_length
+        setattr(record, field, (data.get(key) or "").strip()[:max_length])
+        changed.append(field)
+    if changed:
+        record.identity_mismatch_notes = _check_identity_mismatch(record)
+        changed.append("identity_mismatch_notes")
+    return changed
+
+
+def _notify_identity_verification_result(record: IdentityVerification) -> None:
+    """Fire-and-forget email to the property owner once the Notary
+    Public reaches a final decision -- same "log and swallow, never
+    block the real action" pattern as
+    documents.rentshield.service._notify_notice_served. Deliberately
+    silent no-op when the account has no email on file."""
+    recipient = record.user.email
+    if not recipient:
+        logger.debug(
+            "Verification %s reached a final decision but user %s has no "
+            "email on file -- skipping notification.",
+            record.id, record.user_id,
+        )
+        return
+
+    if record.status == IdentityVerification.Status.VERIFIED:
+        subject = "RentShield: Your identity has been verified"
+        message = (
+            "Good news -- a Notary Public has reviewed your identity "
+            "verification and confirmed it. Your account is now marked "
+            "as verified.\n\n"
+        )
+    else:
+        subject = "RentShield: Your identity verification was not approved"
+        message = (
+            "A Notary Public has reviewed your identity verification and "
+            "could not approve it. You can start a new verification from "
+            "your account and try again.\n\n"
+        )
+    if record.notary_notes:
+        message += f"Notes from the reviewer: {record.notary_notes}\n"
+
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=None,  # falls back to settings.DEFAULT_FROM_EMAIL
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("Failed to send identity verification result email to %r", recipient)
+
+
 @api_view(["POST"])
 @permission_classes([IsNotaryPublic])
 def notary_confirm_view(request, verification_id):
@@ -438,11 +513,15 @@ def notary_confirm_view(request, verification_id):
     record = _get_reviewable_record_or_error(verification_id)
     if isinstance(record, Response):
         return record
+    edited_fields = _apply_notary_edits(record, request.data)
     record.status = IdentityVerification.Status.VERIFIED
     record.notary_reviewed_by = request.user
     record.notary_reviewed_at = timezone.now()
     record.notary_notes = (request.data.get("notes") or "")[:2000]
-    record.save(update_fields=["status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"])
+    record.save(
+        update_fields=[*edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"],
+    )
+    _notify_identity_verification_result(record)
     return Response({"status": record.status})
 
 
@@ -457,11 +536,15 @@ def notary_reject_view(request, verification_id):
     record = _get_reviewable_record_or_error(verification_id)
     if isinstance(record, Response):
         return record
+    edited_fields = _apply_notary_edits(record, request.data)
     record.status = IdentityVerification.Status.FAILED
     record.notary_reviewed_by = request.user
     record.notary_reviewed_at = timezone.now()
     record.notary_notes = (request.data.get("notes") or "")[:2000]
-    record.save(update_fields=["status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"])
+    record.save(
+        update_fields=[*edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"],
+    )
+    _notify_identity_verification_result(record)
     return Response({"status": record.status})
 
 

@@ -24,12 +24,19 @@ from documents.rentshield_identity.models import IdentityVerification
 @api_view(["GET"])
 @permission_classes([IsRentshieldAdmin | IsNotaryPublic])
 def admin_list_verifications_view(request):
-    """GET /api/documents/identity/verify/admin/list/ -- every
-    verification record, newest first. File URLs are relative
-    (MEDIA_URL-based, same as any other Django FileField) -- the
-    frontend resolves them against the API host, same as it does for
-    paperless-ngx's own document thumbnail URLs elsewhere in this app."""
+    """GET /api/documents/identity/verify/admin/list/ -- by default only
+    the records actually needing a Notary's attention (status
+    AWAITING_NOTARY_REVIEW), newest first -- showing every record
+    regardless of status made the queue useless once more than a
+    handful of users had verified/failed already. Pass ?status=all to
+    see the full history instead (e.g. to look back at a past
+    decision). File URLs are relative (MEDIA_URL-based, same as any
+    other Django FileField) -- the frontend resolves them against the
+    API host, same as it does for paperless-ngx's own document
+    thumbnail URLs elsewhere in this app."""
     records = IdentityVerification.objects.select_related("user", "notary_reviewed_by").order_by("-updated_at")
+    if request.GET.get("status") != "all":
+        records = records.filter(status=IdentityVerification.Status.AWAITING_NOTARY_REVIEW)
     return Response(
         {
             "results": [
