@@ -103,4 +103,21 @@ dependencies {
     // real/latest against Google's Maven repo directly (dl.google.com),
     // not guessed.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
+    // In-app camera for the confirmation video specifically (the card
+    // photo/selfie steps still use the plain MediaStore.ACTION_*_CAPTURE
+    // intents above -- no reason to change those). The video step needs
+    // to show the sentence the user must read ON SCREEN while recording,
+    // which the system camera app's own UI can't be made to display --
+    // CameraX's Recorder/VideoCapture is the real, supported way to get
+    // a live preview with our own overlay drawn on top. 1.4.2, not the
+    // newer 1.6.x line -- 1.6.2 pulls in a media3 dependency that
+    // requires compileSdk 35 + AGP 8.6.0, and this project is pinned to
+    // compileSdk 34 / AGP 8.5.2 (real build failure hit trying 1.6.2).
+    // All CameraX artifacts must share one version regardless.
+    implementation("androidx.camera:camera-core:1.4.2")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-video:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
 }

@@ -10,6 +10,8 @@ import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.view.View
 import android.widget.Button
@@ -19,9 +21,19 @@ import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
+import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -31,6 +43,7 @@ import org.jmrtd.AccessKeySpec
 import org.jmrtd.BACKey
 import org.jmrtd.PACEKeySpec
 import java.io.File
+import java.util.Calendar
 
 /**
  * Full flow: sign in -> Face ID/fingerprint gate (confirms phone
@@ -44,7 +57,12 @@ import java.io.File
  */
 class MainActivity : AppCompatActivity() {
 
-    private enum class CaptureKind { CARD_PHOTO, SELFIE, VIDEO }
+    // VIDEO is deliberately not here anymore -- it's recorded in-app via
+    // CameraX (see section_video_record) instead of the plain camera
+    // intent this enum still drives for the other two capture kinds,
+    // specifically so the confirmation sentence can be shown on screen
+    // while recording (the system camera app's own UI can't display it).
+    private enum class CaptureKind { CARD_PHOTO, SELFIE }
 
     private lateinit var api: RentShieldApiClient
 
@@ -61,6 +79,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var buttonSelfie: Button
     private lateinit var buttonVideo: Button
     private lateinit var buttonDone: Button
+    private lateinit var sectionVideoRecord: View
+    private lateinit var videoPreviewView: PreviewView
+    private lateinit var videoPromptOverlay: TextView
+    private lateinit var buttonRecordToggle: Button
 
     // Pending NFC read request, set once "Ready to scan" is tapped and
     // consumed in onNewIntent when the actual tap happens.
@@ -69,6 +91,18 @@ class MainActivity : AppCompatActivity() {
 
     private var pendingCaptureFile: File? = null
     private var pendingCaptureKind: CaptureKind? = null
+
+    // Read straight off the NFC chip's own MRZ (onChipReadSuccess) -- the
+    // cryptographically signed data, not the (sometimes incomplete, see
+    // idswyft-community's own name-matching bug fixed this session)
+    // card-photo OCR -- used to build the sentence the user reads aloud
+    // on the confirmation video.
+    private var verifiedFullName: String = ""
+    private var verifiedAgeYears: Int? = null
+
+    private var videoCapture: VideoCapture<Recorder>? = null
+    private var activeRecording: Recording? = null
+    private val recordingHandler = Handler(Looper.getMainLooper())
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
@@ -79,7 +113,6 @@ class MainActivity : AppCompatActivity() {
             when (kind) {
                 CaptureKind.CARD_PHOTO -> onCardPhotoCaptured(file.readBytes())
                 CaptureKind.SELFIE -> onSelfieCaptured(file.readBytes())
-                CaptureKind.VIDEO -> onVideoCaptured(file.readBytes())
             }
         } else {
             statusText.text = "Capture was cancelled -- try again."
@@ -102,8 +135,14 @@ class MainActivity : AppCompatActivity() {
         buttonSelfie = findViewById(R.id.button_selfie)
         buttonVideo = findViewById(R.id.button_video)
         buttonDone = findViewById(R.id.button_done)
+        sectionVideoRecord = findViewById(R.id.section_video_record)
+        videoPreviewView = findViewById(R.id.video_preview)
+        videoPromptOverlay = findViewById(R.id.video_prompt_overlay)
+        buttonRecordToggle = findViewById(R.id.button_record_toggle)
 
-        permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION))
+        permissionLauncher.launch(
+            arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO),
+        )
 
         findViewById<Button>(R.id.button_scan_pairing_qr).setOnClickListener { onScanPairingQrClicked() }
         findViewById<Button>(R.id.button_biometric).setOnClickListener { runBiometricGate() }
@@ -115,7 +154,8 @@ class MainActivity : AppCompatActivity() {
         buttonCardPhoto.setOnClickListener { launchCamera(CaptureKind.CARD_PHOTO) }
         buttonScan.setOnClickListener { onScanClicked() }
         buttonSelfie.setOnClickListener { launchCamera(CaptureKind.SELFIE) }
-        buttonVideo.setOnClickListener { launchVideoCamera() }
+        buttonVideo.setOnClickListener { showVideoInstructionsThenRecord() }
+        buttonRecordToggle.setOnClickListener { onRecordToggleClicked() }
         buttonDone.setOnClickListener { resetToBiometricGate() }
 
         resumeSessionIfAvailable()
@@ -404,6 +444,13 @@ class MainActivity : AppCompatActivity() {
         sectionDocument.visibility = View.GONE
         statusText.text = "Checking chip details against your card photo…"
         val fullName = "${result.firstName} ${result.lastName}".trim()
+        // Kept for the confirmation-video sentence -- the chip's own MRZ
+        // is the most authoritative name/DOB source on-device (see
+        // README's 2026-09-13 note on the OCR name-matching bug fixed
+        // in idswyft-community itself), more reliable than re-deriving
+        // this from a server round-trip.
+        verifiedFullName = fullName
+        verifiedAgeYears = ageFromMrzDateOfBirth(result.dateOfBirth)
         api.submitChipData(fullName, result.dateOfBirth, result.documentNumber, result.photoBytes, result.photoMimeType) { chipResult ->
             runOnUiThread {
                 chipResult.onSuccess {
@@ -416,6 +463,27 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    // MRZ dates of birth are 2-digit years (YYMMDD) -- the standard ICAO
+    // century rule: a year greater than the current two-digit year is
+    // assumed to be the previous century (nobody's MRZ DOB is in the
+    // future), otherwise this century.
+    private fun ageFromMrzDateOfBirth(yyMMdd: String): Int? {
+        if (yyMMdd.length != 6 || !yyMMdd.all { it.isDigit() }) return null
+        val yy = yyMMdd.substring(0, 2).toInt()
+        val month = yyMMdd.substring(2, 4).toInt()
+        val day = yyMMdd.substring(4, 6).toInt()
+        val now = Calendar.getInstance()
+        val currentTwoDigitYear = now.get(Calendar.YEAR) % 100
+        val century = if (yy > currentTwoDigitYear) 1900 else 2000
+        val birthYear = century + yy
+        var age = now.get(Calendar.YEAR) - birthYear
+        val birthdayAlreadyPassedThisYear =
+            (now.get(Calendar.MONTH) + 1 > month) ||
+                (now.get(Calendar.MONTH) + 1 == month && now.get(Calendar.DAY_OF_MONTH) >= day)
+        if (!birthdayAlreadyPassedThisYear) age -= 1
+        return age
     }
 
     // MARK: -- Selfie (Idswyft matches this against the card photo)
@@ -443,28 +511,108 @@ class MainActivity : AppCompatActivity() {
     }
 
     // MARK: -- Confirmation video (reviewed by a Notary Public within 24h)
+    //
+    // Recorded in-app via CameraX, not the plain video-capture intent the
+    // card photo/selfie steps still use: the user must be shown, ON
+    // SCREEN, the exact sentence to read aloud while recording -- only a
+    // live in-app preview can display an overlay like that; the system
+    // camera app's own UI is opaque to this process. Requested
+    // explicitly: informed with the sentence BEFORE recording starts
+    // (the dialog below), and shown the same sentence again as an
+    // overlay WHILE recording (videoPromptOverlay).
 
-    private fun launchVideoCamera() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            toast("Camera permission is required to record the confirmation video.")
-            permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+    private fun confirmationSentence(): String {
+        val age = verifiedAgeYears?.toString() ?: "my age"
+        val name = verifiedFullName.ifBlank { "my name" }
+        return "Hi, I'm $name and I'm $age years old."
+    }
+
+    private fun showVideoInstructionsThenRecord() {
+        AlertDialog.Builder(this)
+            .setTitle("Before you record")
+            .setMessage(
+                "You'll record a short video to confirm your identity. Please read the " +
+                    "following sentence aloud, clearly, while looking at the camera " +
+                    "(it'll stay on screen the whole time):\n\n\"${confirmationSentence()}\"",
+            )
+            .setCancelable(false)
+            .setPositiveButton("I'm ready") { _, _ -> startVideoRecordingUi() }
+            .show()
+    }
+
+    private fun startVideoRecordingUi() {
+        buttonVideo.visibility = View.GONE
+        sectionVideoRecord.visibility = View.VISIBLE
+        videoPromptOverlay.text = confirmationSentence()
+        buttonRecordToggle.visibility = View.VISIBLE
+        buttonRecordToggle.text = "Start Recording"
+
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener(
+            {
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(videoPreviewView.surfaceProvider)
+                }
+                val recorder = Recorder.Builder().build()
+                videoCapture = VideoCapture.withOutput(recorder)
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        this, CameraSelector.DEFAULT_FRONT_CAMERA, preview, videoCapture,
+                    )
+                } catch (e: Exception) {
+                    toast("Could not start the camera: ${e.message}")
+                }
+            },
+            ContextCompat.getMainExecutor(this),
+        )
+    }
+
+    private fun onRecordToggleClicked() {
+        val capture = videoCapture ?: return
+        if (activeRecording != null) {
+            activeRecording?.stop()
+            activeRecording = null
             return
         }
+
+        val hasAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            toast("Camera permission is required to record.")
+            permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+            return
+        }
+
         val dir = File(cacheDir, "videos").apply { mkdirs() }
         val file = File(dir, "confirmation_${System.currentTimeMillis()}.mp4")
-        pendingCaptureFile = file
-        pendingCaptureKind = CaptureKind.VIDEO
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
-            putExtra(MediaStore.EXTRA_OUTPUT, uri)
-            putExtra(MediaStore.EXTRA_DURATION_LIMIT, 20) // a couple of sentences, not a monologue
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        val outputOptions = FileOutputOptions.Builder(file).build()
+        var recording = capture.output.prepareRecording(this, outputOptions)
+        if (hasAudio) recording = recording.withAudioEnabled()
+        activeRecording = recording.start(ContextCompat.getMainExecutor(this)) { event ->
+            if (event is VideoRecordEvent.Finalize) {
+                runOnUiThread {
+                    sectionVideoRecord.visibility = View.GONE
+                    buttonRecordToggle.visibility = View.GONE
+                    if (!event.hasError()) {
+                        onVideoCaptured(file.readBytes())
+                    } else {
+                        toast("Recording failed: ${event.cause?.message ?: "unknown error"}")
+                        buttonVideo.visibility = View.VISIBLE
+                    }
+                }
+            }
         }
-        cameraLauncher.launch(intent)
+        buttonRecordToggle.text = "Stop Recording"
+        // A couple of sentences, not a monologue -- same limit the old
+        // intent-based capture enforced via EXTRA_DURATION_LIMIT.
+        recordingHandler.postDelayed({
+            activeRecording?.stop()
+            activeRecording = null
+        }, 20_000)
     }
 
     private fun onVideoCaptured(videoBytes: ByteArray) {
-        buttonVideo.visibility = View.GONE
         statusText.text = "Uploading video…"
         api.uploadVideo(videoBytes) { result ->
             runOnUiThread {
@@ -521,11 +669,16 @@ class MainActivity : AppCompatActivity() {
         pendingCaptureKind = null
         pendingPaceKey = null
         pendingBacFallback = null
+        activeRecording?.stop()
+        activeRecording = null
+        videoCapture = null
         buttonCardPhoto.visibility = View.VISIBLE
         buttonScan.visibility = View.GONE
         buttonSelfie.visibility = View.GONE
         buttonVideo.visibility = View.GONE
         buttonDone.visibility = View.GONE
+        sectionVideoRecord.visibility = View.GONE
+        buttonRecordToggle.visibility = View.GONE
         photoPreview.setImageDrawable(null)
         statusText.text = ""
         sectionDocument.visibility = View.GONE

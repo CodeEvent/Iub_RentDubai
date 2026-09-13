@@ -187,6 +187,44 @@
         android:text="4. Record a short confirmation video (2 sentences)"
         android:visibility="gone" />
 
+    <!-- In-app video recording, replacing the plain camera intent used
+         for the card photo/selfie: the required sentence has to be
+         shown ON SCREEN while recording, which only a live in-app
+         preview (CameraX) can do; the system camera app's own UI
+         can't be made to display it. -->
+    <FrameLayout
+        android:id="@+id/section_video_record"
+        android:layout_width="match_parent"
+        android:layout_height="360dp"
+        android:layout_marginTop="16dp"
+        android:visibility="gone">
+
+        <androidx.camera.view.PreviewView
+            android:id="@+id/video_preview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/video_prompt_overlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="#AA000000"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:padding="12dp"
+            android:text="" />
+    </FrameLayout>
+
+    <Button
+        android:id="@+id/button_record_toggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Start Recording"
+        android:visibility="gone" />
+
     <Button
         android:id="@+id/button_done"
         android:layout_width="wrap_content"
