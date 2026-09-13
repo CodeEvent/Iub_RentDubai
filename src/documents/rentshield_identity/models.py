@@ -121,15 +121,27 @@ class IdentityVerification(models.Model):
     # below needs to see and weigh.
     identity_mismatch_notes = models.TextField(blank=True, default="")
 
-    # A second, independent ID document (e.g. a driving licence, a
-    # national ID, a second passport) -- a plain photo upload, no NFC/
-    # OCR pipeline of its own, requested explicitly as extra supporting
-    # evidence on top of the primary document above rather than a
-    # replacement for it. `additional_id_type` is free text (what kind
-    # of document this is) since there's no fixed list of acceptable
-    # secondary documents to constrain it to.
-    additional_id_type = models.CharField(max_length=100, blank=True, default="")
-    additional_id_photo = models.FileField(upload_to="rentshield_identity/additional_ids/", blank=True, null=True)
+    class AdditionalIdType(models.TextChoices):
+        DRIVING_LICENCE = "driving_licence", "Driving Licence"
+        NATIONAL_ID = "national_id", "National ID Card"
+        RESIDENCE_VISA = "residence_visa", "Residence Visa"
+        SECOND_PASSPORT = "second_passport", "Second Passport"
+        OTHER = "other", "Other ID document"
+
+    # A second, independent ID document (e.g. a driving licence) --
+    # requested explicitly as a MANDATORY pipeline step (2026-09-13,
+    # superseding the earlier optional web upload), never the same
+    # document type as the primary one above (pairing_views.py's
+    # _validate_declared_document already establishes that), and always
+    # front AND back -- a single photo isn't enough evidence for a
+    # document this project has no OCR/NFC pipeline for. App-only: there
+    # is no web UI for this any more, since it has to happen at a
+    # specific point in the app's own pipeline (right after the NFC
+    # read -- see views.py's upload_additional_id_view), not whenever a
+    # browser happens to be open.
+    additional_id_type = models.CharField(max_length=32, choices=AdditionalIdType.choices, blank=True, default="")
+    additional_id_photo_front = models.FileField(upload_to="rentshield_identity/additional_ids/", blank=True, null=True)
+    additional_id_photo_back = models.FileField(upload_to="rentshield_identity/additional_ids/", blank=True, null=True)
 
     # Idswyft's own final_result (verified/failed/manual_review) --
     # kept as reference context for the Notary reviewer, distinct from

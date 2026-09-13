@@ -514,36 +514,64 @@ def _notify_notary_queue(record: IdentityVerification) -> None:
             logger.exception("Failed to send Notary queue notification email to %r", recipient)
 
 
+# Which additional-document type is disallowed for a given primary
+# declared_document_type -- the additional document must never be the
+# same kind as the primary one (requested explicitly: "the second one
+# must not be the passport" when the primary already is one). CIE's
+# analog is "national_id": a CIE is functionally a national ID card, so
+# submitting "National ID Card" as the additional document alongside a
+# CIE primary would be the same redundancy in different words.
+_DISALLOWED_ADDITIONAL_FOR_PRIMARY = {
+    "passport": IdentityVerification.AdditionalIdType.SECOND_PASSPORT,
+    "cie": IdentityVerification.AdditionalIdType.NATIONAL_ID,
+}
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upload_additional_id_view(request):
     """POST /api/documents/identity/verify/additional-id/ -- a second,
-    independent ID document (driving licence, national ID, a second
-    passport, ...) as extra supporting evidence for the Notary,
-    requested explicitly as a plain photo upload with no NFC/OCR
-    pipeline of its own -- unlike the primary document, this is never
-    cross-checked or used to gate anything, and can be added at any
-    point (before, during, or after the main flow) since it doesn't
-    depend on it. Available from the web directly, not just the app --
-    there's no chip to read, so there's no reason to require the native
-    app for this one."""
+    independent ID document (driving licence, national ID, ...) as a
+    MANDATORY pipeline step (2026-09-13, superseding the earlier
+    optional web upload) -- front AND back, never the same document
+    type as the primary. App-only: enforced here by requiring the NFC
+    chip read to have already succeeded (chip_full_name is only ever
+    set by submit_chip_data_view), the exact point in the pipeline this
+    step now belongs right after -- there is no way to reach this from
+    the web any more, since the web has no NFC step to sequence
+    after."""
     try:
         record = request.user.rentshield_identity_verification
     except IdentityVerification.DoesNotExist:
         return Response({"error": "Start identity verification first."}, status=400)
 
-    uploaded = request.FILES.get("photo")
-    if not uploaded:
-        return Response({"error": "A photo of the additional ID document is required."}, status=400)
+    if not record.chip_full_name:
+        return Response({"error": "Tap your primary document for the NFC read first."}, status=400)
 
-    id_type = (request.data.get("id_type") or "").strip()[:100]
-    if not id_type:
-        return Response({"error": "Say what kind of document this is (e.g. \"Driving licence\")."}, status=400)
+    id_type = (request.data.get("id_type") or "").strip()
+    valid_types = dict(IdentityVerification.AdditionalIdType.choices)
+    if id_type not in valid_types:
+        return Response({"error": "Choose a valid document type."}, status=400)
+    if id_type == _DISALLOWED_ADDITIONAL_FOR_PRIMARY.get(record.declared_document_type):
+        return Response({"error": "Your additional document can't be the same type as your primary document."}, status=400)
 
-    file_bytes, content_type = idswyft_client.normalize_image_for_idswyft(uploaded.read(), uploaded.content_type)
-    record.additional_id_photo.save(_filename_for_content_type(uploaded.name, content_type), ContentFile(file_bytes), save=False)
+    front = request.FILES.get("photo_front")
+    back = request.FILES.get("photo_back")
+    if not front or not back:
+        return Response({"error": "Photos of both the front and back of the document are required."}, status=400)
+
+    front_bytes, front_content_type = idswyft_client.normalize_image_for_idswyft(front.read(), front.content_type)
+    back_bytes, back_content_type = idswyft_client.normalize_image_for_idswyft(back.read(), back.content_type)
+    record.additional_id_photo_front.save(
+        _filename_for_content_type(front.name, front_content_type), ContentFile(front_bytes), save=False,
+    )
+    record.additional_id_photo_back.save(
+        _filename_for_content_type(back.name, back_content_type), ContentFile(back_bytes), save=False,
+    )
     record.additional_id_type = id_type
-    record.save(update_fields=["additional_id_photo", "additional_id_type", "updated_at"])
+    record.save(
+        update_fields=["additional_id_photo_front", "additional_id_photo_back", "additional_id_type", "updated_at"],
+    )
     return Response({"status": "ok"})
 
 
@@ -699,7 +727,10 @@ def _reset_verification(record: IdentityVerification) -> None:
     fresh QR this reset is meant to force."""
     from documents.rentshield_identity.models import DevicePairingCode
 
-    for field in (record.passport_photo, record.selfie_photo, record.chip_photo, record.video, record.additional_id_photo):
+    for field in (
+        record.passport_photo, record.selfie_photo, record.chip_photo, record.video,
+        record.additional_id_photo_front, record.additional_id_photo_back,
+    ):
         if field:
             field.delete(save=False)
 

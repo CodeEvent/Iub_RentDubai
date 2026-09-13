@@ -92,7 +92,13 @@ def admin_list_verifications_view(request):
                     "video_url": record.video.url if record.video else None,
                     "chip_photo_url": record.chip_photo.url if record.chip_photo else None,
                     "additional_id_type": record.additional_id_type,
-                    "additional_id_photo_url": record.additional_id_photo.url if record.additional_id_photo else None,
+                    "additional_id_type_label": record.get_additional_id_type_display() if record.additional_id_type else "",
+                    "additional_id_photo_front_url": (
+                        record.additional_id_photo_front.url if record.additional_id_photo_front else None
+                    ),
+                    "additional_id_photo_back_url": (
+                        record.additional_id_photo_back.url if record.additional_id_photo_back else None
+                    ),
                     "chip_selfie_match_score": record.chip_selfie_match_score,
                     "latitude": record.latitude,
                     "longitude": record.longitude,

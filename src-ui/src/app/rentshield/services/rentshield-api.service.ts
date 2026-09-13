@@ -121,7 +121,9 @@ export interface AdminVerificationRecord {
   video_url: string | null
   chip_photo_url: string | null
   additional_id_type: string
-  additional_id_photo_url: string | null
+  additional_id_type_label: string
+  additional_id_photo_front_url: string | null
+  additional_id_photo_back_url: string | null
   chip_selfie_match_score: number | null
   latitude: number | null
   longitude: number | null
@@ -455,17 +457,6 @@ export class RentshieldApiService {
 
   getDevicePairingStatus(): Observable<{ status: string | null }> {
     return this.http.get<{ status: string | null }>(`${this.base}documents/identity/pair/status/`)
-  }
-
-  // A second, independent ID document (driving licence, national ID, a
-  // second passport, ...) as extra supporting evidence for the Notary
-  // -- a plain photo upload, no NFC/OCR pipeline, available directly
-  // from the web since there's no chip to read for this one.
-  uploadAdditionalId(file: File, idType: string): Observable<{ status: string }> {
-    const formData = new FormData()
-    formData.append('photo', file)
-    formData.append('id_type', idType)
-    return this.http.post<{ status: string }>(`${this.base}documents/identity/verify/additional-id/`, formData)
   }
 
   private appendGeolocation(formData: FormData, position: GeolocationPosition | null): void {

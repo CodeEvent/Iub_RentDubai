@@ -60,16 +60,6 @@ export class IdentityVerificationComponent implements OnDestroy {
   expiryDate = ''
   can = ''
 
-  // A second, independent ID document as extra evidence for the
-  // Notary -- a plain photo upload, no NFC/OCR pipeline, so it doesn't
-  // need the app and can be added any time the main flow has at least
-  // been started (there has to be an IdentityVerification row for it
-  // to attach to).
-  additionalIdType = ''
-  additionalIdUploading = signal(false)
-  additionalIdUploaded = signal(false)
-  additionalIdError = signal<string | null>(null)
-
   readonly stepLabels = STEP_LABELS
 
   private statusPollSubscription?: Subscription
@@ -234,26 +224,5 @@ export class IdentityVerificationComponent implements OnDestroy {
           this.statusPollSubscription?.unsubscribe()
         }
       })
-  }
-
-  onAdditionalIdFileSelected(event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0]
-    if (!file) return
-    if (!this.additionalIdType.trim()) {
-      this.additionalIdError.set('Say what kind of document this is first (e.g. "Driving licence").')
-      return
-    }
-    this.additionalIdUploading.set(true)
-    this.additionalIdError.set(null)
-    this.api.uploadAdditionalId(file, this.additionalIdType.trim()).subscribe({
-      next: () => {
-        this.additionalIdUploading.set(false)
-        this.additionalIdUploaded.set(true)
-      },
-      error: (err) => {
-        this.additionalIdUploading.set(false)
-        this.additionalIdError.set(err?.error?.error || err?.message || 'Could not upload that document -- try again.')
-      },
-    })
   }
 }

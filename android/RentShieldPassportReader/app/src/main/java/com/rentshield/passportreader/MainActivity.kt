@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity() {
     // intent this enum still drives for the other two capture kinds,
     // specifically so the confirmation sentence can be shown on screen
     // while recording (the system camera app's own UI can't display it).
-    private enum class CaptureKind { CARD_PHOTO, SELFIE, ADDITIONAL_ID }
+    private enum class CaptureKind { CARD_PHOTO, SELFIE, ADDITIONAL_ID_FRONT, ADDITIONAL_ID_BACK }
 
     private lateinit var api: RentShieldApiClient
 
@@ -85,8 +85,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoPromptOverlay: TextView
     private lateinit var buttonRecordToggle: Button
     private lateinit var sectionAdditionalId: View
-    private lateinit var inputAdditionalIdType: EditText
-    private lateinit var buttonAdditionalId: Button
+    private lateinit var radioAdditionalIdType: RadioGroup
+    private lateinit var buttonAdditionalIdFront: Button
+    private lateinit var buttonAdditionalIdBack: Button
+    private lateinit var buttonAdditionalIdContinue: Button
+
+    // Which primary document type the user declared on the web -- kept
+    // to filter the additional-document choices (never the same type
+    // as the primary, see applyAdditionalIdTypeFilter()).
+    private var primaryDocumentType: String = "passport"
+    private var additionalIdFrontBytes: ByteArray? = null
+    private var additionalIdBackBytes: ByteArray? = null
     private lateinit var buttonSignOut: Button
     private lateinit var sectionStepHeader: View
     private lateinit var stepLabel: TextView
@@ -121,7 +130,8 @@ class MainActivity : AppCompatActivity() {
             when (kind) {
                 CaptureKind.CARD_PHOTO -> onCardPhotoCaptured(file.readBytes())
                 CaptureKind.SELFIE -> onSelfieCaptured(file.readBytes())
-                CaptureKind.ADDITIONAL_ID -> onAdditionalIdPhotoCaptured(file.readBytes())
+                CaptureKind.ADDITIONAL_ID_FRONT -> onAdditionalIdFrontCaptured(file.readBytes())
+                CaptureKind.ADDITIONAL_ID_BACK -> onAdditionalIdBackCaptured(file.readBytes())
             }
         } else {
             statusText.text = "Capture was cancelled -- try again."
@@ -149,8 +159,10 @@ class MainActivity : AppCompatActivity() {
         videoPromptOverlay = findViewById(R.id.video_prompt_overlay)
         buttonRecordToggle = findViewById(R.id.button_record_toggle)
         sectionAdditionalId = findViewById(R.id.section_additional_id)
-        inputAdditionalIdType = findViewById(R.id.input_additional_id_type)
-        buttonAdditionalId = findViewById(R.id.button_additional_id)
+        radioAdditionalIdType = findViewById(R.id.radio_additional_id_type)
+        buttonAdditionalIdFront = findViewById(R.id.button_additional_id_front)
+        buttonAdditionalIdBack = findViewById(R.id.button_additional_id_back)
+        buttonAdditionalIdContinue = findViewById(R.id.button_additional_id_continue)
         buttonSignOut = findViewById(R.id.button_sign_out)
         sectionStepHeader = findViewById(R.id.section_step_header)
         stepLabel = findViewById(R.id.step_label)
@@ -174,7 +186,10 @@ class MainActivity : AppCompatActivity() {
         buttonVideo.setOnClickListener { showVideoInstructionsThenRecord() }
         buttonRecordToggle.setOnClickListener { onRecordToggleClicked() }
         buttonDone.setOnClickListener { resetToBiometricGate() }
-        buttonAdditionalId.setOnClickListener { onAdditionalIdClicked() }
+        buttonAdditionalIdFront.setOnClickListener { launchCamera(CaptureKind.ADDITIONAL_ID_FRONT) }
+        buttonAdditionalIdBack.setOnClickListener { launchCamera(CaptureKind.ADDITIONAL_ID_BACK) }
+        buttonAdditionalIdContinue.setOnClickListener { onAdditionalIdContinueClicked() }
+        radioAdditionalIdType.setOnCheckedChangeListener { _, _ -> updateAdditionalIdContinueEnabled() }
 
         resumeSessionIfAvailable()
     }
@@ -227,7 +242,6 @@ class MainActivity : AppCompatActivity() {
         )
         sectionLogin.visibility = View.GONE
         sectionBiometric.visibility = View.VISIBLE
-        sectionAdditionalId.visibility = View.VISIBLE
         buttonSignOut.visibility = View.VISIBLE
         updateStep(1, "Confirm it's you")
     }
@@ -235,7 +249,7 @@ class MainActivity : AppCompatActivity() {
     // "Where am I" indicator -- the flow has no sense of progress
     // otherwise, one of the concrete UX gaps raised directly: "each
     // steps must be more userfriendly and intuitive".
-    private fun updateStep(step: Int, label: String, total: Int = 6) {
+    private fun updateStep(step: Int, label: String, total: Int = 7) {
         sectionStepHeader.visibility = View.VISIBLE
         stepLabel.text = "Step $step of $total -- $label"
         stepProgress.max = total
@@ -294,7 +308,6 @@ class MainActivity : AppCompatActivity() {
                     prefillDeclaredDocument(it.declared)
                     sectionLogin.visibility = View.GONE
                     sectionBiometric.visibility = View.VISIBLE
-                    sectionAdditionalId.visibility = View.VISIBLE
                 }.onFailure { toast(it.message ?: "That code is invalid or expired -- get a new one on the website.") }
             }
         }
@@ -305,6 +318,8 @@ class MainActivity : AppCompatActivity() {
     // keyboard instead of asking for them again from scratch here. The
     // web's date inputs are ISO (YYYY-MM-DD); BACKey needs yyMMdd.
     private fun prefillDeclaredDocument(declared: DeclaredDocument) {
+        primaryDocumentType = declared.documentType
+        applyAdditionalIdTypeFilter()
         if (declared.documentType == "cie") {
             findViewById<RadioGroup>(R.id.radio_document_type).check(R.id.radio_cie)
             findViewById<EditText>(R.id.input_can).setText(declared.can)
@@ -314,6 +329,27 @@ class MainActivity : AppCompatActivity() {
             findViewById<EditText>(R.id.input_date_of_birth).setText(isoDateToYyMMdd(declared.dateOfBirth))
             findViewById<EditText>(R.id.input_expiration_date).setText(isoDateToYyMMdd(declared.expiryDate))
         }
+    }
+
+    // The additional document can never be the same type as the primary
+    // one (requested explicitly, enforced again server-side -- see
+    // views.py's _DISALLOWED_ADDITIONAL_FOR_PRIMARY): hides whichever
+    // radio option would be redundant given what was just declared.
+    private fun applyAdditionalIdTypeFilter() {
+        // Real bug caught before it shipped: without resetting every
+        // option to visible first, signing out and back in with a
+        // DIFFERENT primary type (e.g. CIE, then later Passport) would
+        // leave the previous session's hidden option still hidden on
+        // top of the new one -- down to 3 real choices instead of 4.
+        for (id in listOf(
+            R.id.radio_additional_driving_licence, R.id.radio_additional_national_id,
+            R.id.radio_additional_residence_visa, R.id.radio_additional_second_passport,
+            R.id.radio_additional_other,
+        )) {
+            findViewById<View>(id).visibility = View.VISIBLE
+        }
+        val disallowedId = if (primaryDocumentType == "cie") R.id.radio_additional_national_id else R.id.radio_additional_second_passport
+        findViewById<View>(disallowedId).visibility = View.GONE
     }
 
     private fun isoDateToYyMMdd(iso: String): String {
@@ -504,9 +540,9 @@ class MainActivity : AppCompatActivity() {
         api.submitChipData(fullName, result.dateOfBirth, result.documentNumber, result.photoBytes, result.photoMimeType) { chipResult ->
             runOnUiThread {
                 chipResult.onSuccess {
-                    statusText.text = "Chip read: $fullName. Now take a selfie."
-                    buttonSelfie.visibility = View.VISIBLE
-                    updateStep(4, "Take a selfie")
+                    statusText.text = "Chip read: $fullName. Now add a second ID document."
+                    sectionAdditionalId.visibility = View.VISIBLE
+                    updateStep(4, "Add a second ID document")
                 }
                 chipResult.onFailure {
                     statusText.text = it.message
@@ -553,7 +589,7 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             statusText.text = "Selfie submitted. Last step: record a short confirmation video."
                             buttonVideo.visibility = View.VISIBLE
-                            updateStep(5, "Record your confirmation video")
+                            updateStep(6, "Record your confirmation video")
                         }
                     }
                     result.onFailure { statusText.text = it.message }
@@ -598,7 +634,7 @@ class MainActivity : AppCompatActivity() {
         videoPromptOverlay.text = confirmationSentence()
         buttonRecordToggle.visibility = View.VISIBLE
         buttonRecordToggle.text = "Start Recording"
-        updateStep(6, "Recording your video")
+        updateStep(7, "Recording your video")
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(
@@ -678,29 +714,55 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // MARK: -- Additional ID (optional, plain photo, no NFC/OCR pipeline)
+    // MARK: -- Second ID document (mandatory, front + back, right after
+    // the NFC read -- see views.py's upload_additional_id_view for the
+    // matching server-side enforcement of both the pipeline order and
+    // the "never the same type as the primary" rule).
 
-    private fun onAdditionalIdClicked() {
-        val idType = inputAdditionalIdType.text.toString().trim()
-        if (idType.isEmpty()) {
-            toast("Say what kind of document this is first (e.g. \"Driving licence\").")
-            return
-        }
-        launchCamera(CaptureKind.ADDITIONAL_ID)
+    // Radio button id -> the exact key views.py's
+    // IdentityVerification.AdditionalIdType expects on the wire.
+    private fun additionalIdTypeKey(): String? = when (radioAdditionalIdType.checkedRadioButtonId) {
+        R.id.radio_additional_driving_licence -> "driving_licence"
+        R.id.radio_additional_national_id -> "national_id"
+        R.id.radio_additional_residence_visa -> "residence_visa"
+        R.id.radio_additional_second_passport -> "second_passport"
+        R.id.radio_additional_other -> "other"
+        else -> null
     }
 
-    private fun onAdditionalIdPhotoCaptured(photoBytes: ByteArray) {
-        val idType = inputAdditionalIdType.text.toString().trim()
-        buttonAdditionalId.isEnabled = false
-        buttonAdditionalId.text = "Uploading…"
-        api.uploadAdditionalId(idType, photoBytes, "image/jpeg") { result ->
+    private fun updateAdditionalIdContinueEnabled() {
+        buttonAdditionalIdContinue.isEnabled =
+            additionalIdTypeKey() != null && additionalIdFrontBytes != null && additionalIdBackBytes != null
+    }
+
+    private fun onAdditionalIdFrontCaptured(photoBytes: ByteArray) {
+        additionalIdFrontBytes = photoBytes
+        buttonAdditionalIdFront.text = "✓ Front photographed (tap to retake)"
+        updateAdditionalIdContinueEnabled()
+    }
+
+    private fun onAdditionalIdBackCaptured(photoBytes: ByteArray) {
+        additionalIdBackBytes = photoBytes
+        buttonAdditionalIdBack.text = "✓ Back photographed (tap to retake)"
+        updateAdditionalIdContinueEnabled()
+    }
+
+    private fun onAdditionalIdContinueClicked() {
+        val idType = additionalIdTypeKey() ?: return
+        val front = additionalIdFrontBytes ?: return
+        val back = additionalIdBackBytes ?: return
+        buttonAdditionalIdContinue.isEnabled = false
+        buttonAdditionalIdContinue.text = "Uploading…"
+        api.uploadAdditionalId(idType, front, "image/jpeg", back, "image/jpeg") { result ->
             runOnUiThread {
-                buttonAdditionalId.isEnabled = true
                 result.onSuccess {
-                    buttonAdditionalId.text = "Additional ID uploaded"
+                    sectionAdditionalId.visibility = View.GONE
+                    buttonSelfie.visibility = View.VISIBLE
+                    updateStep(5, "Take a selfie")
                 }
                 result.onFailure {
-                    buttonAdditionalId.text = "Take additional ID photo"
+                    buttonAdditionalIdContinue.isEnabled = true
+                    buttonAdditionalIdContinue.text = "Continue"
                     toast(it.message ?: "Could not upload that document -- try again.")
                 }
             }
@@ -718,7 +780,8 @@ class MainActivity : AppCompatActivity() {
         val dirName = when (kind) {
             CaptureKind.CARD_PHOTO -> "cards"
             CaptureKind.SELFIE -> "selfies"
-            CaptureKind.ADDITIONAL_ID -> "additional_ids"
+            CaptureKind.ADDITIONAL_ID_FRONT -> "additional_ids"
+            CaptureKind.ADDITIONAL_ID_BACK -> "additional_ids"
         }
         val dir = File(cacheDir, dirName).apply { mkdirs() }
         val file = File(dir, "${dirName}_${System.currentTimeMillis()}.jpg")
@@ -772,6 +835,15 @@ class MainActivity : AppCompatActivity() {
         buttonRecordToggle.visibility = View.GONE
         photoPreview.setImageDrawable(null)
         statusText.text = ""
+
+        sectionAdditionalId.visibility = View.GONE
+        radioAdditionalIdType.clearCheck()
+        additionalIdFrontBytes = null
+        additionalIdBackBytes = null
+        buttonAdditionalIdFront.text = "📸 Photograph the front"
+        buttonAdditionalIdBack.text = "📸 Photograph the back"
+        buttonAdditionalIdContinue.isEnabled = false
+        buttonAdditionalIdContinue.text = "Continue"
     }
 
     private fun resetToBiometricGate() {

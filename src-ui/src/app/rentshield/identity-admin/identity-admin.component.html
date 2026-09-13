@@ -77,11 +77,20 @@
             } @else {
               <div class="rs-evidence-thumb rs-evidence-empty">No selfie</div>
             }
-            @if (record.additional_id_photo_url) {
-              <a [href]="record.additional_id_photo_url" target="_blank" rel="noopener">
+            @if (record.additional_id_photo_front_url) {
+              <a [href]="record.additional_id_photo_front_url" target="_blank" rel="noopener">
                 <img
-                  [src]="record.additional_id_photo_url"
-                  [alt]="'Additional ID: ' + record.additional_id_type"
+                  [src]="record.additional_id_photo_front_url"
+                  [alt]="'Additional ID (front): ' + record.additional_id_type_label"
+                  class="rs-evidence-thumb"
+                />
+              </a>
+            }
+            @if (record.additional_id_photo_back_url) {
+              <a [href]="record.additional_id_photo_back_url" target="_blank" rel="noopener">
+                <img
+                  [src]="record.additional_id_photo_back_url"
+                  [alt]="'Additional ID (back): ' + record.additional_id_type_label"
                   class="rs-evidence-thumb"
                 />
               </a>
@@ -99,8 +108,8 @@
             <div class="small text-muted">{{ record.email }}</div>
             <div class="small text-muted">Provider: {{ record.provider }}</div>
             <div class="small text-muted">Updated: {{ record.updated_at | date: 'medium' }}</div>
-            @if (record.additional_id_type) {
-              <div class="small text-muted">Additional ID: {{ record.additional_id_type }}</div>
+            @if (record.additional_id_type_label) {
+              <div class="small text-muted">Additional ID: {{ record.additional_id_type_label }}</div>
             }
             @if (mapLink(record)) {
               <a class="small" [href]="mapLink(record)" target="_blank" rel="noopener">

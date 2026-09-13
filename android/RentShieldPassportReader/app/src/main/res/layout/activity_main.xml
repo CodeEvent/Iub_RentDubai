@@ -392,14 +392,19 @@
         android:text="✅ Done"
         android:visibility="gone" />
 
-    <!-- A second, independent ID document as extra evidence for the
-         Notary: a plain photo, no NFC/OCR of its own, so it isn't
-         tied to any particular step, available any time from signing
-         in onward, matching the web page's own equivalent. -->
+    <!-- A second, independent ID document: a MANDATORY pipeline step
+         (2026-09-13, superseding the earlier optional web upload),
+         shown right after the NFC read succeeds and blocking the
+         selfie step until it's done. Never the same document type as
+         the primary one (radio_additional_second_passport/
+         radio_additional_national_id gets hidden at runtime depending
+         on which primary type was declared, see
+         applyAdditionalIdTypeFilter()), and always front AND back. -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/section_additional_id"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
         app:cardCornerRadius="12dp"
         app:cardElevation="2dp"
         app:contentPadding="20dp"
@@ -413,29 +418,80 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🪪 Additional ID (optional)"
-                android:textSize="15sp"
+                android:text="🪪 Second ID document (required)"
+                android:textSize="17sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:hint="What kind of document is this? (e.g. Driving licence)">
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/input_additional_id_type"
+                android:layout_marginBottom="12dp"
+                android:textColor="#555555"
+                android:text="A different document from the one you just scanned -- e.g. a driving licence. Photos of the front and back are both required." />
+
+            <RadioGroup
+                android:id="@+id/radio_additional_id_type"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp">
+
+                <RadioButton
+                    android:id="@+id/radio_additional_driving_licence"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-            </com.google.android.material.textfield.TextInputLayout>
+                    android:layout_height="wrap_content"
+                    android:text="Driving Licence" />
+
+                <RadioButton
+                    android:id="@+id/radio_additional_national_id"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="National ID Card" />
+
+                <RadioButton
+                    android:id="@+id/radio_additional_residence_visa"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Residence Visa" />
+
+                <RadioButton
+                    android:id="@+id/radio_additional_second_passport"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Second Passport" />
+
+                <RadioButton
+                    android:id="@+id/radio_additional_other"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Other ID document" />
+            </RadioGroup>
 
             <Button
-                android:id="@+id/button_additional_id"
+                android:id="@+id/button_additional_id_front"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:text="Take additional ID photo" />
+                android:layout_marginBottom="8dp"
+                android:text="📸 Photograph the front" />
+
+            <Button
+                android:id="@+id/button_additional_id_back"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginBottom="12dp"
+                android:text="📸 Photograph the back" />
+
+            <Button
+                android:id="@+id/button_additional_id_continue"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:textSize="16sp"
+                android:enabled="false"
+                android:text="Continue" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 

@@ -170,11 +170,33 @@ class RentShieldApiClient(private val baseUrl: String, initialToken: String? = n
     // anything else (see views.py's upload_additional_id_view). Can be
     // called any time after signing in, independent of where the main
     // flow currently stands.
-    fun uploadAdditionalId(idType: String, photoBytes: ByteArray, mimeType: String?, callback: (Result<VerificationStatus>) -> Unit) {
-        uploadMultipart(
-            "/api/documents/identity/verify/additional-id/", "photo", "additional-id.jpg", photoBytes, mimeType,
-            location = null, callback = callback, extraTextFields = mapOf("id_type" to idType),
-        )
+    // A mandatory second document (see MainActivity's ADDITIONAL_ID_TYPES)
+    // -- front AND back, never the same type as the primary document
+    // (enforced server-side too, see views.py's upload_additional_id_view).
+    // Two files at once, so this doesn't reuse uploadMultipart() (which
+    // only ever carries one).
+    fun uploadAdditionalId(
+        idType: String,
+        frontBytes: ByteArray,
+        frontMimeType: String?,
+        backBytes: ByteArray,
+        backMimeType: String?,
+        callback: (Result<VerificationStatus>) -> Unit,
+    ) {
+        val currentToken = token ?: return callback(Result.failure(ApiException("Not logged in.")))
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("id_type", idType)
+            .addFormDataPart("photo_front", "front.jpg", frontBytes.toRequestBody((frontMimeType ?: "image/jpeg").toMediaType()))
+            .addFormDataPart("photo_back", "back.jpg", backBytes.toRequestBody((backMimeType ?: "image/jpeg").toMediaType()))
+            .build()
+        val request = Request.Builder()
+            .url(url("/api/documents/identity/verify/additional-id/"))
+            .header("Authorization", "Token $currentToken")
+            .post(body)
+            .build()
+        client.newCall(request).enqueue(jsonCallback(callback) { json ->
+            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"), json.optNullableString("detail"))
+        })
     }
 
     // MARK: internals
