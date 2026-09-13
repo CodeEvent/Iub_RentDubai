@@ -46,9 +46,33 @@ export class IdentityVerificationComponent implements OnDestroy {
     // a previous visit -- most likely from the app itself, since that's
     // the only place capture happens now -- should see that immediately,
     // not a blank "start" button.
+    //
+    // Real bug caught live: `status: "pending"` is ambiguous on its
+    // own. start_verification_view sets it the moment the WEB PAGE
+    // calls startIdentityVerification() -- before the app has scanned
+    // anything -- so a user whose last visit got that far but never
+    // actually paired a phone (or an account with a stale "pending" row
+    // from before this pairing step existed at all) would land straight
+    // on "continue on your phone" with no QR ever shown and nothing
+    // that will ever resolve. Disambiguate by also checking whether a
+    // pairing was actually claimed; only then is "pending" really
+    // "the app is mid-capture, keep polling" rather than "start()"
+    // was called but pairing never completed".
     this.api.getIdentityVerificationStatus().subscribe((res) => {
-      if (res.status) this.status.set(res.status)
-      if (res.status === 'pending') this.startStatusPolling()
+      if (!res.status) return
+      if (res.status !== 'pending') {
+        this.status.set(res.status)
+        return
+      }
+      this.api.getDevicePairingStatus().subscribe((pairRes) => {
+        if (pairRes.status === 'claimed') {
+          this.status.set('pending')
+          this.startStatusPolling()
+        }
+        // Otherwise leave status() unset so the normal "Start
+        // Verification" button (and a fresh QR from there) shows,
+        // instead of a dead-end message.
+      })
     })
   }
 
