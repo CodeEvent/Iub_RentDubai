@@ -283,7 +283,16 @@ def upload_front_document_view(request):
         )
         _update_user_profile_from_ocr(request.user, record.card_ocr_full_name)
 
-    return Response({"step": result.get("status"), "status": record.status})
+    response_data = {"step": result.get("status"), "status": record.status}
+    # Real gap, reported: the Android app treated any HTTP 200 here as
+    # "proceed to NFC scan", even when the body said status="failed" --
+    # by the time that surfaced, it looked like an unrelated failure
+    # several steps later. Passing Idswyft's own rejection_detail through
+    # lets the client show an explanation immediately instead of a bare
+    # "failed" (e.g. "OCR confidence 0.23 is below minimum 0.6").
+    if final_result == IdentityVerification.Status.FAILED and result.get("rejection_detail"):
+        response_data["detail"] = result["rejection_detail"]
+    return Response(response_data)
 
 
 @api_view(["POST"])
@@ -315,9 +324,15 @@ def upload_live_capture_view(request):
         result = idswyft_client.upload_live_capture(
             record.verification_id, file_bytes, uploaded.name, content_type,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Live-capture upload failed for verification %s", record.verification_id)
-        return Response({"error": "Could not process that selfie -- try again."}, status=502)
+        # Idswyft's own error text (e.g. "Verification was already
+        # rejected in a previous step") is genuinely more actionable than
+        # a generic "try again" -- real gap found live: a card photo that
+        # already hard-rejected always throws exactly this when the
+        # selfie is attempted anyway, which used to surface as an
+        # unrelated-looking, unexplained selfie failure.
+        return Response({"error": str(exc) or "Could not process that selfie -- try again."}, status=502)
 
     # Idswyft's own automated result is no longer the last word (see
     # models.py's docstring): a hard "failed" still short-circuits

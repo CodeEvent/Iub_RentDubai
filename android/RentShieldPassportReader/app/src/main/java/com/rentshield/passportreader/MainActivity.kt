@@ -196,8 +196,23 @@ class MainActivity : AppCompatActivity() {
                     api.uploadFrontDocument(cardPhotoBytes, "image/jpeg", location) { result ->
                         runOnUiThread {
                             result.onSuccess {
-                                statusText.text = "Card read. Now tap the chip: hold it flat against the back of your phone."
-                                buttonScan.visibility = View.VISIBLE
+                                // Real bug, reported: a card photo that fails
+                                // Idswyft's own quality check (e.g. OCR
+                                // confidence too low) still comes back as an
+                                // HTTP 200 with status="failed" in the body --
+                                // onSuccess only means "the network call
+                                // worked", not "verification passed". Without
+                                // this check the app let you proceed to NFC/
+                                // selfie on an already-dead session, and the
+                                // real failure only surfaced several steps
+                                // later as a confusing, unrelated-looking
+                                // selfie error.
+                                if (it.status == "failed") {
+                                    onVerificationComplete(it)
+                                } else {
+                                    statusText.text = "Card read. Now tap the chip: hold it flat against the back of your phone."
+                                    buttonScan.visibility = View.VISIBLE
+                                }
                             }
                             result.onFailure {
                                 statusText.text = it.message
@@ -400,13 +415,18 @@ class MainActivity : AppCompatActivity() {
     // MARK: -- Result
 
     private fun onVerificationComplete(status: VerificationStatus) {
-        statusText.text = when (status.status) {
+        val summary = when (status.status) {
             "verified" -> "Verified."
             "failed" -> "Verification failed."
             "awaiting_notary_review" -> "Submitted -- a Notary Public will review your video within 24 hours."
             "manual_review" -> "Submitted -- under manual review."
             else -> "Submitted -- processing."
         }
+        // Idswyft's own rejection detail (e.g. "OCR confidence 0.23 is
+        // below minimum 0.6") is real, specific, and actionable -- a
+        // bare "Verification failed." left a real failure looking like
+        // an unexplained dead end.
+        statusText.text = if (status.detail != null) "$summary ${status.detail}" else summary
         buttonDone.visibility = View.VISIBLE
     }
 

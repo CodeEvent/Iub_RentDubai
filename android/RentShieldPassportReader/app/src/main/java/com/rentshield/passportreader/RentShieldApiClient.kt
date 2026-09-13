@@ -12,7 +12,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-data class VerificationStatus(val status: String?, val step: String?)
+data class VerificationStatus(val status: String?, val step: String?, val detail: String? = null)
 
 // org.json's optString returns the literal string "null" for a JSON null
 // value rather than a real null -- the backend genuinely sends step: null
@@ -137,7 +137,7 @@ class RentShieldApiClient(private val baseUrl: String) {
         val builder = Request.Builder().url(url(path)).header("Authorization", "Token $currentToken")
         if (method == "POST") builder.post("".toRequestBody(null))
         client.newCall(builder.build()).enqueue(jsonCallback(callback) { json ->
-            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"))
+            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"), json.optNullableString("detail"))
         })
     }
 
@@ -169,7 +169,7 @@ class RentShieldApiClient(private val baseUrl: String) {
             .post(bodyBuilder.build())
             .build()
         client.newCall(request).enqueue(jsonCallback(callback) { json ->
-            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"))
+            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"), json.optNullableString("detail"))
         })
     }
 
@@ -201,7 +201,7 @@ class RentShieldApiClient(private val baseUrl: String) {
             .post(bodyBuilder.build())
             .build()
         client.newCall(request).enqueue(jsonCallback(callback) { json ->
-            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"))
+            VerificationStatus(json.optNullableString("status"), json.optNullableString("step"), json.optNullableString("detail"))
         })
     }
 
