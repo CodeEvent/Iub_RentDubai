@@ -1,9 +1,11 @@
+@use '../rentshield-shared' as *;
+
 .rs-evidence-thumb {
   width: 90px;
   height: 110px;
   object-fit: cover;
-  border-radius: 4px;
-  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
 }
 
 // The confirmation video needs room for its own play/seek controls --
@@ -25,8 +27,8 @@ video.rs-evidence-thumb {
   height: 300px;
   object-fit: contain;
   background: #000;
-  border-radius: 4px;
-  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
 }
 
 .rs-evidence-empty {
@@ -35,7 +37,72 @@ video.rs-evidence-thumb {
   justify-content: center;
   text-align: center;
   font-size: 0.7rem;
-  color: var(--bs-secondary-color, #6c757d);
-  background: var(--bs-secondary-bg, #f1f1f1);
+  color: #94a3b8;
+  background: #f8fafc;
+  border-radius: 10px;
   padding: 4px;
+}
+
+// Status pill -- one color per IdentityVerification.status value,
+// mirroring the emerald/amber/slate/red palette already used for the
+// rs-icon-* stat-card variants in rentshield-shared.scss instead of
+// bootstrap's default badge colors.
+.rs-status-badge {
+  text-transform: capitalize;
+  font-weight: 700;
+}
+
+.rs-status-verified {
+  background: #d1fae5 !important;
+  color: #059669 !important;
+}
+
+.rs-status-failed {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
+.rs-status-awaiting_notary_review {
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+}
+
+.rs-status-manual_review,
+.rs-status-pending {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+}
+
+// A labeled block of read-only (or editable) data -- the declared/OCR/
+// chip/match-score columns -- given its own light card instead of
+// sitting as bare text, so each source of truth reads as a distinct
+// unit the Notary is comparing, not one undifferentiated paragraph.
+.rs-data-block {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.65rem 0.85rem;
+  height: 100%;
+}
+
+.rs-data-block-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.4rem;
+}
+
+// Amber-toned twin of rentshield-shared's .rs-hint -- for the identity
+// mismatch warning specifically, so it reads as "needs attention"
+// rather than the same green "all good" tone .rs-hint carries
+// elsewhere in the app.
+.rs-hint-warn {
+  background: rgba(180, 83, 9, 0.08);
+  border: 1px solid rgba(180, 83, 9, 0.25);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  color: #92400e;
 }

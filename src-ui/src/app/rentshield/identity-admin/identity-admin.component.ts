@@ -111,18 +111,7 @@ export class IdentityAdminComponent {
   }
 
   statusClass(status: string): string {
-    switch (status) {
-      case 'verified':
-        return 'text-bg-success'
-      case 'failed':
-        return 'text-bg-danger'
-      case 'awaiting_notary_review':
-        return 'text-bg-info'
-      case 'manual_review':
-        return 'text-bg-warning'
-      default:
-        return 'text-bg-secondary'
-    }
+    return `rs-status-${status || 'pending'}`
   }
 
   // Claude's own advisory summary (ai_prescreen.py) ends with a
@@ -136,10 +125,10 @@ export class IdentityAdminComponent {
     const label = match[1].trim()
     const lower = label.toLowerCase()
     const cls = lower.startsWith('significant')
-      ? 'text-bg-danger'
+      ? 'rs-status-badge rs-status-failed'
       : lower.startsWith('minor')
-        ? 'text-bg-warning'
-        : 'text-bg-success'
+        ? 'rs-status-badge rs-status-manual_review'
+        : 'rs-status-badge rs-status-verified'
     return { label, cls }
   }
 

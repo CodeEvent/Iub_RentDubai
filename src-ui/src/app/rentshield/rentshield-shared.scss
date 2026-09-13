@@ -35,6 +35,40 @@
   opacity: 0.5;
 }
 
+.rs-btn-outline-slate {
+  background: #fff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+}
+
+.rs-btn-outline-slate:hover {
+  background: #f8fafc;
+  color: #334155;
+}
+
+.rs-btn-outline-slate.active {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
+}
+
+.rs-btn-outline-red {
+  background: #fff;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+}
+
+.rs-btn-outline-red:hover {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.rs-btn-outline-red:disabled {
+  opacity: 0.5;
+}
+
 .rs-panel {
   background: #fff;
   border: 1px solid #e2e8f0;
