@@ -147,10 +147,13 @@
 
         @if (record.ai_prescreen_summary) {
           <div class="alert alert-info py-2 px-3 mb-0 small">
-            <div class="fw-semibold mb-1">
+            <div class="fw-semibold mb-1 d-flex align-items-center gap-2">
               <i-bs name="magic" class="me-1"></i-bs>AI pre-screen (advisory only -- not a decision)
+              @if (outcomeFromSummary(record.ai_prescreen_summary); as outcome) {
+                <span class="badge" [ngClass]="outcome.cls">{{ outcome.label }}</span>
+              }
             </div>
-            {{ record.ai_prescreen_summary }}
+            {{ summaryWithoutOutcome(record.ai_prescreen_summary) }}
           </div>
         }
 

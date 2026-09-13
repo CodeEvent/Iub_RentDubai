@@ -102,6 +102,28 @@ export class IdentityAdminComponent {
     }
   }
 
+  // Claude's own advisory summary (ai_prescreen.py) ends with a
+  // "Likely outcome: <label>" line -- pulled out here so it can render
+  // as a scannable badge instead of buried in a paragraph of prose.
+  // Falls back to no badge (just the plain text) for a summary
+  // generated before this line existed.
+  outcomeFromSummary(summary: string): { label: string; cls: string } | null {
+    const match = summary.match(/Likely outcome:\s*(.+)/i)
+    if (!match) return null
+    const label = match[1].trim()
+    const lower = label.toLowerCase()
+    const cls = lower.startsWith('significant')
+      ? 'text-bg-danger'
+      : lower.startsWith('minor')
+        ? 'text-bg-warning'
+        : 'text-bg-success'
+    return { label, cls }
+  }
+
+  summaryWithoutOutcome(summary: string): string {
+    return summary.replace(/Likely outcome:\s*.+/i, '').trim()
+  }
+
   mapLink(record: AdminVerificationRecord): string | null {
     if (record.latitude == null || record.longitude == null) return null
     return `https://www.openstreetmap.org/?mlat=${record.latitude}&mlon=${record.longitude}#map=16/${record.latitude}/${record.longitude}`

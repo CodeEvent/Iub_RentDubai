@@ -30,16 +30,30 @@ MODEL = os.environ.get("RENTSHIELD_AI_PRESCREEN_MODEL", "claude-opus-5")
 
 _SYSTEM_PROMPT = """You are assisting a human Notary Public who reviews identity \
 verifications for a Dubai tenancy-notice platform. You will be given structured \
-data already gathered by an automated pipeline: OCR text read from a photographed \
-ID document, text read directly off the document's own NFC chip, two independent \
-face-match similarity scores, and the automated document-verification result.
+data already gathered by an automated pipeline: what the property owner declared \
+on the web (typed on a keyboard, before ever touching a document -- their own \
+claimed passport/ID details), OCR text read from a photographed ID document, text \
+read directly off the document's own NFC chip, two independent face-match \
+similarity scores, and the automated document-verification result. A short \
+confirmation video also exists for the Notary to watch separately -- you have not \
+seen it and must never imply otherwise.
 
-Write a short (3-5 sentence) plain-language summary for the Notary highlighting \
-anything that looks inconsistent, borderline, or worth a closer look -- and say \
-plainly if everything looks consistent. Do not make a verify/reject decision \
-yourself and do not use the words "verified" or "approved" as a recommendation -- \
-that decision belongs to the Notary alone. If a field is missing or a match score \
-is null, say so rather than guessing why."""
+Compare the three data sources (declared, card photo OCR, NFC chip) yourself and \
+describe anything inconsistent, borderline, or worth a closer look, in plain \
+language (3-5 sentences) -- and say plainly if everything looks consistent. An \
+automated cross-check between these same sources is also given to you; use it as \
+a starting point, not a substitute for your own reading of the raw fields -- a \
+plain string mismatch can still be an actual match (e.g. word order, a missing \
+middle name, transliteration).
+
+Then, on its own final line, give your own assessed likely outcome starting \
+exactly with "Likely outcome:", using exactly one of these three labels: \
+"Consistent -- no concerns found", "Minor inconsistency -- worth a second look", \
+or "Significant inconsistency -- recommend close review". This is YOUR assessment \
+for the Notary to weigh, not a decision -- never use the words "verified", \
+"approved", or "rejected", and never imply the outcome is already decided; the \
+Notary alone decides. If a field is missing or a match score is null, say so \
+rather than guessing why."""
 
 
 class AiPrescreenError(Exception):
@@ -52,17 +66,27 @@ def _build_user_message(record: IdentityVerification) -> str:
 
     return "\n".join(
         [
+            line("Declared document type (typed on the web, before any capture)", record.declared_document_type),
+            line("Declared document number", record.declared_document_number),
+            line("Declared date of birth", record.declared_date_of_birth),
             line("Card photo OCR -- name", record.card_ocr_full_name),
             line("Card photo OCR -- date of birth", record.card_ocr_date_of_birth),
             line("Card photo OCR -- document number", record.card_ocr_document_number),
             line("NFC chip -- name", record.chip_full_name),
             line("NFC chip -- date of birth", record.chip_date_of_birth),
             line("NFC chip -- document number", record.chip_document_number),
-            line("OCR-vs-chip cross-check notes", record.identity_mismatch_notes or "no mismatch flagged"),
+            line(
+                "Automated cross-check notes (declared vs. card photo OCR vs. chip)",
+                record.identity_mismatch_notes or "no mismatch flagged",
+            ),
             line("Idswyft's own card-photo-vs-selfie result", record.automated_result),
             line(
                 "Independent chip-photo-vs-selfie similarity (0-1, ~0.36+ suggests same person)",
                 record.chip_selfie_match_score,
+            ),
+            line(
+                "Confirmation video",
+                "recorded and available for the Notary to watch (not analyzed here)" if record.video else None,
             ),
         ],
     )
