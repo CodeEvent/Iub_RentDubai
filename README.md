@@ -1892,4 +1892,55 @@ worker's own log afterward. No shared startup script exists yet to keep
 these two processes' environments in sync automatically -- worth adding
 if this dev setup persists.
 
+## "Scan QR to sign in" device pairing, and reworking the Notary review queue (2026-09-13)
+
+Two requests handled the same day. First: the Notary review page
+(`identity-admin.component.ts`) showed every verification record
+regardless of status, which made the queue useless once more than a
+handful of users had verified/failed already --
+`admin_list_verifications_view` now defaults to
+`AWAITING_NOTARY_REVIEW` only (`?status=all` still gets the full
+history), the Notary can now edit a misread OCR/chip field right on
+the page before confirming/rejecting instead of acting on a record she
+can see is wrong with no way to fix it, and confirm/reject now emails
+the property owner the outcome and shows a real "Verified" badge on
+their own page.
+
+Second: getting the property owner onto the native app without typing
+a password on the phone. Real NFC chip reading has needed a native app
+all along (no browser API for it anywhere), but the only way onto that
+app was a manual username/password login. Added a QR-based pairing
+handoff instead -- the same pattern WhatsApp Web and the GitHub CLI's
+device flow use. `documents/rentshield_identity/pairing_views.py`
+issues a short-lived (5 min), single-use, 192-bit
+(`secrets.token_urlsafe(24)`) code and renders it as a QR using the
+`qrcode` package (already a transitive dependency here -- allauth's
+own MFA/TOTP setup uses it the same way, just for an `otpauth://` URL
+instead of ours). The Android app scans it with Google Play Services'
+`GmsBarcodeScanning` module (`com.google.android.gms:play-services-
+code-scanner:16.1.0`, version confirmed directly against
+`dl.google.com`'s Maven metadata, not guessed) -- no custom camera
+permission or preview UI needed, just `.startScan()` and a callback.
+Claiming the code is intentionally `AllowAny`: the phone has no
+account yet at that point, that's the whole reason this exists, and
+safety comes entirely from the code's entropy/single-use/expiry, not
+from auth on that one call. A claimed code only ever mints the same
+DRF token a password login already would -- no higher-privileged path.
+
+The QR payload is a real URI (`rentshieldpair://pair?server=...&code=
+...`), not a hand-split string, specifically so a server address that
+itself contains a colon (`https://host:8000`) doesn't break parsing --
+and because it's a real custom scheme, it can later double as an
+actual Android App Link/iOS Universal Link for "tap to open the app"
+when the property owner is already on their phone, not just a QR to
+scan cross-device (not built yet, just left possible).
+
+**Known gap, not filled with a fake link**: there's no Play Store
+listing for this app, only a debug APK `build-android.yml` produces as
+a CI artifact -- not something a property owner could click. The web
+pairing page only shows a "Download RentShield" link once
+`PAPERLESS_RENTSHIELD_ANDROID_APK_URL` is actually set to somewhere
+real; until then it just says to ask a property manager for the app,
+rather than linking to a Play Store badge that doesn't exist.
+
 ## Not done yet (named, not silently skipped)
