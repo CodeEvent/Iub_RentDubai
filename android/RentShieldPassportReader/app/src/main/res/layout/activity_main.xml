@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/scroll_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#F4F6F8">
@@ -332,6 +333,59 @@
         android:layout_marginBottom="16dp"
         android:textSize="16sp"
         android:text="🎥 4. Record a short confirmation video"
+        android:visibility="gone" />
+
+    <!-- Shared in-app camera preview for every still-photo capture
+         (card, selfie, additional-ID front/back), replacing the plain
+         MediaStore.ACTION_IMAGE_CAPTURE intent that used to launch the
+         system camera app. Real bug caught live (2026-09-14): on a
+         Samsung Galaxy A71 (and this isn't a one-off OEM quirk, it's a
+         well-documented inconsistency with ACTION_IMAGE_CAPTURE plus
+         EXTRA_OUTPUT), the returned JPEG's pixels were stored sideways
+         with NO EXIF Orientation tag at all: no metadata trail left
+         to correct it by. A perfectly sharp, in-focus, well-lit photo
+         of a real ID failed OCR outright because the text was
+         literally sideways. CameraX's ImageCapture (already used for
+         the confirmation video below) writes correctly-oriented output
+         deterministically instead of depending on whichever OEM camera
+         app happens to be installed; one shared section instead of
+         four separate ones since only one capture is ever active at a
+         time, same reasoning section_video_record already follows.
+         Also incidentally fixes a second reported bug: launching a
+         separate system camera Activity was exactly the kind of
+         backgrounded-foreground-activity situation Android can kill
+         this process for (see resumeSessionIfAvailable's own comment);
+         staying in-app removes that risk entirely instead of just
+         working around its symptom. -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/section_photo_capture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp"
+        app:contentPadding="0dp"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="360dp">
+
+            <androidx.camera.view.PreviewView
+                android:id="@+id/photo_preview_camera"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </FrameLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <Button
+        android:id="@+id/button_capture_photo"
+        style="@style/Widget.MaterialComponents.Button"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginBottom="16dp"
+        android:textSize="16sp"
+        android:text="📸 Capture"
         android:visibility="gone" />
 
     <!-- In-app video recording, replacing the plain camera intent used

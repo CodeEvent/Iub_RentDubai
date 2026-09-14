@@ -12,12 +12,12 @@ import android.nfc.tech.IsoDep
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.MediaStore
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +26,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
@@ -35,7 +37,6 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
@@ -89,6 +90,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var buttonAdditionalIdFront: Button
     private lateinit var buttonAdditionalIdBack: Button
     private lateinit var buttonAdditionalIdContinue: Button
+    private lateinit var scrollRoot: ScrollView
+    private lateinit var sectionPhotoCapture: View
+    private lateinit var photoPreviewView: PreviewView
+    private lateinit var buttonCapturePhoto: Button
+    private var imageCapture: ImageCapture? = null
 
     // Which primary document type the user declared on the web -- kept
     // to filter the additional-document choices (never the same type
@@ -106,7 +112,6 @@ class MainActivity : AppCompatActivity() {
     private var pendingPaceKey: AccessKeySpec? = null
     private var pendingBacFallback: BACKey? = null
 
-    private var pendingCaptureFile: File? = null
     private var pendingCaptureKind: CaptureKind? = null
 
     // Read straight off the NFC chip's own MRZ (onChipReadSuccess) -- the
@@ -122,21 +127,6 @@ class MainActivity : AppCompatActivity() {
     private val recordingHandler = Handler(Looper.getMainLooper())
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
-
-    private val cameraLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val file = pendingCaptureFile
-        val kind = pendingCaptureKind
-        if (result.resultCode == RESULT_OK && file != null && file.exists() && kind != null) {
-            when (kind) {
-                CaptureKind.CARD_PHOTO -> onCardPhotoCaptured(file.readBytes())
-                CaptureKind.SELFIE -> onSelfieCaptured(file.readBytes())
-                CaptureKind.ADDITIONAL_ID_FRONT -> onAdditionalIdFrontCaptured(file.readBytes())
-                CaptureKind.ADDITIONAL_ID_BACK -> onAdditionalIdBackCaptured(file.readBytes())
-            }
-        } else {
-            statusText.text = "Capture was cancelled -- try again."
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -167,6 +157,10 @@ class MainActivity : AppCompatActivity() {
         sectionStepHeader = findViewById(R.id.section_step_header)
         stepLabel = findViewById(R.id.step_label)
         stepProgress = findViewById(R.id.step_progress)
+        scrollRoot = findViewById(R.id.scroll_root)
+        sectionPhotoCapture = findViewById(R.id.section_photo_capture)
+        photoPreviewView = findViewById(R.id.photo_preview_camera)
+        buttonCapturePhoto = findViewById(R.id.button_capture_photo)
 
         permissionLauncher.launch(
             arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO),
@@ -180,14 +174,15 @@ class MainActivity : AppCompatActivity() {
             fieldsPassport.visibility = if (isCie) View.GONE else View.VISIBLE
             fieldsCie.visibility = if (isCie) View.VISIBLE else View.GONE
         }
-        buttonCardPhoto.setOnClickListener { launchCamera(CaptureKind.CARD_PHOTO) }
+        buttonCardPhoto.setOnClickListener { startInAppPhotoCapture(CaptureKind.CARD_PHOTO) }
         buttonScan.setOnClickListener { onScanClicked() }
-        buttonSelfie.setOnClickListener { launchCamera(CaptureKind.SELFIE) }
+        buttonSelfie.setOnClickListener { startInAppPhotoCapture(CaptureKind.SELFIE) }
         buttonVideo.setOnClickListener { showVideoInstructionsThenRecord() }
         buttonRecordToggle.setOnClickListener { onRecordToggleClicked() }
+        buttonCapturePhoto.setOnClickListener { onCapturePhotoClicked() }
         buttonDone.setOnClickListener { resetToBiometricGate() }
-        buttonAdditionalIdFront.setOnClickListener { launchCamera(CaptureKind.ADDITIONAL_ID_FRONT) }
-        buttonAdditionalIdBack.setOnClickListener { launchCamera(CaptureKind.ADDITIONAL_ID_BACK) }
+        buttonAdditionalIdFront.setOnClickListener { startInAppPhotoCapture(CaptureKind.ADDITIONAL_ID_FRONT) }
+        buttonAdditionalIdBack.setOnClickListener { startInAppPhotoCapture(CaptureKind.ADDITIONAL_ID_BACK) }
         buttonAdditionalIdContinue.setOnClickListener { onAdditionalIdContinueClicked() }
         radioAdditionalIdType.setOnCheckedChangeListener { _, _ -> updateAdditionalIdContinueEnabled() }
 
@@ -769,14 +764,67 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // MARK: -- Shared camera helper (card photo + selfie both take a still photo)
+    // MARK: -- Shared camera helper (card photo, selfie, additional-ID
+    // front/back all take a still photo)
+    //
+    // In-app via CameraX's ImageCapture, not the plain
+    // MediaStore.ACTION_IMAGE_CAPTURE intent this used to launch to the
+    // system camera app. Real bug caught live (2026-09-14): on a real
+    // device (Samsung Galaxy A71), that intent's returned JPEG had its
+    // pixels stored sideways with no EXIF Orientation tag at all -- no
+    // metadata trail left to correct it by after the fact, so a
+    // perfectly sharp photo of a real ID failed OCR outright because
+    // the text was literally sideways. CameraX writes correctly-
+    // oriented output deterministically instead of depending on
+    // whichever OEM camera app happens to be installed. Also
+    // incidentally removes the "backgrounded foreground activity can
+    // get this process killed" risk resumeSessionIfAvailable's own
+    // comment describes -- staying in the same Activity removes that
+    // risk entirely instead of just working around its symptom.
 
-    private fun launchCamera(kind: CaptureKind) {
+    private fun cameraSelectorFor(kind: CaptureKind): CameraSelector =
+        if (kind == CaptureKind.SELFIE) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+    private fun startInAppPhotoCapture(kind: CaptureKind) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             toast("Camera permission is required for this step.")
             permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
             return
         }
+        pendingCaptureKind = kind
+        sectionPhotoCapture.visibility = View.VISIBLE
+        buttonCapturePhoto.visibility = View.VISIBLE
+        buttonCapturePhoto.isEnabled = true
+        // The capture button lives right after the preview in document
+        // order, but this section can be triggered from steps well
+        // above it (card photo) or below it (additional-ID) -- without
+        // this, the phone stays scrolled wherever it already was and
+        // the newly-visible camera preview can land off-screen.
+        scrollRoot.post { scrollRoot.smoothScrollTo(0, sectionPhotoCapture.top) }
+
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener(
+            {
+                val cameraProvider = cameraProviderFuture.get()
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(photoPreviewView.surfaceProvider)
+                }
+                val capture = ImageCapture.Builder().build()
+                imageCapture = capture
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(this, cameraSelectorFor(kind), preview, capture)
+                } catch (e: Exception) {
+                    toast("Could not start the camera: ${e.message}")
+                }
+            },
+            ContextCompat.getMainExecutor(this),
+        )
+    }
+
+    private fun onCapturePhotoClicked() {
+        val capture = imageCapture ?: return
+        val kind = pendingCaptureKind ?: return
         val dirName = when (kind) {
             CaptureKind.CARD_PHOTO -> "cards"
             CaptureKind.SELFIE -> "selfies"
@@ -785,14 +833,33 @@ class MainActivity : AppCompatActivity() {
         }
         val dir = File(cacheDir, dirName).apply { mkdirs() }
         val file = File(dir, "${dirName}_${System.currentTimeMillis()}.jpg")
-        pendingCaptureFile = file
-        pendingCaptureKind = kind
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-            putExtra(MediaStore.EXTRA_OUTPUT, uri)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        }
-        cameraLauncher.launch(intent)
+        buttonCapturePhoto.isEnabled = false
+        capture.takePicture(
+            ImageCapture.OutputFileOptions.Builder(file).build(),
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    runOnUiThread {
+                        sectionPhotoCapture.visibility = View.GONE
+                        buttonCapturePhoto.visibility = View.GONE
+                        buttonCapturePhoto.isEnabled = true
+                        when (kind) {
+                            CaptureKind.CARD_PHOTO -> onCardPhotoCaptured(file.readBytes())
+                            CaptureKind.SELFIE -> onSelfieCaptured(file.readBytes())
+                            CaptureKind.ADDITIONAL_ID_FRONT -> onAdditionalIdFrontCaptured(file.readBytes())
+                            CaptureKind.ADDITIONAL_ID_BACK -> onAdditionalIdBackCaptured(file.readBytes())
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    runOnUiThread {
+                        buttonCapturePhoto.isEnabled = true
+                        toast("Could not capture photo: ${exception.message}")
+                    }
+                }
+            },
+        )
     }
 
     // MARK: -- Result
@@ -819,13 +886,13 @@ class MainActivity : AppCompatActivity() {
     // both need every capture-in-progress flag and UI element cleared,
     // they just differ on which section to land on afterward.
     private fun clearCaptureState() {
-        pendingCaptureFile = null
         pendingCaptureKind = null
         pendingPaceKey = null
         pendingBacFallback = null
         activeRecording?.stop()
         activeRecording = null
         videoCapture = null
+        imageCapture = null
         buttonCardPhoto.visibility = View.VISIBLE
         buttonScan.visibility = View.GONE
         buttonSelfie.visibility = View.GONE
@@ -833,6 +900,8 @@ class MainActivity : AppCompatActivity() {
         buttonDone.visibility = View.GONE
         sectionVideoRecord.visibility = View.GONE
         buttonRecordToggle.visibility = View.GONE
+        sectionPhotoCapture.visibility = View.GONE
+        buttonCapturePhoto.visibility = View.GONE
         photoPreview.setImageDrawable(null)
         statusText.text = ""
 
