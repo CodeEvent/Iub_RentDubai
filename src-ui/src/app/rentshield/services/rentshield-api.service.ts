@@ -587,6 +587,17 @@ export class RentshieldApiService {
     return this.http.post<{ status: string }>(`${this.base}documents/identity/verify/admin/${id}/reset/`, {})
   }
 
+  // Available to an Admin or a Notary Public (documents/
+  // rentshield_identity/views.py's admin_delete_verification_view) --
+  // permanently removes the whole record, not just its evidence like
+  // resetIdentityVerification above. No status gate on the backend --
+  // pending, awaiting review, verified, failed, any of them can be
+  // deleted. For a record that shouldn't be in the list at all (spam,
+  // a duplicate/wrong account, test data), not a real one to redo.
+  deleteIdentityVerification(id: number): Observable<{ deleted: boolean }> {
+    return this.http.post<{ deleted: boolean }>(`${this.base}documents/identity/verify/admin/${id}/delete/`, {})
+  }
+
   // Live video call scheduling (documents/rentshield_identity/views.py's
   // schedule_video_call_view et al.) -- the one synchronous moment in
   // an otherwise fully async pipeline. `scheduledAt` is an ISO 8601

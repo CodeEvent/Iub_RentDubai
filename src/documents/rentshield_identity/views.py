@@ -959,24 +959,35 @@ def _get_reviewable_record_or_error(verification_id):
     return record
 
 
-def _reset_verification(record: IdentityVerification) -> None:
-    """Wipes a verification back to a clean slate so the user can redo
-    the whole pipeline from scratch -- every uploaded file, every OCR/
-    chip/declared field, the mismatch notes, the AI summary, and any
-    Notary review decision. Admin-only (see admin_reset_verification_view
-    below): this is meaningfully destructive (real evidence is deleted,
-    not just hidden), unlike anything a Notary can do. Also clears any
-    pending/claimed DevicePairingCode rows for the same user -- a stale
-    one would otherwise let a resumed session skip straight past the
-    fresh QR this reset is meant to force."""
-    from documents.rentshield_identity.models import DevicePairingCode
-
+def _delete_verification_evidence_files(record: IdentityVerification) -> None:
+    """Every FileField on IdentityVerification itself (not its video
+    calls' recordings -- see admin_delete_verification_view for those).
+    Shared by _reset_verification (keeps the row) and
+    admin_delete_verification_view (removes it entirely): Django never
+    deletes a FileField's actual file from storage on its own, whether
+    the row is updated or deleted outright, so both paths need this."""
     for field in (
         record.passport_photo, record.selfie_photo, record.chip_photo, record.video,
         record.additional_id_photo_front, record.additional_id_photo_back,
     ):
         if field:
             field.delete(save=False)
+
+
+def _reset_verification(record: IdentityVerification) -> None:
+    """Wipes a verification back to a clean slate so the user can redo
+    the whole pipeline from scratch -- every uploaded file, every OCR/
+    chip/declared field, the mismatch notes, the AI summary, and any
+    Notary review decision. Keeps the row itself, unlike
+    admin_delete_verification_view below -- this is for a real user
+    whose evidence needs redoing, that one is for a record that
+    shouldn't exist in the list at all. Also clears any pending/claimed
+    DevicePairingCode rows for the same user -- a stale one would
+    otherwise let a resumed session skip straight past the fresh QR
+    this reset is meant to force."""
+    from documents.rentshield_identity.models import DevicePairingCode
+
+    _delete_verification_evidence_files(record)
 
     record.verification_id = ""
     record.hosted_url = ""
@@ -1029,6 +1040,39 @@ def admin_reset_verification_view(request, verification_id):
         return Response({"error": "No such verification."}, status=404)
     _reset_verification(record)
     return Response({"status": record.status})
+
+
+@api_view(["POST"])
+@permission_classes([IsRentshieldAdmin | IsNotaryPublic])
+def admin_delete_verification_view(request, verification_id):
+    """POST /api/documents/identity/verify/admin/<id>/delete/ --
+    permanently removes the whole IdentityVerification row, not just its
+    evidence (see admin_reset_verification_view above for the "keep the
+    row, let them redo it" version). No status gate -- pending,
+    awaiting review, verified, failed, needs-more-info, any of them can
+    be deleted; this is for getting a record out of the list entirely
+    (a spam signup, a duplicate/wrong account, test data), not for
+    correcting a real one still in progress. Available to Admin or
+    Notary Public, same reasoning as reset above. IdentityVerificationCall
+    rows cascade-delete with the parent (on_delete=CASCADE), but their
+    recording files still need explicit cleanup first -- a cascade
+    delete touches the database, never file storage."""
+    try:
+        record = IdentityVerification.objects.select_related("user").prefetch_related("video_calls").get(
+            pk=verification_id,
+        )
+    except (IdentityVerification.DoesNotExist, ValueError, TypeError):
+        return Response({"error": "No such verification."}, status=404)
+
+    from documents.rentshield_identity.models import DevicePairingCode
+
+    _delete_verification_evidence_files(record)
+    for call in record.video_calls.all():
+        if call.recording_file:
+            call.recording_file.delete(save=False)
+    DevicePairingCode.objects.filter(user=record.user).delete()
+    record.delete()
+    return Response({"deleted": True})
 
 
 @api_view(["POST"])

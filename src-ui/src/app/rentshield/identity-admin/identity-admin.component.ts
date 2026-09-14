@@ -281,6 +281,33 @@ export class IdentityAdminComponent {
     })
   }
 
+  // Available to an Admin or a Notary Public (admin_delete_verification_view) --
+  // permanently removes the whole record, not just its evidence like
+  // resetVerification above -- no status gate, works on a pending
+  // record just as well as a verified/failed one. For a record that
+  // shouldn't be in the list at all (spam, a duplicate/wrong account,
+  // test data), not a real one to redo. Real destructive action,
+  // confirmed before firing -- same plain confirm() reset already
+  // uses, since this isn't meaningfully more dangerous than deleting
+  // all of someone's evidence already is.
+  deleteVerification(record: AdminVerificationRecord): void {
+    if (
+      !confirm(
+        `Permanently delete ${record.username}'s identity verification? This removes the entire record and all evidence -- there will be nothing left to review, and this cannot be undone.`
+      )
+    ) {
+      return
+    }
+    this.setBusy(record.id, true)
+    this.api.deleteIdentityVerification(record.id).subscribe({
+      next: () => {
+        this.setBusy(record.id, false)
+        this.loadRecords()
+      },
+      error: (err) => this.handleReviewError(record.id, err),
+    })
+  }
+
   private handleReviewError(id: number, err: any): void {
     this.setBusy(id, false)
     this.error.set(err?.error?.error || err?.message || 'Could not record that review decision.')

@@ -24,6 +24,7 @@ from documents.rentshield_identity.admin_views import notary_status_view
 from documents.rentshield_identity.pairing_views import pair_claim_view
 from documents.rentshield_identity.pairing_views import pair_start_view
 from documents.rentshield_identity.pairing_views import pair_status_view
+from documents.rentshield_identity.views import admin_delete_verification_view
 from documents.rentshield_identity.views import admin_reset_verification_view
 from documents.rentshield_identity.views import complete_video_call_view
 from documents.rentshield_identity.views import confirm_video_call_view
@@ -337,6 +338,11 @@ urlpatterns = [
                                 r"^identity/verify/admin/(?P<verification_id>\d+)/reset/$",
                                 admin_reset_verification_view,
                                 name="rentshield-identity-verify-admin-reset",
+                            ),
+                            re_path(
+                                r"^identity/verify/admin/(?P<verification_id>\d+)/delete/$",
+                                admin_delete_verification_view,
+                                name="rentshield-identity-verify-admin-delete",
                             ),
                             # Notary/property-owner video call scheduling
                             # (documents/rentshield_identity/models.py's

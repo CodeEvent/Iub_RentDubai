@@ -338,7 +338,7 @@
           }
 
           @if (canManageEvidence()) {
-            <div class="d-flex justify-content-end">
+            <div class="d-flex justify-content-end gap-2">
               <button
                 type="button"
                 class="btn btn-sm rs-btn-outline-slate"
@@ -346,6 +346,14 @@
                 (click)="resetVerification(record)"
               >
                 <i-bs name="arrow-clockwise" class="me-1"></i-bs>Reset verification
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm rs-btn-outline-red"
+                [disabled]="isBusy(record.id)"
+                (click)="deleteVerification(record)"
+              >
+                <i-bs name="trash" class="me-1"></i-bs>Delete verification
               </button>
             </div>
           }
