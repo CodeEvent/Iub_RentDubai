@@ -413,7 +413,16 @@ def upload_live_capture_view(request):
             update_fields.append("status")
         record.save(update_fields=update_fields)
 
-    return Response({"step": result.get("status"), "status": record.status})
+    # Real gap found live (2026-09-14): unlike upload_front_document_view,
+    # this never passed through Idswyft's own rejection_detail (e.g.
+    # "Liveness score 0.31 -- anti-spoofing check failed" or "No face
+    # detected... confidence: 0.42, threshold: 0.5") -- a rejected
+    # selfie only ever showed a bare "Verification failed." with
+    # nothing actionable, on both the web and the app.
+    response_data = {"step": result.get("status"), "status": record.status}
+    if final_result == IdentityVerification.Status.FAILED and result.get("rejection_detail"):
+        response_data["detail"] = result["rejection_detail"]
+    return Response(response_data)
 
 
 @api_view(["POST"])
