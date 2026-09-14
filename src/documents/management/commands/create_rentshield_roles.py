@@ -27,8 +27,17 @@
 # noticing -- it's re-asserted every time this command runs, the same
 # "safe to re-run, heals drift" idiom the rest of this command already
 # uses for Property Owner/Notary Public's own permission sets.
+#
+# The `lawyer`/`tenant` dev login accounts themselves (2026-09-14,
+# explicitly requested) got the same treatment as the groups above, for
+# the same reason -- deleted directly (STALE_USER_NAMES below) and
+# re-asserted on every run rather than a one-off manual delete, so a
+# fresh/older environment that still has them doesn't quietly keep
+# them around. Already dropped from documents/rentshield/dev_accounts.py's
+# Quick-dev-login panel list.
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
@@ -38,6 +47,7 @@ from documents.rentshield.roles import BASELINE_PERMISSIONS
 from documents.rentshield.roles import ROLE_DOCUMENT_PERMISSIONS
 
 STALE_GROUP_NAMES = ("Lawyer", "Notary", "Tenant")
+STALE_USER_NAMES = ("lawyer", "tenant")
 
 
 class Command(BaseCommand):
@@ -63,6 +73,16 @@ class Command(BaseCommand):
                     f"({', '.join(STALE_GROUP_NAMES)}) left over from before "
                     "the roles simplification -- any account that was a "
                     "member keeps no permissions from them any more.",
+                ),
+            )
+
+        deleted_user_count, _ = get_user_model().objects.filter(username__in=STALE_USER_NAMES).delete()
+        if deleted_user_count:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Deleted {deleted_user_count} stale dev login account row(s) "
+                    f"({', '.join(STALE_USER_NAMES)}) left over from before the "
+                    "roles simplification.",
                 ),
             )
 
@@ -120,10 +140,11 @@ class Command(BaseCommand):
                 "guarantee of visibility: a Property Owner only sees "
                 "notices they personally generated (paperless-ngx's own "
                 "owner field, set automatically at creation).\n"
-                "  - Tenant/Notary/Lawyer Groups from before the roles "
-                "simplification (see README) are actively deleted every "
-                "time this command runs (see the top of this run's output "
-                "if any existed) -- they carried real Document permissions "
-                "nothing in this app's code still means to grant.",
+                "  - Tenant/Notary/Lawyer Groups, and the lawyer/tenant dev "
+                "login accounts, from before the roles simplification (see "
+                "README) are actively deleted every time this command runs "
+                "(see the top of this run's output if any existed) -- the "
+                "Groups carried real Document permissions nothing in this "
+                "app's code still means to grant.",
             ),
         )
