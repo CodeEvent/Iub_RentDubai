@@ -47,12 +47,22 @@ def _apk_download_url(request) -> str | None:
     RENTSHIELD_ANDROID_APK_URL (a real Play Store/hosted link, once one
     exists) takes priority when set; otherwise falls back to this
     server's own copy so the download link works today, on the same
-    LAN the phone already has to reach to scan the QR at all."""
+    LAN the phone already has to reach to scan the QR at all.
+
+    Real bug hit live (2026-09-14): this file's own name never changes
+    between rebuilds, and a phone's browser/download manager can cache
+    a URL's response independent of HTTP cache-control headers -- the
+    server can be serving a genuinely fresh, verified-correct APK and a
+    phone still installs a stale cached one from days earlier with the
+    exact same URL. `?v=<mtime>` forces a new cache key every time the
+    file is actually rebuilt, without needing to keep this in sync with
+    the Android project's own versionCode by hand."""
     if settings.RENTSHIELD_ANDROID_APK_URL:
         return settings.RENTSHIELD_ANDROID_APK_URL
     if not _APK_STATIC_PATH.exists():
         return None
-    return request.build_absolute_uri(settings.STATIC_URL + "downloads/rentshield-app-debug.apk")
+    url = request.build_absolute_uri(settings.STATIC_URL + "downloads/rentshield-app-debug.apk")
+    return f"{url}?v={int(_APK_STATIC_PATH.stat().st_mtime)}"
 
 
 def _is_live(pairing: DevicePairingCode) -> bool:
