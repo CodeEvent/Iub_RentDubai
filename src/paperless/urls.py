@@ -22,6 +22,7 @@ from documents.rentshield_billing.views import stripe_webhook_view
 from documents.rentshield_identity.admin_views import admin_export_verifications_view
 from documents.rentshield_identity.admin_views import admin_list_verifications_view
 from documents.rentshield_identity.admin_views import notary_status_view
+from documents.rentshield_identity.pairing_views import apk_redirect_view
 from documents.rentshield_identity.pairing_views import pair_claim_view
 from documents.rentshield_identity.pairing_views import pair_start_view
 from documents.rentshield_identity.pairing_views import pair_status_view
@@ -678,6 +679,18 @@ urlpatterns = [
         r"^welcome/?$",
         landing_view,
         name="rentshield-landing",
+    ),
+    # Short, stable link to download the Android app (2026-09-14,
+    # explicitly requested -- the long cache-busted static URL changes
+    # on every rebuild, which is exactly wrong for something meant to
+    # be typed/QR-scanned and reused). See
+    # documents/rentshield_identity/pairing_views.py's apk_redirect_view.
+    # Must be registered before the catch-all "Root of the Frontend"
+    # pattern so it isn't shadowed, same as the landing page above.
+    re_path(
+        r"^app/?$",
+        apk_redirect_view,
+        name="rentshield-apk-redirect",
     ),
     # Uploaded identity-verification evidence
     # (documents/rentshield_identity/) -- dev-only convenience serving,

@@ -18,6 +18,8 @@ from urllib.parse import urlencode
 
 import qrcode
 from django.conf import settings
+from django.http import HttpResponseNotFound
+from django.http import HttpResponseRedirect
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view
@@ -43,11 +45,14 @@ _APK_STATIC_PATH = Path(settings.BASE_DIR) / "documents" / "static" / "downloads
 
 
 def _apk_download_url(request) -> str | None:
-    """None when the file genuinely isn't there -- settings.
-    RENTSHIELD_ANDROID_APK_URL (a real Play Store/hosted link, once one
-    exists) takes priority when set; otherwise falls back to this
-    server's own copy so the download link works today, on the same
-    LAN the phone already has to reach to scan the QR at all.
+    """The real, cache-busted target -- not meant to be handed to a
+    person directly any more (see apk_redirect_view below for the
+    short, stable link that actually gets shown/QR-encoded). None when
+    the file genuinely isn't there -- settings.RENTSHIELD_ANDROID_APK_URL
+    (a real Play Store/hosted link, once one exists) takes priority when
+    set; otherwise falls back to this server's own copy so the download
+    link works today, on the same LAN the phone already has to reach to
+    scan the pairing QR at all.
 
     Real bug hit live (2026-09-14): this file's own name never changes
     between rebuilds, and a phone's browser/download manager can cache
@@ -56,13 +61,33 @@ def _apk_download_url(request) -> str | None:
     phone still installs a stale cached one from days earlier with the
     exact same URL. `?v=<mtime>` forces a new cache key every time the
     file is actually rebuilt, without needing to keep this in sync with
-    the Android project's own versionCode by hand."""
+    the Android project's own versionCode by hand. Bumped the query
+    string, not the path, specifically so apk_redirect_view's own short
+    path can stay the same forever while still always 302-ing somewhere
+    fresh."""
     if settings.RENTSHIELD_ANDROID_APK_URL:
         return settings.RENTSHIELD_ANDROID_APK_URL
     if not _APK_STATIC_PATH.exists():
         return None
     url = request.build_absolute_uri(settings.STATIC_URL + "downloads/rentshield-app-debug.apk")
     return f"{url}?v={int(_APK_STATIC_PATH.stat().st_mtime)}"
+
+
+def apk_redirect_view(request):
+    """GET /app -- short, stable link a person can actually type or
+    have QR-scanned (2026-09-14, explicitly requested): the long
+    cache-busted static URL above changes on every rebuild, which is
+    exactly wrong for something meant to be shared once and reused --
+    this path never changes; it just 302s to wherever the current build
+    actually lives, so it's always current without anyone ever needing
+    a new link again. Plain Django view, not DRF -- no auth, on purpose:
+    the APK file itself is already an unauthenticated static asset (see
+    _APK_STATIC_PATH), gating the redirect but not what it points to
+    would only add friction, not security."""
+    url = _apk_download_url(request)
+    if not url:
+        return HttpResponseNotFound("The app isn't available for download yet.")
+    return HttpResponseRedirect(url)
 
 
 def _is_live(pairing: DevicePairingCode) -> bool:
@@ -166,7 +191,7 @@ def pair_start_view(request):
             "code": code,
             "qr_data_uri": qr_data_uri,
             "expires_at": pairing.created_at + PAIRING_CODE_TTL,
-            "apk_url": _apk_download_url(request),
+            "apk_url": request.build_absolute_uri("/app") if _apk_download_url(request) else None,
         },
     )
 
