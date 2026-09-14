@@ -14,10 +14,54 @@
       <button type="button" class="btn btn-sm rs-btn-outline-slate" (click)="toggleShowAll()">
         {{ showAll() ? 'Show needs-review only' : 'Show all history' }}
       </button>
+      @if (showAll()) {
+        <button type="button" class="btn btn-sm rs-btn-outline-slate" (click)="exportCsv()">
+          <i-bs name="download" class="me-1"></i-bs>Export CSV
+        </button>
+      }
     </div>
   </div>
 
   <div class="rs-panel-body d-flex flex-column gap-3">
+    <!-- Only meaningful once "Show all history" has more than a
+         handful of rows -- the default needs-review queue stays small
+         on its own. -->
+    @if (showAll()) {
+      <div class="rs-data-block d-flex flex-column flex-md-row gap-2 align-items-md-end flex-wrap">
+        <div class="flex-grow-1" style="min-width: 10rem">
+          <div class="rs-data-block-label">Search</div>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            placeholder="Username or email"
+            [(ngModel)]="searchQuery"
+            (keyup.enter)="applyFilters()"
+          />
+        </div>
+        <div style="min-width: 12rem">
+          <div class="rs-data-block-label">Status</div>
+          <select class="form-select form-select-sm" [(ngModel)]="filterStatus">
+            <option value="">Any</option>
+            @for (option of filterableStatuses; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+        </div>
+        <div>
+          <div class="rs-data-block-label">From</div>
+          <input type="date" class="form-control form-control-sm" [(ngModel)]="dateFrom" />
+        </div>
+        <div>
+          <div class="rs-data-block-label">To</div>
+          <input type="date" class="form-control form-control-sm" [(ngModel)]="dateTo" />
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm rs-btn-emerald" (click)="applyFilters()">Apply</button>
+          <button type="button" class="btn btn-sm btn-link" (click)="clearFilters()">Clear</button>
+        </div>
+      </div>
+    }
+
     @if (focusMode() && !showAll() && records().length > 0) {
       <div class="rs-hint">
         Riskiest first. {{ records().length }} waiting -- confirming or rejecting moves straight
@@ -50,8 +94,26 @@
             @if (record.automated_result) {
               <span class="badge rs-badge-ai">automated: {{ record.automated_result }}</span>
             }
+            @if (record.claimed_by) {
+              <span class="badge rs-status-badge" [ngClass]="isClaimedByMe(record) ? 'rs-status-verified' : 'rs-status-manual_review'">
+                <i-bs name="person-lock" class="me-1"></i-bs>{{ isClaimedByMe(record) ? 'Claimed by you' : 'Claimed by ' + record.claimed_by }}
+              </span>
+            }
           </span>
-          <span class="small text-muted">{{ record.updated_at | date: 'medium' }}</span>
+          <span class="d-flex align-items-center gap-2">
+            @if (isNotaryPublic() || permissionsService.isAdmin()) {
+              @if (isClaimedByMe(record)) {
+                <button type="button" class="btn btn-sm btn-link p-0" [disabled]="isBusy(record.id)" (click)="releaseRecord(record)">
+                  Release
+                </button>
+              } @else if (!record.claim_conflict) {
+                <button type="button" class="btn btn-sm btn-link p-0" [disabled]="isBusy(record.id)" (click)="claimRecord(record)">
+                  Claim for review
+                </button>
+              }
+            }
+            <span class="small text-muted">{{ record.updated_at | date: 'medium' }}</span>
+          </span>
         </div>
 
         <div class="rs-panel-body d-flex flex-column gap-3">
@@ -293,10 +355,33 @@
             </div>
           }
 
-          @if (record.notary_reviewed_by) {
-            <div class="small text-muted">
-              Reviewed by {{ record.notary_reviewed_by }} on {{ record.notary_reviewed_at | date: 'medium' }}
-              @if (record.notary_notes) { -- "{{ record.notary_notes }}" }
+          <!-- Every action taken on this record, newest first -- not
+               just the last one. Real gap this closes: confirm/reject/
+               request-more-info/reset/delete/call-events used to all
+               share a single notary_reviewed_by/at/notes slot, so a
+               second "send back for more info" silently erased the
+               first round's reasoning. -->
+          @if (record.audit_log.length > 0) {
+            <div class="rs-data-block">
+              <div class="rs-data-block-label">History</div>
+              <div class="d-flex flex-column gap-1">
+                @for (entry of record.audit_log; track entry.created_at) {
+                  <div class="small">
+                    <span class="text-muted">{{ entry.created_at | date: 'medium' }}</span>
+                    -- <strong>{{ entry.action_label }}</strong>
+                    @if (entry.actor) { by {{ entry.actor }} }
+                    @if (entry.notes) { -- "{{ entry.notes }}" }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          @if (record.claim_conflict) {
+            <div class="rs-hint-warn d-flex align-items-center gap-2">
+              <i-bs name="exclamation-triangle"></i-bs>
+              Claimed by {{ record.claimed_by }} -- confirming/rejecting/sending back is disabled until they
+              release it or the claim expires.
             </div>
           }
 
@@ -312,7 +397,7 @@
                 <button
                   type="button"
                   class="btn btn-sm rs-btn-emerald"
-                  [disabled]="isBusy(record.id)"
+                  [disabled]="isBusy(record.id) || record.claim_conflict"
                   (click)="confirm(record)"
                 >
                   Confirm
@@ -320,7 +405,7 @@
                 <button
                   type="button"
                   class="btn btn-sm rs-btn-outline-amber"
-                  [disabled]="isBusy(record.id)"
+                  [disabled]="isBusy(record.id) || record.claim_conflict"
                   (click)="requestMoreInfo(record)"
                 >
                   Send back for more info
@@ -328,7 +413,7 @@
                 <button
                   type="button"
                   class="btn btn-sm rs-btn-outline-red"
-                  [disabled]="isBusy(record.id)"
+                  [disabled]="isBusy(record.id) || record.claim_conflict"
                   (click)="reject(record)"
                 >
                   Reject
@@ -342,7 +427,7 @@
               <button
                 type="button"
                 class="btn btn-sm rs-btn-outline-slate"
-                [disabled]="isBusy(record.id)"
+                [disabled]="isBusy(record.id) || record.claim_conflict"
                 (click)="resetVerification(record)"
               >
                 <i-bs name="arrow-clockwise" class="me-1"></i-bs>Reset verification
@@ -350,7 +435,7 @@
               <button
                 type="button"
                 class="btn btn-sm rs-btn-outline-red"
-                [disabled]="isBusy(record.id)"
+                [disabled]="isBusy(record.id) || record.claim_conflict"
                 (click)="deleteVerification(record)"
               >
                 <i-bs name="trash" class="me-1"></i-bs>Delete verification

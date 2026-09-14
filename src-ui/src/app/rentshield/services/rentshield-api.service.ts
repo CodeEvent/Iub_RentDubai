@@ -123,6 +123,24 @@ export interface VideoCall {
   jitsi_base_url: string
 }
 
+// Optional filters for getIdentityVerificationAdminList/buildAdminExportUrl
+// -- see admin_views.py's _filtered_records.
+export interface AdminListFilters {
+  q?: string
+  filterStatus?: string
+  dateFrom?: string
+  dateTo?: string
+}
+
+// Mirrors IdentityVerificationAuditLog.to_dict().
+export interface AuditLogEntry {
+  action: string
+  action_label: string
+  actor: string | null
+  notes: string
+  created_at: string
+}
+
 export interface AdminVerificationRecord {
   id: number
   username: string
@@ -158,6 +176,10 @@ export interface AdminVerificationRecord {
   notary_notes: string
   ai_prescreen_summary: string
   video_call: VideoCall | null
+  claimed_by: string | null
+  claimed_at: string | null
+  claim_conflict: boolean
+  audit_log: AuditLogEntry[]
   created_at: string
   updated_at: string
 }
@@ -523,14 +545,52 @@ export class RentshieldApiService {
 
   // Admin-only review list (documents/rentshield_identity/admin_views.py)
   // -- defaults to only the records actually awaiting a Notary's
-  // review; pass includeAll to see the full history instead.
+  // review; pass includeAll to see the full history instead. `filters`
+  // (2026-09-14) only really matters once that history view has more
+  // than a handful of rows -- q (username/email substring),
+  // filterStatus (exact status), dateFrom/dateTo (YYYY-MM-DD, matches
+  // <input type="date">'s own value format).
   getIdentityVerificationAdminList(
-    includeAll = false
+    includeAll = false,
+    filters: AdminListFilters = {}
   ): Observable<{ results: AdminVerificationRecord[] }> {
     return this.http.get<{ results: AdminVerificationRecord[] }>(
       `${this.base}documents/identity/verify/admin/list/`,
-      { params: includeAll ? { status: 'all' } : {} }
+      { params: this.adminListParams(includeAll, filters) }
     )
+  }
+
+  // The CSV export (admin_export_verifications_view) takes the exact
+  // same filters as the list above -- "export whatever I'm currently
+  // looking at" -- so it shares the same param-building instead of a
+  // second copy of it. Returns a plain URL (not an Observable): the
+  // browser's own session cookie handles auth for a normal navigation/
+  // download, same as any other paperless-ngx file download.
+  buildAdminExportUrl(includeAll: boolean, filters: AdminListFilters = {}): string {
+    const params = this.adminListParams(includeAll, filters)
+    const query = new URLSearchParams(params).toString()
+    return `${this.base}documents/identity/verify/admin/export/${query ? '?' + query : ''}`
+  }
+
+  private adminListParams(includeAll: boolean, filters: AdminListFilters): Record<string, string> {
+    const params: Record<string, string> = {}
+    if (includeAll) params['status'] = 'all'
+    if (filters.q) params['q'] = filters.q
+    if (filters.filterStatus) params['filter_status'] = filters.filterStatus
+    if (filters.dateFrom) params['date_from'] = filters.dateFrom
+    if (filters.dateTo) params['date_to'] = filters.dateTo
+    return params
+  }
+
+  // Advisory lock (documents/rentshield_identity/views.py's
+  // claim_verification_view/release_verification_view) -- prevents two
+  // Notaries acting on the same record at once with no warning.
+  claimVerification(id: number): Observable<{ claimed_by: string | null }> {
+    return this.http.post<{ claimed_by: string | null }>(`${this.base}documents/identity/verify/notary/${id}/claim/`, {})
+  }
+
+  releaseVerification(id: number): Observable<{ claimed_by: string | null }> {
+    return this.http.post<{ claimed_by: string | null }>(`${this.base}documents/identity/verify/notary/${id}/release/`, {})
   }
 
   // Notary Public review actions (documents/rentshield_identity/views.py's

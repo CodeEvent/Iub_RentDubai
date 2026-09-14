@@ -3,6 +3,7 @@ import { Component, inject, signal } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
 import { PermissionsService } from 'src/app/services/permissions.service'
+import { SettingsService } from 'src/app/services/settings.service'
 import { AdminVerificationRecord, RentshieldApiService } from '../services/rentshield-api.service'
 import { VideoCallEmbedComponent } from '../video-call-embed/video-call-embed.component'
 
@@ -38,6 +39,19 @@ const EDITABLE_FIELDS = [
   'chip_document_number',
 ] as const
 
+// For the "show all history" filter bar's status dropdown -- mirrors
+// IdentityVerification.Status (models.py). No dedicated
+// choices-fetching endpoint for this; the status pill colors are
+// already hardcoded the same way (statusClass below).
+const FILTERABLE_STATUSES: { value: string; label: string }[] = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'awaiting_notary_review', label: 'Awaiting Notary Public review' },
+  { value: 'needs_more_info', label: 'Needs more from you' },
+  { value: 'verified', label: 'Verified' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'manual_review', label: 'Needs manual review' },
+]
+
 @Component({
   selector: 'app-identity-admin',
   standalone: true,
@@ -48,6 +62,7 @@ const EDITABLE_FIELDS = [
 export class IdentityAdminComponent {
   private api = inject(RentshieldApiService)
   permissionsService = inject(PermissionsService)
+  private settingsService = inject(SettingsService)
 
   records = signal<AdminVerificationRecord[]>([])
   loading = signal(true)
@@ -77,6 +92,17 @@ export class IdentityAdminComponent {
   // record id -> completeCall's notes textarea.
   callNotesInputs: Record<number, string> = {}
 
+  // "Show all history" filter bar -- only meaningful once that view
+  // has more than a handful of rows (the default needs-review queue
+  // stays small on its own). Plain properties, not signals: bound via
+  // ngModel and only ever read at the moment applyFilters() fires, not
+  // reactively rendered anywhere themselves.
+  readonly filterableStatuses = FILTERABLE_STATUSES
+  searchQuery = ''
+  filterStatus = ''
+  dateFrom = ''
+  dateTo = ''
+
   constructor() {
     this.loadRecords()
     this.api.getNotaryStatus().subscribe((res) => this.isNotaryPublic.set(res.is_notary_public))
@@ -89,7 +115,7 @@ export class IdentityAdminComponent {
   loadRecords(): void {
     this.loading.set(true)
     this.error.set(null)
-    this.api.getIdentityVerificationAdminList(this.showAll()).subscribe({
+    this.api.getIdentityVerificationAdminList(this.showAll(), this.currentFilters()).subscribe({
       next: (res) => {
         this.records.set(res.results)
         for (const record of res.results) {
@@ -111,6 +137,56 @@ export class IdentityAdminComponent {
   toggleShowAll(): void {
     this.showAll.set(!this.showAll())
     this.loadRecords()
+  }
+
+  private currentFilters() {
+    return { q: this.searchQuery, filterStatus: this.filterStatus, dateFrom: this.dateFrom, dateTo: this.dateTo }
+  }
+
+  applyFilters(): void {
+    this.loadRecords()
+  }
+
+  clearFilters(): void {
+    this.searchQuery = ''
+    this.filterStatus = ''
+    this.dateFrom = ''
+    this.dateTo = ''
+    this.loadRecords()
+  }
+
+  // Opens the CSV in a new tab -- a normal navigation, so the
+  // browser's own session cookie handles auth (see
+  // buildAdminExportUrl's own comment), same as any other paperless-ngx
+  // file download.
+  exportCsv(): void {
+    window.open(this.api.buildAdminExportUrl(this.showAll(), this.currentFilters()), '_blank')
+  }
+
+  // Advisory lock (see IdentityVerification.claim_conflict) -- claim
+  // before working on a record so a second Notary triaging the same
+  // queue sees it's taken instead of confirming/rejecting it moments
+  // later with no warning.
+  claimRecord(record: AdminVerificationRecord): void {
+    this.setBusy(record.id, true)
+    this.api.claimVerification(record.id).subscribe({
+      next: () => {
+        this.setBusy(record.id, false)
+        this.loadRecords()
+      },
+      error: (err) => this.handleReviewError(record.id, err),
+    })
+  }
+
+  releaseRecord(record: AdminVerificationRecord): void {
+    this.setBusy(record.id, true)
+    this.api.releaseVerification(record.id).subscribe({
+      next: () => {
+        this.setBusy(record.id, false)
+        this.loadRecords()
+      },
+      error: (err) => this.handleReviewError(record.id, err),
+    })
   }
 
   toggleFocusMode(): void {
@@ -159,6 +235,10 @@ export class IdentityAdminComponent {
 
   isReviewable(record: AdminVerificationRecord): boolean {
     return record.status === 'awaiting_notary_review'
+  }
+
+  isClaimedByMe(record: AdminVerificationRecord): boolean {
+    return !!record.claimed_by && record.claimed_by === this.settingsService.currentUser()?.username
   }
 
   isBusy(id: number): boolean {

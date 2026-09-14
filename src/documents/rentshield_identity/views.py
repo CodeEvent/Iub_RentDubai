@@ -30,6 +30,7 @@ from documents.rentshield.roles import IsRentshieldAdmin
 from documents.rentshield_identity import face_match
 from documents.rentshield_identity import idswyft_client
 from documents.rentshield_identity.models import IdentityVerification
+from documents.rentshield_identity.models import IdentityVerificationAuditLog
 from documents.rentshield_identity.models import IdentityVerificationCall
 
 logger = logging.getLogger("paperless.rentshield")
@@ -479,6 +480,7 @@ def upload_video_view(request):
     record.video.save(uploaded.name, ContentFile(uploaded.read()), save=False)
     record.status = IdentityVerification.Status.AWAITING_NOTARY_REVIEW
     record.save(update_fields=["video", "status", "updated_at"])
+    _log_verification_action(record, IdentityVerificationAuditLog.Action.SUBMITTED_FOR_REVIEW, actor=request.user)
 
     from documents.tasks import run_identity_prescreen_task
 
@@ -594,6 +596,23 @@ _NOTARY_EDITABLE_FIELDS = (
 )
 
 
+def _log_verification_action(record: IdentityVerification, action: str, actor, notes: str = "") -> None:
+    """Writes one IdentityVerificationAuditLog row -- see that model's
+    own docstring for why it's a denormalized snapshot (plain
+    verification_id + copied username) rather than a real FK to the
+    verification: it has to survive admin_delete_verification_view
+    deleting the row it's about. Called with the record still very much
+    alive in every case (including right before it's deleted), so
+    record.user.username is always safe to read here."""
+    IdentityVerificationAuditLog.objects.create(
+        verification_id=record.id,
+        username=record.user.username,
+        action=action,
+        actor=actor,
+        notes=notes[:2000],
+    )
+
+
 def _apply_notary_edits(record: IdentityVerification, data) -> list[str]:
     """Lets the Notary fix an OCR/chip misread right on the review page
     before deciding, instead of confirming/rejecting a record she can
@@ -676,7 +695,7 @@ def notary_confirm_view(request, verification_id):
     account holder. This is the only path that ever sets VERIFIED --
     see models.py's docstring on why the automated result alone no
     longer does."""
-    record = _get_reviewable_record_or_error(verification_id)
+    record = _get_reviewable_record_or_error(verification_id, request.user)
     if isinstance(record, Response):
         return record
     edited_fields = _apply_notary_edits(record, request.data)
@@ -684,9 +703,19 @@ def notary_confirm_view(request, verification_id):
     record.notary_reviewed_by = request.user
     record.notary_reviewed_at = timezone.now()
     record.notary_notes = (request.data.get("notes") or "")[:2000]
+    # A decision has been made -- whatever claim was on this record is
+    # now stale (nothing left here for the claim to protect). Leaving
+    # it would show a confusing "Claimed by X" on an already-verified/
+    # failed record indefinitely.
+    record.claimed_by = None
+    record.claimed_at = None
     record.save(
-        update_fields=[*edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"],
+        update_fields=[
+            *edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes",
+            "claimed_by", "claimed_at", "updated_at",
+        ],
     )
+    _log_verification_action(record, IdentityVerificationAuditLog.Action.CONFIRMED, actor=request.user, notes=record.notary_notes)
     _notify_identity_verification_result(record)
     return Response({"status": record.status})
 
@@ -699,7 +728,7 @@ def notary_reject_view(request, verification_id):
     quality, wrong person, ...). `notes` should say why -- shown back to
     whoever looks at this record afterward, there's no other record of
     the reviewer's reasoning."""
-    record = _get_reviewable_record_or_error(verification_id)
+    record = _get_reviewable_record_or_error(verification_id, request.user)
     if isinstance(record, Response):
         return record
     edited_fields = _apply_notary_edits(record, request.data)
@@ -707,9 +736,19 @@ def notary_reject_view(request, verification_id):
     record.notary_reviewed_by = request.user
     record.notary_reviewed_at = timezone.now()
     record.notary_notes = (request.data.get("notes") or "")[:2000]
+    # A decision has been made -- whatever claim was on this record is
+    # now stale (nothing left here for the claim to protect). Leaving
+    # it would show a confusing "Claimed by X" on an already-verified/
+    # failed record indefinitely.
+    record.claimed_by = None
+    record.claimed_at = None
     record.save(
-        update_fields=[*edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"],
+        update_fields=[
+            *edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes",
+            "claimed_by", "claimed_at", "updated_at",
+        ],
     )
+    _log_verification_action(record, IdentityVerificationAuditLog.Action.REJECTED, actor=request.user, notes=record.notary_notes)
     _notify_identity_verification_result(record)
     return Response({"status": record.status})
 
@@ -729,7 +768,7 @@ def notary_request_more_info_view(request, verification_id):
     already good stays on the record for the next reviewer to see.
     `notes` is required here (optional on confirm/reject) -- without it
     the user has no idea what to actually redo."""
-    record = _get_reviewable_record_or_error(verification_id)
+    record = _get_reviewable_record_or_error(verification_id, request.user)
     if isinstance(record, Response):
         return record
     notes = (request.data.get("notes") or "").strip()
@@ -740,11 +779,62 @@ def notary_request_more_info_view(request, verification_id):
     record.notary_reviewed_by = request.user
     record.notary_reviewed_at = timezone.now()
     record.notary_notes = notes[:2000]
+    # See notary_confirm_view's own comment: a fresh resubmission
+    # deserves a fresh claim state, not the previous round's stale one.
+    record.claimed_by = None
+    record.claimed_at = None
     record.save(
-        update_fields=[*edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"],
+        update_fields=[
+            *edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes",
+            "claimed_by", "claimed_at", "updated_at",
+        ],
     )
+    _log_verification_action(record, IdentityVerificationAuditLog.Action.REQUESTED_MORE_INFO, actor=request.user, notes=notes)
     _notify_identity_verification_result(record)
     return Response({"status": record.status})
+
+
+@api_view(["POST"])
+@permission_classes([IsNotaryPublic])
+def claim_verification_view(request, verification_id):
+    """POST /api/documents/identity/verify/notary/<id>/claim/ -- an
+    advisory lock (IdentityVerification.claim_conflict) a Notary takes
+    before working on a record, so a second Notary triaging the same
+    queue sees it's already being handled instead of confirming/
+    rejecting the same record moments later with no warning. Refuses to
+    steal a live claim from someone else; claiming your own
+    already-claimed record just refreshes claimed_at (harmless, and
+    saves the frontend from having to know the difference)."""
+    try:
+        record = IdentityVerification.objects.select_related("claimed_by").get(pk=verification_id)
+    except (IdentityVerification.DoesNotExist, ValueError, TypeError):
+        return Response({"error": "No such verification."}, status=404)
+    conflict = _claim_conflict_response(record, request.user)
+    if conflict:
+        return conflict
+    record.claimed_by = request.user
+    record.claimed_at = timezone.now()
+    record.save(update_fields=["claimed_by", "claimed_at", "updated_at"])
+    return Response({"claimed_by": request.user.username, "claimed_at": record.claimed_at})
+
+
+@api_view(["POST"])
+@permission_classes([IsNotaryPublic])
+def release_verification_view(request, verification_id):
+    """POST /api/documents/identity/verify/notary/<id>/release/ --
+    voluntarily gives up a claim (done reviewing, or claimed it by
+    mistake). Silently a no-op on someone else's claim or no claim at
+    all -- releasing is never itself a conflict worth surfacing as an
+    error."""
+    try:
+        record = IdentityVerification.objects.get(pk=verification_id)
+    except (IdentityVerification.DoesNotExist, ValueError, TypeError):
+        return Response({"error": "No such verification."}, status=404)
+    if record.claimed_by_id == request.user.id:
+        record.claimed_by = None
+        record.claimed_at = None
+        record.save(update_fields=["claimed_by", "claimed_at", "updated_at"])
+    return Response({"claimed_by": None})
 
 
 @api_view(["POST"])
@@ -759,7 +849,7 @@ def schedule_video_call_view(request, verification_id):
     CONFIRMED -- the user still has to agree to the time
     (confirm_video_call_view) or ask for another one
     (request_video_call_reschedule_view)."""
-    record = _get_reviewable_record_or_error(verification_id)
+    record = _get_reviewable_record_or_error(verification_id, request.user)
     if isinstance(record, Response):
         return record
     raw = request.data.get("scheduled_at")
@@ -793,6 +883,10 @@ def schedule_video_call_view(request, verification_id):
         scheduled_at=scheduled_at,
         proposed_by=request.user,
     )
+    _log_verification_action(
+        record, IdentityVerificationAuditLog.Action.CALL_SCHEDULED, actor=request.user,
+        notes=f"Proposed for {scheduled_at:%Y-%m-%d %H:%M %Z}",
+    )
     _notify_video_call_proposed(call)
     return Response({"call": call.to_dict()})
 
@@ -813,6 +907,7 @@ def confirm_video_call_view(request, call_id):
         return Response({"error": f"This call isn't waiting on your confirmation (status: {call.status})."}, status=400)
     call.status = IdentityVerificationCall.Status.CONFIRMED
     call.save(update_fields=["status", "updated_at"])
+    _log_verification_action(call.identity_verification, IdentityVerificationAuditLog.Action.CALL_CONFIRMED, actor=request.user)
     _notify_video_call_confirmed(call)
     return Response({"call": call.to_dict()})
 
@@ -832,8 +927,13 @@ def request_video_call_reschedule_view(request, call_id):
     if call.status not in (IdentityVerificationCall.Status.PROPOSED, IdentityVerificationCall.Status.CONFIRMED):
         return Response({"error": f"This call can't be rescheduled anymore (status: {call.status})."}, status=400)
     call.status = IdentityVerificationCall.Status.RESCHEDULE_REQUESTED
+    reason = (request.data.get("reason") or "").strip()[:2000]
     call.save(update_fields=["status", "updated_at"])
-    _notify_video_call_reschedule_requested(call, (request.data.get("reason") or "").strip()[:2000])
+    _log_verification_action(
+        call.identity_verification, IdentityVerificationAuditLog.Action.CALL_RESCHEDULE_REQUESTED,
+        actor=request.user, notes=reason,
+    )
+    _notify_video_call_reschedule_requested(call, reason)
     return Response({"call": call.to_dict()})
 
 
@@ -846,13 +946,20 @@ def complete_video_call_view(request, verification_id, call_id):
     verification itself: the call is evidence feeding that eventual
     decision, not a decision in its own right."""
     try:
-        call = IdentityVerificationCall.objects.get(pk=call_id, identity_verification_id=verification_id)
+        call = IdentityVerificationCall.objects.select_related("identity_verification__user").get(
+            pk=call_id, identity_verification_id=verification_id,
+        )
     except (IdentityVerificationCall.DoesNotExist, ValueError, TypeError):
         return Response({"error": "No such call."}, status=404)
     no_show = bool(request.data.get("no_show"))
     call.status = IdentityVerificationCall.Status.NO_SHOW if no_show else IdentityVerificationCall.Status.COMPLETED
     call.notary_call_notes = (request.data.get("notes") or "")[:2000]
     call.save(update_fields=["status", "notary_call_notes", "updated_at"])
+    _log_verification_action(
+        call.identity_verification,
+        IdentityVerificationAuditLog.Action.CALL_NO_SHOW if no_show else IdentityVerificationAuditLog.Action.CALL_COMPLETED,
+        actor=request.user, notes=call.notary_call_notes,
+    )
     return Response({"call": call.to_dict()})
 
 
@@ -941,14 +1048,19 @@ def _notify_video_call_reschedule_requested(call: IdentityVerificationCall, reas
             logger.exception("Failed to send reschedule-request email to %r", recipient)
 
 
-def _get_reviewable_record_or_error(verification_id):
+def _get_reviewable_record_or_error(verification_id, user):
     """Real bug caught in testing: without this check, a Notary could
     "confirm" or "reject" a record that never even reached the video
     step (e.g. one the automated pipeline had already hard-failed),
     silently overwriting a legitimate outcome. Reviewing is only
-    meaningful once there's actually a video to watch."""
+    meaningful once there's actually a video to watch.
+
+    Also refuses when someone else holds a live claim on this record
+    (2026-09-14, IdentityVerification.claim_conflict) -- claiming is
+    optional, but if a Notary DID claim it, a different Notary deciding
+    here is exactly the double-action race claiming exists to prevent."""
     try:
-        record = IdentityVerification.objects.get(pk=verification_id)
+        record = IdentityVerification.objects.select_related("claimed_by").get(pk=verification_id)
     except (IdentityVerification.DoesNotExist, ValueError, TypeError):
         return Response({"error": "No such verification."}, status=404)
     if record.status != IdentityVerification.Status.AWAITING_NOTARY_REVIEW:
@@ -956,7 +1068,22 @@ def _get_reviewable_record_or_error(verification_id):
             {"error": f"This verification isn't awaiting review (current status: {record.status})."},
             status=400,
         )
+    conflict = _claim_conflict_response(record, user)
+    if conflict:
+        return conflict
     return record
+
+
+def _claim_conflict_response(record: IdentityVerification, user) -> Response | None:
+    """Shared by every mutating action a Notary/Admin can take on a
+    record -- see IdentityVerification.claim_conflict for what counts
+    as a live conflicting claim."""
+    if record.claim_conflict(user):
+        return Response(
+            {"error": f"Currently claimed by {record.claimed_by.username} -- ask them to release it, or wait for the claim to expire."},
+            status=409,
+        )
+    return None
 
 
 def _delete_verification_evidence_files(record: IdentityVerification) -> None:
@@ -1014,6 +1141,8 @@ def _reset_verification(record: IdentityVerification) -> None:
     record.notary_notes = ""
     record.ai_prescreen_summary = ""
     record.additional_id_type = ""
+    record.claimed_by = None
+    record.claimed_at = None
     record.save()
 
     DevicePairingCode.objects.filter(user=record.user).delete()
@@ -1035,9 +1164,13 @@ def admin_reset_verification_view(request, verification_id):
     friction without adding safety (the frontend already confirms this
     destructive action before calling it)."""
     try:
-        record = IdentityVerification.objects.get(pk=verification_id)
+        record = IdentityVerification.objects.select_related("claimed_by", "user").get(pk=verification_id)
     except (IdentityVerification.DoesNotExist, ValueError, TypeError):
         return Response({"error": "No such verification."}, status=404)
+    conflict = _claim_conflict_response(record, request.user)
+    if conflict:
+        return conflict
+    _log_verification_action(record, IdentityVerificationAuditLog.Action.RESET, actor=request.user)
     _reset_verification(record)
     return Response({"status": record.status})
 
@@ -1058,14 +1191,23 @@ def admin_delete_verification_view(request, verification_id):
     recording files still need explicit cleanup first -- a cascade
     delete touches the database, never file storage."""
     try:
-        record = IdentityVerification.objects.select_related("user").prefetch_related("video_calls").get(
+        record = IdentityVerification.objects.select_related("user", "claimed_by").prefetch_related("video_calls").get(
             pk=verification_id,
         )
     except (IdentityVerification.DoesNotExist, ValueError, TypeError):
         return Response({"error": "No such verification."}, status=404)
+    conflict = _claim_conflict_response(record, request.user)
+    if conflict:
+        return conflict
 
     from documents.rentshield_identity.models import DevicePairingCode
 
+    # Logged before the row itself is destroyed -- this and every prior
+    # entry for the same verification_id are the only record it ever
+    # existed once record.delete() below runs (see
+    # IdentityVerificationAuditLog's own docstring on why it isn't a
+    # real FK to the row it's about).
+    _log_verification_action(record, IdentityVerificationAuditLog.Action.DELETED, actor=request.user)
     _delete_verification_evidence_files(record)
     for call in record.video_calls.all():
         if call.recording_file:

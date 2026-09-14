@@ -12,6 +12,10 @@
 # the video, not just the video in isolation.
 from __future__ import annotations
 
+import datetime
+from collections import defaultdict
+
+from django.db.models import Q
 from rest_framework.decorators import api_view
 from rest_framework.decorators import permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -21,6 +25,7 @@ from documents.rentshield.roles import IsNotaryPublic
 from documents.rentshield.roles import IsRentshieldAdmin
 from documents.rentshield.roles import is_notary_public
 from documents.rentshield_identity.models import IdentityVerification
+from documents.rentshield_identity.models import IdentityVerificationAuditLog
 
 
 @api_view(["GET"])
@@ -56,6 +61,48 @@ def _risk_score(record: IdentityVerification) -> int:
     return 0
 
 
+def _parse_date_or_none(raw: str | None) -> datetime.date | None:
+    if not raw:
+        return None
+    try:
+        return datetime.date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _filtered_records(request):
+    """Shared by admin_list_verifications_view and
+    admin_export_verifications_view (2026-09-14) -- the CSV export is
+    meant to export "whatever the Notary is currently looking at", so
+    it needs the exact same q/filter_status/date_from/date_to/status
+    handling as the list view, not a second copy of it."""
+    records = (
+        IdentityVerification.objects.select_related("user", "notary_reviewed_by", "claimed_by")
+        .prefetch_related("video_calls")
+        .order_by("-updated_at")
+    )
+
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        records = records.filter(Q(user__username__icontains=q) | Q(user__email__icontains=q))
+    filter_status = request.GET.get("filter_status") or ""
+    if filter_status in dict(IdentityVerification.Status.choices):
+        records = records.filter(status=filter_status)
+    date_from = _parse_date_or_none(request.GET.get("date_from"))
+    if date_from:
+        records = records.filter(created_at__date__gte=date_from)
+    date_to = _parse_date_or_none(request.GET.get("date_to"))
+    if date_to:
+        records = records.filter(created_at__date__lte=date_to)
+
+    if request.GET.get("status") != "all":
+        records = records.filter(status=IdentityVerification.Status.AWAITING_NOTARY_REVIEW)
+        records = sorted(records, key=lambda record: (-_risk_score(record), -record.updated_at.timestamp()))
+    else:
+        records = list(records)
+    return records
+
+
 @api_view(["GET"])
 @permission_classes([IsRentshieldAdmin | IsNotaryPublic])
 def admin_list_verifications_view(request):
@@ -72,15 +119,25 @@ def admin_list_verifications_view(request):
     made. File URLs are relative (MEDIA_URL-based, same as any other
     Django FileField) -- the frontend resolves them against the API
     host, same as it does for paperless-ngx's own document thumbnail
-    URLs elsewhere in this app."""
-    records = (
-        IdentityVerification.objects.select_related("user", "notary_reviewed_by")
-        .prefetch_related("video_calls")
-        .order_by("-updated_at")
-    )
-    if request.GET.get("status") != "all":
-        records = records.filter(status=IdentityVerification.Status.AWAITING_NOTARY_REVIEW)
-        records = sorted(records, key=lambda record: (-_risk_score(record), -record.updated_at.timestamp()))
+    URLs elsewhere in this app.
+
+    Optional filters (2026-09-14, meant for the ?status=all history view
+    once it has more than a handful of rows, but applied regardless of
+    which mode is active -- see _filtered_records): `q` (username/email
+    substring), `filter_status` (exact IdentityVerification.Status
+    value), `date_from`/`date_to` (YYYY-MM-DD, against created_at)."""
+    records = _filtered_records(request)
+
+    # One bulk query for every listed record's audit trail instead of
+    # one query per record (this view can return the whole history) --
+    # verification_id is a plain int here, not a real FK (see
+    # IdentityVerificationAuditLog's own docstring), so this is a
+    # straightforward IN-filter grouped in Python, not a
+    # prefetch_related.
+    audit_by_verification: dict[int, list[IdentityVerificationAuditLog]] = defaultdict(list)
+    for entry in IdentityVerificationAuditLog.objects.filter(verification_id__in=[r.id for r in records]):
+        audit_by_verification[entry.verification_id].append(entry)
+
     return Response(
         {
             "results": [
@@ -123,6 +180,10 @@ def admin_list_verifications_view(request):
                     "notary_notes": record.notary_notes,
                     "ai_prescreen_summary": record.ai_prescreen_summary,
                     "video_call": calls[0].to_dict() if (calls := list(record.video_calls.all())) else None,
+                    "claimed_by": record.claimed_by.username if record.claimed_by else None,
+                    "claimed_at": record.claimed_at,
+                    "claim_conflict": record.claim_conflict(request.user),
+                    "audit_log": [entry.to_dict() for entry in audit_by_verification.get(record.id, [])],
                     "created_at": record.created_at,
                     "updated_at": record.updated_at,
                 }
@@ -130,3 +191,52 @@ def admin_list_verifications_view(request):
             ],
         },
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsRentshieldAdmin | IsNotaryPublic])
+def admin_export_verifications_view(request):
+    """GET /api/documents/identity/verify/admin/export/ -- a CSV of
+    whatever admin_list_verifications_view is currently showing (same
+    q/filter_status/date_from/date_to/status query params via
+    _filtered_records) for compliance record-keeping: who was verified,
+    when, and by whom. Core identity/decision fields only, not every
+    column the review page itself shows -- evidence photo URLs and the
+    AI pre-screen summary aren't the kind of thing a compliance export
+    needs, and would make the file harder to actually read."""
+    import csv
+
+    from django.http import HttpResponse
+
+    records = _filtered_records(request)
+
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="rentshield-identity-verifications.csv"'
+    writer = csv.writer(response)
+    writer.writerow(
+        [
+            "id", "username", "email", "status", "declared_document_type", "declared_document_number",
+            "card_ocr_full_name", "chip_full_name", "automated_result", "notary_reviewed_by",
+            "notary_reviewed_at", "notary_notes", "created_at", "updated_at",
+        ],
+    )
+    for record in records:
+        writer.writerow(
+            [
+                record.id,
+                record.user.username,
+                record.user.email,
+                record.status,
+                record.declared_document_type,
+                record.declared_document_number,
+                record.card_ocr_full_name,
+                record.chip_full_name,
+                record.automated_result,
+                record.notary_reviewed_by.username if record.notary_reviewed_by else "",
+                record.notary_reviewed_at.isoformat() if record.notary_reviewed_at else "",
+                record.notary_notes,
+                record.created_at.isoformat(),
+                record.updated_at.isoformat(),
+            ],
+        )
+    return response

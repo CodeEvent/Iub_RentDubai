@@ -184,8 +184,37 @@ class IdentityVerification(models.Model):
     # ANTHROPIC_API_KEY isn't configured -- see ai_prescreen.py.
     ai_prescreen_summary = models.TextField(blank=True, default="")
 
+    # Advisory lock (2026-09-14, explicitly requested): once there's
+    # more than one Notary account, two Notaries could otherwise act on
+    # the same record at once with no warning. A Notary claims a record
+    # explicitly (claim_verification_view) before working on it;
+    # confirm/reject/request-more-info/reset/delete then refuse a
+    # conflicting actor while someone else's claim is still fresh (see
+    # CLAIM_STALE_AFTER below) -- an abandoned claim (closed tab,
+    # forgot to release) ages out on its own instead of locking the
+    # record forever.
+    claimed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rentshield_claimed_verifications",
+    )
+    claimed_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    CLAIM_STALE_AFTER = timedelta(minutes=15)
+
+    def claim_conflict(self, user) -> bool:
+        """True if this record is claimed by someone OTHER than `user`
+        and that claim hasn't gone stale yet."""
+        from django.utils import timezone
+
+        if not self.claimed_by_id or self.claimed_by_id == user.id:
+            return False
+        return timezone.now() < self.claimed_at + self.CLAIM_STALE_AFTER
 
     def __str__(self) -> str:
         return f"{self.user_id}: {self.status} ({self.provider})"
@@ -299,6 +328,67 @@ class IdentityVerificationCall(models.Model):
             "notary_call_notes": self.notary_call_notes,
             "recording_url": self.recording_file.url if self.recording_file else None,
             "jitsi_base_url": settings.RENTSHIELD_JITSI_BASE_URL,
+        }
+
+
+class IdentityVerificationAuditLog(models.Model):
+    """One row per action taken on an IdentityVerification -- confirm,
+    reject, request-more-info, reset, delete, and every video-call
+    state change. Added (2026-09-14) because those actions all used to
+    share a single notary_reviewed_by/at/notes slot on the record
+    itself: a second "send back for more info" silently overwrote the
+    first, and there was no way to see that it had even happened.
+
+    Deliberately NOT a ForeignKey to IdentityVerification (or to the
+    acting User for the row's own identity) -- a real audit trail has
+    to outlive admin_delete_verification_view deleting the record it's
+    about, otherwise "add a real audit trail" and "add the ability to
+    delete a verification" would cancel each other out. `verification_id`
+    and `username` are a plain int and a copy taken at write time, not
+    a live relation; `actor` is still a real FK (SET_NULL) since losing
+    who-did-it is a smaller loss than losing the whole row would be,
+    and Users aren't deleted anywhere near as often as verifications
+    are reset/deleted in this feature area."""
+
+    class Action(models.TextChoices):
+        SUBMITTED_FOR_REVIEW = "submitted_for_review", "Submitted for Notary review"
+        CONFIRMED = "confirmed", "Confirmed"
+        REJECTED = "rejected", "Rejected"
+        REQUESTED_MORE_INFO = "requested_more_info", "Sent back for more info"
+        RESET = "reset", "Reset (evidence wiped)"
+        DELETED = "deleted", "Deleted"
+        CALL_SCHEDULED = "call_scheduled", "Video call scheduled"
+        CALL_CONFIRMED = "call_confirmed", "Video call confirmed"
+        CALL_RESCHEDULE_REQUESTED = "call_reschedule_requested", "Video call reschedule requested"
+        CALL_COMPLETED = "call_completed", "Video call completed"
+        CALL_NO_SHOW = "call_no_show", "Video call no-show"
+
+    verification_id = models.PositiveIntegerField(db_index=True)
+    username = models.CharField(max_length=255, blank=True, default="")
+    action = models.CharField(max_length=32, choices=Action.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rentshield_verification_audit_entries",
+    )
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"verification {self.verification_id}: {self.action}"
+
+    def to_dict(self) -> dict:
+        return {
+            "action": self.action,
+            "action_label": self.get_action_display(),
+            "actor": self.actor.username if self.actor else None,
+            "notes": self.notes,
+            "created_at": self.created_at,
         }
 
 

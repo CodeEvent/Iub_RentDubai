@@ -19,6 +19,7 @@ from rest_framework.routers import DefaultRouter
 from documents.rentshield_billing.views import checkout_status_view
 from documents.rentshield_billing.views import create_checkout_view
 from documents.rentshield_billing.views import stripe_webhook_view
+from documents.rentshield_identity.admin_views import admin_export_verifications_view
 from documents.rentshield_identity.admin_views import admin_list_verifications_view
 from documents.rentshield_identity.admin_views import notary_status_view
 from documents.rentshield_identity.pairing_views import pair_claim_view
@@ -26,12 +27,14 @@ from documents.rentshield_identity.pairing_views import pair_start_view
 from documents.rentshield_identity.pairing_views import pair_status_view
 from documents.rentshield_identity.views import admin_delete_verification_view
 from documents.rentshield_identity.views import admin_reset_verification_view
+from documents.rentshield_identity.views import claim_verification_view
 from documents.rentshield_identity.views import complete_video_call_view
 from documents.rentshield_identity.views import confirm_video_call_view
 from documents.rentshield_identity.views import idswyft_webhook_view
 from documents.rentshield_identity.views import notary_confirm_view
 from documents.rentshield_identity.views import notary_reject_view
 from documents.rentshield_identity.views import notary_request_more_info_view
+from documents.rentshield_identity.views import release_verification_view
 from documents.rentshield_identity.views import request_video_call_reschedule_view
 from documents.rentshield_identity.views import schedule_video_call_view
 from documents.rentshield_identity.views import start_verification_view
@@ -300,6 +303,11 @@ urlpatterns = [
                                 name="rentshield-identity-verify-admin-list",
                             ),
                             re_path(
+                                r"^identity/verify/admin/export/$",
+                                admin_export_verifications_view,
+                                name="rentshield-identity-verify-admin-export",
+                            ),
+                            re_path(
                                 r"^identity/verify/notary-status/$",
                                 notary_status_view,
                                 name="rentshield-identity-verify-notary-status",
@@ -347,6 +355,16 @@ urlpatterns = [
                             # Notary/property-owner video call scheduling
                             # (documents/rentshield_identity/models.py's
                             # IdentityVerificationCall)
+                            re_path(
+                                r"^identity/verify/notary/(?P<verification_id>\d+)/claim/$",
+                                claim_verification_view,
+                                name="rentshield-identity-verify-claim",
+                            ),
+                            re_path(
+                                r"^identity/verify/notary/(?P<verification_id>\d+)/release/$",
+                                release_verification_view,
+                                name="rentshield-identity-verify-release",
+                            ),
                             re_path(
                                 r"^identity/verify/notary/(?P<verification_id>\d+)/schedule-call/$",
                                 schedule_video_call_view,
