@@ -5,7 +5,12 @@ import { RouterModule } from '@angular/router'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
 import { Subscription, interval } from 'rxjs'
 import { switchMap } from 'rxjs/operators'
-import { DeclaredDocument, RentshieldApiService } from '../services/rentshield-api.service'
+import { DeclaredDocument, RentshieldApiService, VideoCall } from '../services/rentshield-api.service'
+import { VideoCallEmbedComponent } from '../video-call-embed/video-call-embed.component'
+
+// Which VideoCall.status values still need the user's attention --
+// COMPLETED/NO_SHOW/CANCELLED are history, nothing left to show here.
+const ACTIVE_CALL_STATUSES = new Set(['proposed', 'confirmed', 'reschedule_requested'])
 
 interface PairingState {
   code: string
@@ -33,7 +38,7 @@ const STEP_LABELS = ['Declare & connect', 'Complete on your phone', 'Notary revi
 @Component({
   selector: 'app-identity-verification',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, NgxBootstrapIconsModule],
+  imports: [CommonModule, FormsModule, RouterModule, NgxBootstrapIconsModule, VideoCallEmbedComponent],
   templateUrl: './identity-verification.component.html',
   styleUrl: './identity-verification.component.scss',
 })
@@ -50,6 +55,22 @@ export class IdentityVerificationComponent implements OnDestroy {
   notaryNotes = signal<string | null>(null)
   pairing = signal<PairingState | null>(null)
   pairingStatus = signal<string | null>(null)
+
+  // The one live, synchronous step alongside the rest of this async
+  // pipeline (see IdentityVerificationCall's own docstring). Shown
+  // independently of status() below -- a call can be proposed while
+  // status() is still 'awaiting_notary_review', which isn't one of
+  // that signal's own branches.
+  videoCall = signal<VideoCall | null>(null)
+  reschedulingCall = signal(false)
+  rescheduleReason = ''
+  callActionBusy = signal(false)
+  callActionError = signal<string | null>(null)
+
+  activeCall(): VideoCall | null {
+    const call = this.videoCall()
+    return call && ACTIVE_CALL_STATUSES.has(call.status) ? call : null
+  }
 
   // "Declare your document" step -- shown after "Start Verification",
   // before the QR: typed on a real keyboard specifically to cut down
@@ -99,6 +120,7 @@ export class IdentityVerificationComponent implements OnDestroy {
     // was called but pairing never completed".
     this.api.getIdentityVerificationStatus().subscribe((res) => {
       if (!res.status) return
+      this.videoCall.set(res.video_call)
       if (res.status !== 'pending') {
         this.status.set(res.status)
         this.notaryNotes.set(res.notary_notes || null)
@@ -226,9 +248,46 @@ export class IdentityVerificationComponent implements OnDestroy {
       .pipe(switchMap(() => this.api.getIdentityVerificationStatus()))
       .subscribe((res) => {
         this.status.set(res.status)
+        this.videoCall.set(res.video_call)
         if (res.status !== 'pending') {
           this.statusPollSubscription?.unsubscribe()
         }
       })
+  }
+
+  confirmCall(): void {
+    const call = this.activeCall()
+    if (!call) return
+    this.callActionBusy.set(true)
+    this.callActionError.set(null)
+    this.api.confirmVideoCall(call.id).subscribe({
+      next: (res) => {
+        this.callActionBusy.set(false)
+        this.videoCall.set(res.call)
+      },
+      error: (err) => {
+        this.callActionBusy.set(false)
+        this.callActionError.set(err?.error?.error || err?.message || 'Could not confirm that time -- try again.')
+      },
+    })
+  }
+
+  requestReschedule(): void {
+    const call = this.activeCall()
+    if (!call) return
+    this.callActionBusy.set(true)
+    this.callActionError.set(null)
+    this.api.requestVideoCallReschedule(call.id, this.rescheduleReason.trim()).subscribe({
+      next: (res) => {
+        this.callActionBusy.set(false)
+        this.reschedulingCall.set(false)
+        this.rescheduleReason = ''
+        this.videoCall.set(res.call)
+      },
+      error: (err) => {
+        this.callActionBusy.set(false)
+        this.callActionError.set(err?.error?.error || err?.message || 'Could not send that request -- try again.')
+      },
+    })
   }
 }

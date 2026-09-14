@@ -73,7 +73,11 @@ def admin_list_verifications_view(request):
     Django FileField) -- the frontend resolves them against the API
     host, same as it does for paperless-ngx's own document thumbnail
     URLs elsewhere in this app."""
-    records = IdentityVerification.objects.select_related("user", "notary_reviewed_by").order_by("-updated_at")
+    records = (
+        IdentityVerification.objects.select_related("user", "notary_reviewed_by")
+        .prefetch_related("video_calls")
+        .order_by("-updated_at")
+    )
     if request.GET.get("status") != "all":
         records = records.filter(status=IdentityVerification.Status.AWAITING_NOTARY_REVIEW)
         records = sorted(records, key=lambda record: (-_risk_score(record), -record.updated_at.timestamp()))
@@ -118,6 +122,7 @@ def admin_list_verifications_view(request):
                     "notary_reviewed_at": record.notary_reviewed_at,
                     "notary_notes": record.notary_notes,
                     "ai_prescreen_summary": record.ai_prescreen_summary,
+                    "video_call": calls[0].to_dict() if (calls := list(record.video_calls.all())) else None,
                     "created_at": record.created_at,
                     "updated_at": record.updated_at,
                 }

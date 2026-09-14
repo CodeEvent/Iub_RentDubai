@@ -764,6 +764,23 @@ if _notary_scan_cron != "disable":
         "options": {"expires": 23.0 * 60.0 * 60.0},
     }
 
+# RentShield: video call reminders + recording ingest (documents/
+# rentshield_identity/models.py's IdentityVerificationCall) -- every 5
+# minutes, lightweight DB-only scans (no external API involved, unlike
+# the notary-provider scan above), so no env-configurable cron for
+# these -- there's no real installation-specific reason to run them on
+# a different cadence.
+CELERY_BEAT_SCHEDULE["RentShield: video call reminders"] = {
+    "task": "documents.tasks.run_video_call_reminder_task",
+    "schedule": crontab(minute="*/5"),
+    "options": {"expires": 4.0 * 60.0},
+}
+CELERY_BEAT_SCHEDULE["RentShield: video call recording ingest"] = {
+    "task": "documents.tasks.run_video_call_recording_ingest_task",
+    "schedule": crontab(minute="*/5"),
+    "options": {"expires": 4.0 * 60.0},
+}
+
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#beat-schedule-filename
 CELERY_BEAT_SCHEDULE_FILENAME = str(DATA_DIR / "celerybeat-schedule.db")
 
@@ -1295,6 +1312,30 @@ RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL = os.getenv(
 RENTSHIELD_ANDROID_APK_URL = os.getenv(
     "PAPERLESS_RENTSHIELD_ANDROID_APK_URL",
     "",
+)
+
+# Base URL of this project's self-hosted Jitsi Meet instance (the
+# docker-compose `jitsi-web` service, see docker-compose.yml) -- used to
+# build both the web embed's external_api.js script src and the room
+# URL the Android app's WebView loads directly. Defaults to the
+# localhost mapping docker-compose.yml exposes, which is enough for dev
+# (WebRTC camera/mic access works over plain HTTP on localhost) -- a
+# real deployment needs this pointed at a real HTTPS domain (WebRTC
+# requires either localhost or HTTPS everywhere else), which is its own
+# TLS/DNS cost this setting alone doesn't solve.
+RENTSHIELD_JITSI_BASE_URL = os.getenv(
+    "PAPERLESS_RENTSHIELD_JITSI_BASE_URL",
+    "http://localhost:8444",
+)
+
+# Where Jibri (docker-compose's `jitsi-jibri` service) drops finished
+# call recordings -- a shared volume, not a network call, so this is
+# just a local path the webserver container also mounts. Polled by
+# run_video_call_recording_ingest_task (documents/tasks.py) rather than
+# a Jibri finalize-script webhook -- see that task's own docstring.
+RENTSHIELD_JIBRI_RECORDINGS_DIR = get_path_from_env(
+    "PAPERLESS_RENTSHIELD_JIBRI_RECORDINGS_DIR",
+    BASE_DIR.parent / "jibri-recordings",
 )
 
 # Scrapfly (https://scrapfly.io) API key for the notary-provider research

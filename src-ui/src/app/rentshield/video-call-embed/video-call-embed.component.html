@@ -1,0 +1,4 @@
+@if (error()) {
+  <p class="text-danger small mb-0">{{ error() }}</p>
+}
+<div #container class="rs-video-call-container" [hidden]="!!error()"></div>

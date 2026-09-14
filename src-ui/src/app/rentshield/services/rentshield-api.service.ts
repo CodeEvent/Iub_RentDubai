@@ -109,6 +109,20 @@ export interface DeclaredDocument {
   declared_can?: string
 }
 
+// Mirrors IdentityVerificationCall.to_dict() (documents/
+// rentshield_identity/models.py) -- one shape shared by the property
+// owner's own status endpoint and the Notary's review list.
+export interface VideoCall {
+  id: number
+  status: string
+  scheduled_at: string
+  room_name: string
+  join_open: boolean
+  notary_call_notes: string
+  recording_url: string | null
+  jitsi_base_url: string
+}
+
 export interface AdminVerificationRecord {
   id: number
   username: string
@@ -143,6 +157,7 @@ export interface AdminVerificationRecord {
   notary_reviewed_at: string | null
   notary_notes: string
   ai_prescreen_summary: string
+  video_call: VideoCall | null
   created_at: string
   updated_at: string
 }
@@ -426,8 +441,13 @@ export class RentshieldApiService {
     )
   }
 
-  getIdentityVerificationStatus(): Observable<{ status: string | null; step: string | null; notary_notes: string }> {
-    return this.http.get<{ status: string | null; step: string | null; notary_notes: string }>(
+  getIdentityVerificationStatus(): Observable<{
+    status: string | null
+    step: string | null
+    notary_notes: string
+    video_call: VideoCall | null
+  }> {
+    return this.http.get<{ status: string | null; step: string | null; notary_notes: string; video_call: VideoCall | null }>(
       `${this.base}documents/identity/verify/status/`
     )
   }
@@ -565,6 +585,40 @@ export class RentshieldApiService {
   // to send back with requestMoreInfoOnIdentityVerification above.
   resetIdentityVerification(id: number): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(`${this.base}documents/identity/verify/admin/${id}/reset/`, {})
+  }
+
+  // Live video call scheduling (documents/rentshield_identity/views.py's
+  // schedule_video_call_view et al.) -- the one synchronous moment in
+  // an otherwise fully async pipeline. `scheduledAt` is an ISO 8601
+  // string (native <input type="datetime-local"> already produces one).
+  scheduleVideoCall(verificationId: number, scheduledAt: string): Observable<{ call: VideoCall }> {
+    return this.http.post<{ call: VideoCall }>(
+      `${this.base}documents/identity/verify/notary/${verificationId}/schedule-call/`,
+      { scheduled_at: scheduledAt }
+    )
+  }
+
+  confirmVideoCall(callId: number): Observable<{ call: VideoCall }> {
+    return this.http.post<{ call: VideoCall }>(`${this.base}documents/identity/verify/call/${callId}/confirm/`, {})
+  }
+
+  requestVideoCallReschedule(callId: number, reason: string): Observable<{ call: VideoCall }> {
+    return this.http.post<{ call: VideoCall }>(
+      `${this.base}documents/identity/verify/call/${callId}/request-reschedule/`,
+      { reason }
+    )
+  }
+
+  completeVideoCall(
+    verificationId: number,
+    callId: number,
+    notes: string,
+    noShow: boolean
+  ): Observable<{ call: VideoCall }> {
+    return this.http.post<{ call: VideoCall }>(
+      `${this.base}documents/identity/verify/notary/${verificationId}/calls/${callId}/complete/`,
+      { notes, no_show: noShow }
+    )
   }
 
   listLegalSkills(): Observable<{ skills: LegalSkillSummary[] }> {

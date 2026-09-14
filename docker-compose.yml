@@ -28,6 +28,7 @@ services:
       - pgx-data:/usr/src/paperless/data
       - pgx-media:/usr/src/paperless/media
       - ./consume:/usr/src/paperless/consume
+      - jibri-recordings:/usr/src/paperless/jibri-recordings
     environment:
       PAPERLESS_REDIS: redis://broker:6379
       PAPERLESS_DBENGINE: sqlite
@@ -43,6 +44,11 @@ services:
       OPENSIGN_APP_ID: rentshield
       OPENSIGN_MASTER_KEY: ${OPENSIGN_MASTER_KEY:-change-me-in-prod}
       OPENSIGN_SERVICE_USER_ID: ${OPENSIGN_SERVICE_USER_ID:-}
+      # Self-hosted Jitsi (jitsi-web et al. below) — see
+      # RENTSHIELD_JITSI_BASE_URL's own comment in paperless/settings/
+      # __init__.py for why this needs a real domain+HTTPS in production.
+      PAPERLESS_RENTSHIELD_JITSI_BASE_URL: ${RENTSHIELD_JITSI_BASE_URL:-http://localhost:8444}
+      PAPERLESS_RENTSHIELD_JIBRI_RECORDINGS_DIR: /usr/src/paperless/jibri-recordings
 
   docling-service:
     build:
@@ -87,6 +93,125 @@ services:
       - SERVER_URL=http://localhost:8081/app
       - PUBLIC_URL=http://localhost:8081
 
+  # Self-hosted video call for the identity-verification Notary review
+  # (documents/rentshield_identity/models.py's IdentityVerificationCall)
+  # -- official jitsi/docker-jitsi-meet images. This is a genuinely
+  # heavier stack than every other service above (XMPP + a video bridge
+  # + a headless-Chrome recorder), and this block covers the minimal
+  # working set for local/dev use over plain HTTP on localhost (WebRTC
+  # allows camera/mic on localhost without TLS) — a real deployment
+  # needs a real domain + HTTPS for jitsi-web (see
+  # RENTSHIELD_JITSI_BASE_URL's own comment in paperless/settings/
+  # __init__.py) and should tighten the XMPP secrets below via a real
+  # .env file rather than the checked-in dev defaults.
+  jitsi-web:
+    image: jitsi/web:stable
+    restart: unless-stopped
+    ports:
+      - "8444:80"
+    depends_on:
+      - jitsi-prosody
+      - jitsi-jicofo
+      - jitsi-jvb
+    environment:
+      - ENABLE_HTTPS=0
+      - PUBLIC_URL=${RENTSHIELD_JITSI_BASE_URL:-http://localhost:8444}
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_BOSH_URL_BASE=http://jitsi-prosody:5280
+      - XMPP_GUEST_DOMAIN=guest.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
+      - ENABLE_RECORDING=1
+
+  jitsi-prosody:
+    image: jitsi/prosody:stable
+    restart: unless-stopped
+    volumes:
+      - jitsi-prosody-config:/config
+    environment:
+      - AUTH_TYPE=internal
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_GUEST_DOMAIN=guest.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
+      - JICOFO_COMPONENT_SECRET=${JITSI_JICOFO_COMPONENT_SECRET:-devsecret-jicofo-component}
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=${JITSI_JICOFO_AUTH_PASSWORD:-devsecret-jicofo-auth}
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=${JITSI_JVB_AUTH_PASSWORD:-devsecret-jvb-auth}
+      - JIBRI_RECORDER_USER=recorder
+      - JIBRI_RECORDER_PASSWORD=${JITSI_JIBRI_RECORDER_PASSWORD:-devsecret-jibri-recorder}
+      - JIBRI_XMPP_USER=jibri
+      - JIBRI_XMPP_PASSWORD=${JITSI_JIBRI_XMPP_PASSWORD:-devsecret-jibri-xmpp}
+      - ENABLE_AUTH=0
+      - ENABLE_GUESTS=1
+
+  jitsi-jicofo:
+    image: jitsi/jicofo:stable
+    restart: unless-stopped
+    depends_on:
+      - jitsi-prosody
+    environment:
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - JICOFO_COMPONENT_SECRET=${JITSI_JICOFO_COMPONENT_SECRET:-devsecret-jicofo-component}
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=${JITSI_JICOFO_AUTH_PASSWORD:-devsecret-jicofo-auth}
+      - JICOFO_ENABLE_HEALTH_CHECKS=false
+
+  jitsi-jvb:
+    image: jitsi/jvb:stable
+    restart: unless-stopped
+    depends_on:
+      - jitsi-prosody
+    ports:
+      - "10000:10000/udp"
+    environment:
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=${JITSI_JVB_AUTH_PASSWORD:-devsecret-jvb-auth}
+      # A real (non-localhost) deployment MUST set this to the host's
+      # real public IP -- otherwise clients behind NAT can't establish
+      # media. Fine to leave unset for local dev.
+      - DOCKER_HOST_ADDRESS=${JITSI_DOCKER_HOST_ADDRESS:-}
+
+  # Recording (see IdentityVerificationCall's own docstring on why this
+  # is manually triggered by the Notary, not orchestrated by RentShield
+  # itself) -- writes finished recordings into the jibri-recordings
+  # volume, shared with `webserver` below so
+  # run_video_call_recording_ingest_task can pick them up.
+  jitsi-jibri:
+    image: jitsi/jibri:stable
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    shm_size: 2gb
+    volumes:
+      - jibri-recordings:/config/recordings
+    environment:
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - JIBRI_RECORDER_USER=recorder
+      - JIBRI_RECORDER_PASSWORD=${JITSI_JIBRI_RECORDER_PASSWORD:-devsecret-jibri-recorder}
+      - JIBRI_XMPP_USER=jibri
+      - JIBRI_XMPP_PASSWORD=${JITSI_JIBRI_XMPP_PASSWORD:-devsecret-jibri-xmpp}
+      - JIBRI_BREWERY_MUC=jibribrewery
+      - JIBRI_LOGS_DIR=/config/logs
+      - JIBRI_RECORDING_DIR=/config/recordings
+      - JIBRI_STRIP_DOMAIN_JID=muc.meet.jitsi
+      - DISPLAY=:0
+
   # GPU-only — see deepseek-ocr-service/README.md. Not started by
   # `docker compose up` unless the "gpu" profile is enabled
   # (`docker compose --profile gpu up`), since it fails without a real
@@ -113,3 +238,5 @@ volumes:
   docuseal-data:
   opensign-mongo-data:
   opensign-files:
+  jitsi-prosody-config:
+  jibri-recordings:

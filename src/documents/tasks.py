@@ -1101,3 +1101,107 @@ def run_identity_prescreen_task(verification_id: int) -> dict:
     record.ai_prescreen_summary = summary
     record.save(update_fields=["ai_prescreen_summary", "updated_at"])
     return {"verification_id": verification_id, "summary": summary}
+
+
+@shared_task
+def run_video_call_reminder_task() -> dict:
+    """Scheduled every few minutes (see CELERY_BEAT_SCHEDULE in
+    paperless/settings/__init__.py) -- emails both sides of a CONFIRMED
+    IdentityVerificationCall shortly before it starts. `reminder_sent_at`
+    is stamped the moment the email fires so a call straddling two runs
+    of this task never gets a second reminder -- same single-use-stamp
+    pattern as DevicePairingCode's own `claimed_at`."""
+    from django.core.mail import send_mail
+    from django.utils import timezone
+
+    from documents.rentshield_identity.models import IdentityVerificationCall
+
+    now = timezone.now()
+    due = IdentityVerificationCall.objects.filter(
+        status=IdentityVerificationCall.Status.CONFIRMED,
+        reminder_sent_at__isnull=True,
+        scheduled_at__gte=now,
+        scheduled_at__lte=now + datetime.timedelta(minutes=30),
+    ).select_related("identity_verification__user", "proposed_by")
+
+    sent = 0
+    for call in due:
+        recipients = [
+            email
+            for email in (
+                call.identity_verification.user.email,
+                call.proposed_by.email if call.proposed_by else "",
+            )
+            if email
+        ]
+        subject = "RentShield: Your video call starts soon"
+        message = (
+            "Reminder: your RentShield identity-verification video call is "
+            f"scheduled for {call.scheduled_at:%Y-%m-%d %H:%M %Z}, coming up soon. "
+            "Join from RentShield when it's time.\n"
+        )
+        for recipient in recipients:
+            try:
+                send_mail(subject=subject, message=message, from_email=None, recipient_list=[recipient], fail_silently=False)
+            except Exception:
+                logger.exception("run_video_call_reminder_task: failed to email %r for call %s", recipient, call.id)
+        call.reminder_sent_at = now
+        call.save(update_fields=["reminder_sent_at", "updated_at"])
+        sent += 1
+    return {"reminders_sent": sent}
+
+
+@shared_task
+def run_video_call_recording_ingest_task() -> dict:
+    """Scheduled every few minutes -- Jibri (docker-compose's
+    `jitsi-jibri` service) writes each finished recording into its own
+    `<room_name>/` subdirectory under
+    settings.RENTSHIELD_JIBRI_RECORDINGS_DIR (a shared volume, not a
+    network call). This looks for a subdirectory matching a call still
+    missing `recording_file`, attaches the first video file found, and
+    deletes the source directory so it's never re-ingested. A periodic
+    scan instead of a Jibri finalize-script webhook -- avoids
+    overriding internals of the vendored Jibri image for what's
+    otherwise a rare, non-latency-sensitive event."""
+    import shutil
+    from pathlib import Path
+
+    from django.conf import settings
+    from django.core.files import File
+
+    from documents.rentshield_identity.models import IdentityVerificationCall
+
+    recordings_dir = Path(settings.RENTSHIELD_JIBRI_RECORDINGS_DIR)
+    if not recordings_dir.is_dir():
+        return {"skipped": "recordings directory does not exist"}
+
+    pending = {
+        call.room_name: call
+        for call in IdentityVerificationCall.objects.filter(recording_file="").filter(
+            status__in=[
+                IdentityVerificationCall.Status.CONFIRMED,
+                IdentityVerificationCall.Status.COMPLETED,
+                IdentityVerificationCall.Status.NO_SHOW,
+            ],
+        )
+    }
+    if not pending:
+        return {"ingested": 0}
+
+    ingested = 0
+    for room_dir in recordings_dir.iterdir():
+        call = pending.get(room_dir.name)
+        if not call or not room_dir.is_dir():
+            continue
+        video_file = next(
+            (f for f in room_dir.iterdir() if f.suffix.lower() in (".mp4", ".webm", ".mkv")),
+            None,
+        )
+        if not video_file:
+            continue
+        with video_file.open("rb") as fh:
+            call.recording_file.save(video_file.name, File(fh), save=False)
+        call.save(update_fields=["recording_file", "updated_at"])
+        shutil.rmtree(room_dir, ignore_errors=True)
+        ingested += 1
+    return {"ingested": ingested}

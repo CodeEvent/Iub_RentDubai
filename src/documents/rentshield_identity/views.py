@@ -30,6 +30,7 @@ from documents.rentshield.roles import IsRentshieldAdmin
 from documents.rentshield_identity import face_match
 from documents.rentshield_identity import idswyft_client
 from documents.rentshield_identity.models import IdentityVerification
+from documents.rentshield_identity.models import IdentityVerificationCall
 
 logger = logging.getLogger("paperless.rentshield")
 
@@ -272,7 +273,15 @@ def verification_status_view(request):
                 record.status = live["final_result"]
                 record.save(update_fields=["status", "updated_at"])
 
-    return Response({"status": record.status, "step": step, "notary_notes": record.notary_notes})
+    latest_call = record.video_calls.first()
+    return Response(
+        {
+            "status": record.status,
+            "step": step,
+            "notary_notes": record.notary_notes,
+            "video_call": latest_call.to_dict() if latest_call else None,
+        },
+    )
 
 
 @api_view(["POST"])
@@ -736,6 +745,200 @@ def notary_request_more_info_view(request, verification_id):
     )
     _notify_identity_verification_result(record)
     return Response({"status": record.status})
+
+
+@api_view(["POST"])
+@permission_classes([IsNotaryPublic])
+def schedule_video_call_view(request, verification_id):
+    """POST /api/documents/identity/verify/notary/<id>/schedule-call/
+    {scheduled_at} -- proposes a live video call (see
+    IdentityVerificationCall's own docstring for why this exists
+    alongside the async pipeline). Same reviewable gate as confirm/
+    reject/request-more-info: only meaningful once there's actually
+    something to talk through. Creates the row PROPOSED, not
+    CONFIRMED -- the user still has to agree to the time
+    (confirm_video_call_view) or ask for another one
+    (request_video_call_reschedule_view)."""
+    record = _get_reviewable_record_or_error(verification_id)
+    if isinstance(record, Response):
+        return record
+    raw = request.data.get("scheduled_at")
+    if not raw:
+        return Response({"error": "A date/time is required."}, status=400)
+    try:
+        scheduled_at = dateutil_parser.parse(raw)
+    except (ValueError, OverflowError):
+        return Response({"error": "Could not understand that date/time."}, status=400)
+    if timezone.is_naive(scheduled_at):
+        scheduled_at = timezone.make_aware(scheduled_at)
+    if scheduled_at <= timezone.now():
+        return Response({"error": "Pick a time in the future."}, status=400)
+
+    # Real bug caught in testing: without this, a Notary proposing a
+    # new time left the OLD row still PROPOSED/CONFIRMED, so two "active"
+    # calls could exist for the same record at once -- and since
+    # to_dict() consumers just take the most-recently-scheduled one,
+    # whichever had the LATER scheduled_at would win even if it was the
+    # stale one. Proposing again always supersedes whatever was pending.
+    record.video_calls.filter(
+        status__in=[
+            IdentityVerificationCall.Status.PROPOSED,
+            IdentityVerificationCall.Status.CONFIRMED,
+            IdentityVerificationCall.Status.RESCHEDULE_REQUESTED,
+        ],
+    ).update(status=IdentityVerificationCall.Status.CANCELLED)
+
+    call = IdentityVerificationCall.objects.create(
+        identity_verification=record,
+        scheduled_at=scheduled_at,
+        proposed_by=request.user,
+    )
+    _notify_video_call_proposed(call)
+    return Response({"call": call.to_dict()})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def confirm_video_call_view(request, call_id):
+    """POST /api/documents/identity/verify/call/<call_id>/confirm/ --
+    the property owner agrees to the proposed time. Only the user the
+    call is actually about can confirm it -- there's no other access
+    control on this row otherwise (unlike the Notary-only endpoints
+    above, this one's identity check is "is this your own
+    verification", not a role)."""
+    call = _get_own_call_or_error(request.user, call_id)
+    if isinstance(call, Response):
+        return call
+    if call.status != IdentityVerificationCall.Status.PROPOSED:
+        return Response({"error": f"This call isn't waiting on your confirmation (status: {call.status})."}, status=400)
+    call.status = IdentityVerificationCall.Status.CONFIRMED
+    call.save(update_fields=["status", "updated_at"])
+    _notify_video_call_confirmed(call)
+    return Response({"call": call.to_dict()})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def request_video_call_reschedule_view(request, call_id):
+    """POST /api/documents/identity/verify/call/<call_id>/request-reschedule/
+    {reason} -- the proposed time doesn't work for the user. Doesn't
+    let them pick a new time themselves (that's still the Notary's
+    call to propose, via schedule_video_call_view again once they've
+    seen why) -- just flags it back to the queue, same "notify, don't
+    self-serve" pattern as the rest of this review relationship."""
+    call = _get_own_call_or_error(request.user, call_id)
+    if isinstance(call, Response):
+        return call
+    if call.status not in (IdentityVerificationCall.Status.PROPOSED, IdentityVerificationCall.Status.CONFIRMED):
+        return Response({"error": f"This call can't be rescheduled anymore (status: {call.status})."}, status=400)
+    call.status = IdentityVerificationCall.Status.RESCHEDULE_REQUESTED
+    call.save(update_fields=["status", "updated_at"])
+    _notify_video_call_reschedule_requested(call, (request.data.get("reason") or "").strip()[:2000])
+    return Response({"call": call.to_dict()})
+
+
+@api_view(["POST"])
+@permission_classes([IsNotaryPublic])
+def complete_video_call_view(request, verification_id, call_id):
+    """POST /api/documents/identity/verify/notary/<id>/calls/<call_id>/complete/
+    {notes, no_show} -- the Notary's own record of what happened on the
+    call, independent of Confirm/Reject/Send-back-for-more-info on the
+    verification itself: the call is evidence feeding that eventual
+    decision, not a decision in its own right."""
+    try:
+        call = IdentityVerificationCall.objects.get(pk=call_id, identity_verification_id=verification_id)
+    except (IdentityVerificationCall.DoesNotExist, ValueError, TypeError):
+        return Response({"error": "No such call."}, status=404)
+    no_show = bool(request.data.get("no_show"))
+    call.status = IdentityVerificationCall.Status.NO_SHOW if no_show else IdentityVerificationCall.Status.COMPLETED
+    call.notary_call_notes = (request.data.get("notes") or "")[:2000]
+    call.save(update_fields=["status", "notary_call_notes", "updated_at"])
+    return Response({"call": call.to_dict()})
+
+
+def _get_own_call_or_error(user, call_id):
+    try:
+        call = IdentityVerificationCall.objects.select_related("identity_verification").get(pk=call_id)
+    except (IdentityVerificationCall.DoesNotExist, ValueError, TypeError):
+        return Response({"error": "No such call."}, status=404)
+    if call.identity_verification.user_id != user.id:
+        return Response({"error": "Not your verification."}, status=403)
+    return call
+
+
+def _notify_video_call_proposed(call: IdentityVerificationCall) -> None:
+    """Fire-and-forget email to the property owner the moment a Notary
+    proposes a time -- same silent-no-op-without-an-email pattern as
+    _notify_identity_verification_result."""
+    recipient = call.identity_verification.user.email
+    if not recipient:
+        return
+    try:
+        send_mail(
+            subject="RentShield: A Notary Public proposed a video call",
+            message=(
+                f"A Notary Public would like a short video call with you on "
+                f"{call.scheduled_at:%Y-%m-%d %H:%M %Z} to verify your identity in "
+                "person. Open RentShield to confirm this time or ask for another "
+                "one.\n"
+            ),
+            from_email=None,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("Failed to send video call proposal email for call %s", call.id)
+
+
+def _notify_video_call_confirmed(call: IdentityVerificationCall) -> None:
+    """Fire-and-forget email to the Notary who proposed it -- confirms
+    the property owner has actually agreed to the time."""
+    recipient = call.proposed_by.email if call.proposed_by else ""
+    if not recipient:
+        return
+    try:
+        send_mail(
+            subject="RentShield: Your proposed video call was confirmed",
+            message=(
+                f"{call.identity_verification.user.username} confirmed the video "
+                f"call for {call.scheduled_at:%Y-%m-%d %H:%M %Z}. It'll show up in "
+                "your review queue with a Join button once it's close to that "
+                "time.\n"
+            ),
+            from_email=None,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("Failed to send video call confirmation email for call %s", call.id)
+
+
+def _notify_video_call_reschedule_requested(call: IdentityVerificationCall, reason: str) -> None:
+    """Fire-and-forget email to every Notary/staff (same recipient list
+    as _notify_notary_queue) -- the proposed time doesn't work, someone
+    needs to propose a new one."""
+    User = get_user_model()
+    recipients = (
+        User.objects.filter(Q(is_staff=True) | Q(groups__name=NOTARY_PUBLIC_GROUP_NAME))
+        .exclude(email="")
+        .values_list("email", flat=True)
+        .distinct()
+    )
+    if not recipients:
+        return
+    subject = "RentShield: A property owner asked to reschedule their video call"
+    message = (
+        f"{call.identity_verification.user.username} can't make the video call "
+        f"proposed for {call.scheduled_at:%Y-%m-%d %H:%M %Z} -- propose a new time "
+        "from the Identity Verification Admin page.\n"
+    )
+    if reason:
+        message += f"\nTheir reason: {reason}\n"
+    for recipient in recipients:
+        try:
+            send_mail(subject=subject, message=message, from_email=None, recipient_list=[recipient], fail_silently=False)
+        except Exception:
+            logger.exception("Failed to send reschedule-request email to %r", recipient)
 
 
 def _get_reviewable_record_or_error(verification_id):

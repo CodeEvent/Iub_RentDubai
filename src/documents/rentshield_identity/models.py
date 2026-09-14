@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import uuid
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
 
@@ -186,6 +189,117 @@ class IdentityVerification(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id}: {self.status} ({self.provider})"
+
+
+class IdentityVerificationCall(models.Model):
+    """A scheduled, self-hosted Jitsi video call between a Notary Public
+    and the property owner -- the one live, synchronous moment in an
+    otherwise fully async pipeline, closing the biggest real gap
+    against how an actual Dubai Notary Public appointment works (in-
+    person presence confirmation + a legal-capacity judgment call, per
+    notarypublicdubai.com's own description -- neither of which a
+    recorded video can substitute for). A FK, not a one-to-one: a
+    no-show or a reschedule creates a new row rather than overwriting
+    history, so a Notary reviewing a record later can still see that an
+    earlier attempt happened.
+
+    Deliberately simple room security (2026-09-14): `room_name` is
+    unguessable (a full uuid4) but Jitsi's own auth/lobby isn't
+    configured -- same trust model as any "anyone with the link" video
+    tool. Recording is started manually by the Notary clicking Jitsi's
+    own toolbar button (they're the moderator, being first to
+    schedule/join) rather than orchestrated via Jibri's REST/XMPP API --
+    ponytail: add prosody JWT auth + a lobby, and/or programmatic
+    recording control, if this ever needs hardening."""
+
+    class Status(models.TextChoices):
+        PROPOSED = "proposed", "Proposed -- waiting on the user"
+        CONFIRMED = "confirmed", "Confirmed"
+        RESCHEDULE_REQUESTED = "reschedule_requested", "User asked for a different time"
+        COMPLETED = "completed", "Completed"
+        NO_SHOW = "no_show", "No-show"
+        CANCELLED = "cancelled", "Cancelled"
+
+    identity_verification = models.ForeignKey(
+        IdentityVerification,
+        on_delete=models.CASCADE,
+        related_name="video_calls",
+    )
+    room_name = models.CharField(max_length=64, unique=True, default=uuid.uuid4, editable=False)
+    scheduled_at = models.DateTimeField()
+    proposed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="rentshield_proposed_video_calls",
+    )
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.PROPOSED)
+    notary_call_notes = models.TextField(blank=True, default="")
+
+    # Filled in by run_video_call_recording_ingest_task once Jibri's
+    # finished recording is found in the shared volume and matched to
+    # this call by room_name -- see that task's own docstring for why a
+    # periodic scan instead of a Jibri finalize-script webhook.
+    recording_file = models.FileField(
+        upload_to="rentshield_identity/call_recordings/",
+        blank=True,
+        null=True,
+    )
+
+    # Null until run_video_call_reminder_task actually sends one --
+    # never re-sent for the same call once set, same "log a stamp so a
+    # periodic task can't double-fire" pattern DevicePairingCode's own
+    # single-use `claimed_at` uses.
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # -created_at, not -scheduled_at: every consumer that reads
+        # `.first()`/`calls[0]` wants "the current/most-recently-
+        # proposed call", and a superseded call can easily have a
+        # LATER scheduled_at than the new one that replaced it (see
+        # schedule_video_call_view's own cancel-the-old-ones comment) --
+        # ordering by scheduled_at would then surface the stale one.
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.identity_verification_id}: {self.status} @ {self.scheduled_at}"
+
+    # 10 minutes early -- long enough that neither side is stuck
+    # refreshing right at the scheduled second, short enough that
+    # "Join call" isn't just sitting there for hours beforehand. No
+    # forced close on the other end: the Notary marking the call
+    # COMPLETED/NO_SHOW is what actually ends the window, not a timer.
+    JOIN_WINDOW_BEFORE = timedelta(minutes=10)
+
+    def join_open(self) -> bool:
+        from django.utils import timezone
+
+        return self.status == self.Status.CONFIRMED and timezone.now() >= self.scheduled_at - self.JOIN_WINDOW_BEFORE
+
+    def to_dict(self) -> dict:
+        """Shared serialization for both the property owner's own status
+        endpoint (verification_status_view) and the Notary's review list
+        (admin_list_verifications_view) -- one shape, not two independently
+        maintained ones. Carries `jitsi_base_url` itself (same pattern
+        pairing_views.py's `_apk_download_url()` already uses for
+        `apk_url`) so the frontend never needs its own separate copy of
+        that config -- it talks to Jitsi directly, not through Django,
+        but still gets the URL from the one place that already knows it."""
+        from django.conf import settings
+
+        return {
+            "id": self.id,
+            "status": self.status,
+            "scheduled_at": self.scheduled_at,
+            "room_name": self.room_name,
+            "join_open": self.join_open(),
+            "notary_call_notes": self.notary_call_notes,
+            "recording_url": self.recording_file.url if self.recording_file else None,
+            "jitsi_base_url": settings.RENTSHIELD_JITSI_BASE_URL,
+        }
 
 
 class DevicePairingCode(models.Model):

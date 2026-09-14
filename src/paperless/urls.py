@@ -25,10 +25,14 @@ from documents.rentshield_identity.pairing_views import pair_claim_view
 from documents.rentshield_identity.pairing_views import pair_start_view
 from documents.rentshield_identity.pairing_views import pair_status_view
 from documents.rentshield_identity.views import admin_reset_verification_view
+from documents.rentshield_identity.views import complete_video_call_view
+from documents.rentshield_identity.views import confirm_video_call_view
 from documents.rentshield_identity.views import idswyft_webhook_view
 from documents.rentshield_identity.views import notary_confirm_view
 from documents.rentshield_identity.views import notary_reject_view
 from documents.rentshield_identity.views import notary_request_more_info_view
+from documents.rentshield_identity.views import request_video_call_reschedule_view
+from documents.rentshield_identity.views import schedule_video_call_view
 from documents.rentshield_identity.views import start_verification_view
 from documents.rentshield_identity.views import submit_chip_data_view
 from documents.rentshield_identity.views import upload_additional_id_view
@@ -333,6 +337,29 @@ urlpatterns = [
                                 r"^identity/verify/admin/(?P<verification_id>\d+)/reset/$",
                                 admin_reset_verification_view,
                                 name="rentshield-identity-verify-admin-reset",
+                            ),
+                            # Notary/property-owner video call scheduling
+                            # (documents/rentshield_identity/models.py's
+                            # IdentityVerificationCall)
+                            re_path(
+                                r"^identity/verify/notary/(?P<verification_id>\d+)/schedule-call/$",
+                                schedule_video_call_view,
+                                name="rentshield-identity-verify-schedule-call",
+                            ),
+                            re_path(
+                                r"^identity/verify/call/(?P<call_id>\d+)/confirm/$",
+                                confirm_video_call_view,
+                                name="rentshield-identity-verify-call-confirm",
+                            ),
+                            re_path(
+                                r"^identity/verify/call/(?P<call_id>\d+)/request-reschedule/$",
+                                request_video_call_reschedule_view,
+                                name="rentshield-identity-verify-call-request-reschedule",
+                            ),
+                            re_path(
+                                r"^identity/verify/notary/(?P<verification_id>\d+)/calls/(?P<call_id>\d+)/complete/$",
+                                complete_video_call_view,
+                                name="rentshield-identity-verify-call-complete",
                             ),
                             # "Scan to sign in" device pairing --
                             # documents/rentshield_identity/pairing_views.py

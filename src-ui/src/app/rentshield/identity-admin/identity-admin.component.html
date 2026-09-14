@@ -218,6 +218,81 @@
             </div>
           }
 
+          <!-- The one live, synchronous step in this review (see
+               IdentityVerificationCall's own docstring). Scheduling is
+               only offered while the record is actually reviewable;
+               an already-scheduled call still shows/completes past
+               that point (Confirm/Reject can happen either side of
+               the call itself). -->
+          @if (record.video_call; as call) {
+            <div class="rs-data-block d-flex flex-column gap-2">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <i-bs name="camera-video"></i-bs>
+                <strong>Video call:</strong>
+                <span class="badge rs-status-badge" [ngClass]="statusClass(call.status)">{{ call.status }}</span>
+                <span class="text-muted">{{ call.scheduled_at | date: 'medium' }}</span>
+              </div>
+              @if (call.status === 'confirmed' && call.join_open) {
+                <app-video-call-embed [roomName]="call.room_name" [jitsiBaseUrl]="call.jitsi_base_url"></app-video-call-embed>
+                <div class="d-flex flex-column flex-md-row gap-2 align-items-md-end">
+                  <textarea
+                    class="form-control form-control-sm flex-grow-1"
+                    rows="1"
+                    placeholder="What happened on the call?"
+                    [(ngModel)]="callNotesInputs[record.id]"
+                  ></textarea>
+                  <div class="d-flex gap-2">
+                    <button
+                      type="button"
+                      class="btn btn-sm rs-btn-emerald"
+                      [disabled]="isBusy(record.id)"
+                      (click)="completeCall(record, false)"
+                    >
+                      Mark completed
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm rs-btn-outline-red"
+                      [disabled]="isBusy(record.id)"
+                      (click)="completeCall(record, true)"
+                    >
+                      No-show
+                    </button>
+                  </div>
+                </div>
+              } @else if (call.status === 'confirmed') {
+                <div class="small text-muted">Waiting on the scheduled time -- Join opens 10 minutes early.</div>
+              }
+              @if (call.notary_call_notes) {
+                <div class="small text-muted">"{{ call.notary_call_notes }}"</div>
+              }
+              @if (call.recording_url) {
+                <a class="small" [href]="call.recording_url" target="_blank" rel="noopener">
+                  <i-bs name="play-circle" class="me-1"></i-bs>View recording
+                </a>
+              }
+            </div>
+          } @else if (isReviewable(record)) {
+            <div class="rs-data-block d-flex flex-column flex-md-row gap-2 align-items-md-end">
+              <div class="flex-grow-1">
+                <div class="rs-data-block-label">Schedule a video call</div>
+                <input
+                  type="datetime-local"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="scheduleCallInputs[record.id]"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm rs-btn-outline-slate"
+                [disabled]="isBusy(record.id)"
+                (click)="scheduleCall(record)"
+              >
+                <i-bs name="camera-video" class="me-1"></i-bs>Schedule video call
+              </button>
+            </div>
+          }
+
           @if (record.notary_reviewed_by) {
             <div class="small text-muted">
               Reviewed by {{ record.notary_reviewed_by }} on {{ record.notary_reviewed_at | date: 'medium' }}

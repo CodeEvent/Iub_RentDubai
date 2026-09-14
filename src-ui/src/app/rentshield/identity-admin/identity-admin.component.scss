@@ -52,30 +52,41 @@ video.rs-evidence-thumb {
   font-weight: 700;
 }
 
-.rs-status-verified {
+.rs-status-verified,
+.rs-status-completed {
   background: #d1fae5 !important;
   color: #059669 !important;
 }
 
-.rs-status-failed {
+.rs-status-failed,
+.rs-status-no_show {
   background: #fee2e2 !important;
   color: #b91c1c !important;
 }
 
-.rs-status-awaiting_notary_review {
+.rs-status-awaiting_notary_review,
+.rs-status-confirmed {
   background: #dbeafe !important;
   color: #1d4ed8 !important;
 }
 
 .rs-status-manual_review,
-.rs-status-pending {
+.rs-status-pending,
+.rs-status-proposed {
   background: #fef3c7 !important;
   color: #b45309 !important;
 }
 
+.rs-status-cancelled {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+}
+
 // Distinct from awaiting_notary_review's blue -- this is "waiting on
-// the user again", not "waiting on a Notary".
-.rs-status-needs_more_info {
+// the user again", not "waiting on a Notary". Shared with a video
+// call's own reschedule_requested for the same reason.
+.rs-status-needs_more_info,
+.rs-status-reschedule_requested {
   background: #e0e7ff !important;
   color: #4338ca !important;
 }

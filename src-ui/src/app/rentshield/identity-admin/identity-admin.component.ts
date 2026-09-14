@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
 import { PermissionsService } from 'src/app/services/permissions.service'
 import { AdminVerificationRecord, RentshieldApiService } from '../services/rentshield-api.service'
+import { VideoCallEmbedComponent } from '../video-call-embed/video-call-embed.component'
 
 // Admin/Notary Public review page: every property owner who has gone
 // through identity verification, their submitted passport photo,
@@ -40,7 +41,7 @@ const EDITABLE_FIELDS = [
 @Component({
   selector: 'app-identity-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, NgxBootstrapIconsModule],
+  imports: [CommonModule, FormsModule, NgxBootstrapIconsModule, VideoCallEmbedComponent],
   templateUrl: './identity-admin.component.html',
   styleUrl: './identity-admin.component.scss',
 })
@@ -70,6 +71,11 @@ export class IdentityAdminComponent {
   // permission (IsRentshieldAdmin | IsNotaryPublic on
   // admin_reset_verification_view).
   isNotaryPublic = signal(false)
+  // record id -> the datetime-local input's raw value, for
+  // scheduleCall below.
+  scheduleCallInputs: Record<number, string> = {}
+  // record id -> completeCall's notes textarea.
+  callNotesInputs: Record<number, string> = {}
 
   constructor() {
     this.loadRecords()
@@ -207,6 +213,43 @@ export class IdentityAdminComponent {
     }
     this.setBusy(record.id, true)
     this.api.requestMoreInfoOnIdentityVerification(record.id, notes, this.editsFor(record.id)).subscribe({
+      next: () => {
+        this.setBusy(record.id, false)
+        this.loadRecords()
+      },
+      error: (err) => this.handleReviewError(record.id, err),
+    })
+  }
+
+  // The one live, synchronous step alongside the rest of this async
+  // review (see IdentityVerificationCall's own docstring). Native
+  // <input type="datetime-local">, matching notice-form's own
+  // type="date" convention -- no picker library.
+  scheduleCall(record: AdminVerificationRecord): void {
+    const raw = this.scheduleCallInputs[record.id]
+    if (!raw) {
+      this.error.set('Pick a date and time first.')
+      return
+    }
+    this.setBusy(record.id, true)
+    this.api.scheduleVideoCall(record.id, raw).subscribe({
+      next: () => {
+        this.setBusy(record.id, false)
+        this.loadRecords()
+      },
+      error: (err) => this.handleReviewError(record.id, err),
+    })
+  }
+
+  // The Notary's own record of what happened on the call, independent
+  // of Confirm/Reject/Send-back-for-more-info on the verification
+  // itself -- the call is evidence feeding that eventual decision, not
+  // a decision in its own right.
+  completeCall(record: AdminVerificationRecord, noShow: boolean): void {
+    const call = record.video_call
+    if (!call) return
+    this.setBusy(record.id, true)
+    this.api.completeVideoCall(record.id, call.id, this.callNotesInputs[record.id] || '', noShow).subscribe({
       next: () => {
         this.setBusy(record.id, false)
         this.loadRecords()

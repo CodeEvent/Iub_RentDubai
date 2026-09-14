@@ -23,6 +23,78 @@
       }
     </div>
 
+    <!-- The one live, synchronous step in this pipeline (see
+         IdentityVerificationCall's own docstring) -- shown independent
+         of status() below since a call can be proposed while status()
+         is still 'awaiting_notary_review'. -->
+    @if (activeCall(); as call) {
+      <div class="rs-hint d-flex flex-column gap-2">
+        @if (call.status === 'proposed') {
+          <div>
+            <i-bs name="camera-video" class="me-1"></i-bs>
+            A Notary Public would like a short video call with you on
+            <strong>{{ call.scheduled_at | date: 'medium' }}</strong> to verify your identity in
+            person.
+          </div>
+          @if (!reschedulingCall()) {
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm rs-btn-emerald" [disabled]="callActionBusy()" (click)="confirmCall()">
+                Confirm this time
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm rs-btn-outline-slate"
+                [disabled]="callActionBusy()"
+                (click)="reschedulingCall.set(true)"
+              >
+                Ask for another time
+              </button>
+            </div>
+          } @else {
+            <div class="d-flex flex-column gap-2">
+              <textarea
+                class="form-control form-control-sm"
+                rows="2"
+                placeholder="Why doesn't this time work? (optional)"
+                [(ngModel)]="rescheduleReason"
+              ></textarea>
+              <div class="d-flex gap-2">
+                <button
+                  type="button"
+                  class="btn btn-sm rs-btn-outline-amber"
+                  [disabled]="callActionBusy()"
+                  (click)="requestReschedule()"
+                >
+                  Send request
+                </button>
+                <button type="button" class="btn btn-sm btn-link" (click)="reschedulingCall.set(false)">Never mind</button>
+              </div>
+            </div>
+          }
+        } @else if (call.status === 'confirmed' && !call.join_open) {
+          <div>
+            <i-bs name="camera-video" class="me-1"></i-bs>
+            Video call confirmed for <strong>{{ call.scheduled_at | date: 'medium' }}</strong>. Come
+            back here a few minutes before to join.
+          </div>
+        } @else if (call.status === 'confirmed' && call.join_open) {
+          <div class="fw-semibold">
+            <i-bs name="camera-video" class="me-1"></i-bs>
+            Your video call is ready to join.
+          </div>
+          <app-video-call-embed [roomName]="call.room_name" [jitsiBaseUrl]="call.jitsi_base_url"></app-video-call-embed>
+        } @else if (call.status === 'reschedule_requested') {
+          <div class="text-muted">
+            <i-bs name="camera-video" class="me-1"></i-bs>
+            You asked for a different time -- waiting on the Notary Public to propose a new one.
+          </div>
+        }
+        @if (callActionError()) {
+          <p class="text-danger small mb-0">{{ callActionError() }}</p>
+        }
+      </div>
+    }
+
     @if (!status() || status() === 'failed' || status() === 'needs_more_info') {
       @if (!declaring() && !pairing()) {
         <p class="text-muted small mb-0">
