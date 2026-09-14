@@ -73,6 +73,13 @@ video.rs-evidence-thumb {
   color: #b45309 !important;
 }
 
+// Distinct from awaiting_notary_review's blue -- this is "waiting on
+// the user again", not "waiting on a Notary".
+.rs-status-needs_more_info {
+  background: #e0e7ff !important;
+  color: #4338ca !important;
+}
+
 // A labeled block of read-only (or editable) data -- the declared/OCR/
 // chip/match-score columns -- given its own light card instead of
 // sitting as bare text, so each source of truth reads as a distinct
@@ -94,15 +101,9 @@ video.rs-evidence-thumb {
   margin-bottom: 0.4rem;
 }
 
-// Amber-toned twin of rentshield-shared's .rs-hint -- for the identity
-// mismatch warning specifically, so it reads as "needs attention"
-// rather than the same green "all good" tone .rs-hint carries
-// elsewhere in the app.
-.rs-hint-warn {
-  background: rgba(180, 83, 9, 0.08);
-  border: 1px solid rgba(180, 83, 9, 0.25);
-  border-radius: 12px;
-  padding: 0.75rem 1rem;
-  font-size: 0.8rem;
-  color: #92400e;
-}
+// .rs-hint-warn moved to ../rentshield-shared.scss (2026-09-14) -- the
+// identity-verification page needs the same amber "needs attention"
+// tone for its own needs_more_info message, and a class only this
+// component's stylesheet defines doesn't apply anywhere else (Angular
+// view encapsulation -- see rentshield-shared.scss's own comment on
+// .rs-btn-emerald for the bug this exact mistake caused before).

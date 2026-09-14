@@ -23,7 +23,7 @@
       }
     </div>
 
-    @if (!status() || status() === 'failed') {
+    @if (!status() || status() === 'failed' || status() === 'needs_more_info') {
       @if (!declaring() && !pairing()) {
         <p class="text-muted small mb-0">
           Confirm you're the real owner of this property. This requires the RentShield mobile
@@ -34,13 +34,22 @@
             Verification didn't succeed last time. You can try again below.
           </div>
         }
+        @if (status() === 'needs_more_info') {
+          <div class="rs-hint-warn small mb-0">
+            A Notary Public needs a bit more from you before this can be approved -- nothing
+            you've already submitted has been lost.
+            @if (notaryNotes()) {
+              <div class="mt-1 fst-italic">"{{ notaryNotes() }}"</div>
+            }
+          </div>
+        }
         <button
           type="button"
           class="btn rs-btn-emerald align-self-start d-flex align-items-center gap-2"
           (click)="start()"
         >
           <i-bs name="phone"></i-bs>
-          Start Verification
+          {{ status() === 'needs_more_info' ? 'Continue Verification' : 'Start Verification' }}
         </button>
         @if (error()) {
           <p class="text-danger small mb-0">{{ error() }}</p>

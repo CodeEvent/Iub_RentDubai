@@ -65,9 +65,19 @@ export class IdentityAdminComponent {
   // there, not blank boxes the Notary has to retype from scratch.
   editValues: Record<number, Record<string, string>> = {}
   busyIds = signal<Set<number>>(new Set())
+  // Gates "Reset verification" (see resetVerification below) -- now
+  // available to a Notary as well as an Admin, matching the backend
+  // permission (IsRentshieldAdmin | IsNotaryPublic on
+  // admin_reset_verification_view).
+  isNotaryPublic = signal(false)
 
   constructor() {
     this.loadRecords()
+    this.api.getNotaryStatus().subscribe((res) => this.isNotaryPublic.set(res.is_notary_public))
+  }
+
+  canManageEvidence(): boolean {
+    return this.permissionsService.isAdmin() || this.isNotaryPublic()
   }
 
   loadRecords(): void {
@@ -184,10 +194,31 @@ export class IdentityAdminComponent {
       })
   }
 
-  // Admin-only (see admin_reset_verification_view's own docstring for
-  // why this is deliberately not something a Notary can do) -- wipes
-  // every uploaded file and every OCR/chip/declared field back to a
-  // clean slate so the user can redo the whole pipeline from scratch.
+  // Requires notes -- unlike confirm/reject, there's no way for the
+  // user to know what to fix without them (see
+  // notary_request_more_info_view's own check). Sends the record back
+  // to the user's pipeline without deleting anything, unlike
+  // resetVerification below.
+  requestMoreInfo(record: AdminVerificationRecord): void {
+    const notes = (this.reviewNotes[record.id] || '').trim()
+    if (!notes) {
+      this.error.set('Say what the user needs to redo before sending this back.')
+      return
+    }
+    this.setBusy(record.id, true)
+    this.api.requestMoreInfoOnIdentityVerification(record.id, notes, this.editsFor(record.id)).subscribe({
+      next: () => {
+        this.setBusy(record.id, false)
+        this.loadRecords()
+      },
+      error: (err) => this.handleReviewError(record.id, err),
+    })
+  }
+
+  // Available to an Admin or a Notary Public (admin_reset_verification_view) --
+  // wipes every uploaded file and every OCR/chip/declared field back to
+  // a clean slate so the user can redo the whole pipeline from scratch.
+  // For a record too broken to send back with requestMoreInfo above.
   // Real destructive action, confirmed before firing.
   resetVerification(record: AdminVerificationRecord): void {
     if (!confirm(`Reset ${record.username}'s identity verification? This permanently deletes every photo/video they've uploaded so far.`)) {

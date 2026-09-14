@@ -38,6 +38,15 @@ class IdentityVerification(models.Model):
         VERIFIED = "verified", "Verified"
         FAILED = "failed", "Failed"
         MANUAL_REVIEW = "manual_review", "Needs manual review"
+        # Distinct from FAILED (2026-09-14): a Notary who just needs a
+        # redo -- blurry video, wrong document photographed, chip read
+        # didn't take -- previously had no way to say that without using
+        # Reject, which reads as a hard "you did not pass" to the user
+        # and to anyone auditing the record afterward. This sends the
+        # record back to the user's own pipeline without deleting any
+        # evidence (see notary_request_more_info_view) -- unlike
+        # admin_reset_verification_view, which does.
+        NEEDS_MORE_INFO = "needs_more_info", "Needs more from you"
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,

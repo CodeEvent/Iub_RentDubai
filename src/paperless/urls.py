@@ -28,6 +28,7 @@ from documents.rentshield_identity.views import admin_reset_verification_view
 from documents.rentshield_identity.views import idswyft_webhook_view
 from documents.rentshield_identity.views import notary_confirm_view
 from documents.rentshield_identity.views import notary_reject_view
+from documents.rentshield_identity.views import notary_request_more_info_view
 from documents.rentshield_identity.views import start_verification_view
 from documents.rentshield_identity.views import submit_chip_data_view
 from documents.rentshield_identity.views import upload_additional_id_view
@@ -322,6 +323,11 @@ urlpatterns = [
                                 r"^identity/verify/notary/(?P<verification_id>\d+)/reject/$",
                                 notary_reject_view,
                                 name="rentshield-identity-verify-notary-reject",
+                            ),
+                            re_path(
+                                r"^identity/verify/notary/(?P<verification_id>\d+)/request-more-info/$",
+                                notary_request_more_info_view,
+                                name="rentshield-identity-verify-notary-request-more-info",
                             ),
                             re_path(
                                 r"^identity/verify/admin/(?P<verification_id>\d+)/reset/$",

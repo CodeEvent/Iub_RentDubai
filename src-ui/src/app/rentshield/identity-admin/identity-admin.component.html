@@ -230,7 +230,7 @@
               <textarea
                 class="form-control form-control-sm flex-grow-1"
                 rows="1"
-                placeholder="Optional review notes"
+                placeholder="Review notes (required to send back for more info)"
                 [(ngModel)]="reviewNotes[record.id]"
               ></textarea>
               <div class="d-flex gap-2">
@@ -244,6 +244,14 @@
                 </button>
                 <button
                   type="button"
+                  class="btn btn-sm rs-btn-outline-amber"
+                  [disabled]="isBusy(record.id)"
+                  (click)="requestMoreInfo(record)"
+                >
+                  Send back for more info
+                </button>
+                <button
+                  type="button"
                   class="btn btn-sm rs-btn-outline-red"
                   [disabled]="isBusy(record.id)"
                   (click)="reject(record)"
@@ -254,7 +262,7 @@
             </div>
           }
 
-          @if (permissionsService.isAdmin()) {
+          @if (canManageEvidence()) {
             <div class="d-flex justify-content-end">
               <button
                 type="button"

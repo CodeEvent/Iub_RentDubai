@@ -272,7 +272,7 @@ def verification_status_view(request):
                 record.status = live["final_result"]
                 record.save(update_fields=["status", "updated_at"])
 
-    return Response({"status": record.status, "step": step})
+    return Response({"status": record.status, "step": step, "notary_notes": record.notary_notes})
 
 
 @api_view(["POST"])
@@ -627,6 +627,14 @@ def _notify_identity_verification_result(record: IdentityVerification) -> None:
             "verification and confirmed it. Your account is now marked "
             "as verified.\n\n"
         )
+    elif record.status == IdentityVerification.Status.NEEDS_MORE_INFO:
+        subject = "RentShield: Your identity verification needs another look"
+        message = (
+            "A Notary Public reviewed your identity verification and needs "
+            "a bit more from you before it can be approved -- nothing you've "
+            "already submitted has been deleted. Open RentShield and "
+            "continue your verification to address this.\n\n"
+        )
     else:
         subject = "RentShield: Your identity verification was not approved"
         message = (
@@ -690,6 +698,39 @@ def notary_reject_view(request, verification_id):
     record.notary_reviewed_by = request.user
     record.notary_reviewed_at = timezone.now()
     record.notary_notes = (request.data.get("notes") or "")[:2000]
+    record.save(
+        update_fields=[*edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"],
+    )
+    _notify_identity_verification_result(record)
+    return Response({"status": record.status})
+
+
+@api_view(["POST"])
+@permission_classes([IsNotaryPublic])
+def notary_request_more_info_view(request, verification_id):
+    """POST /api/documents/identity/verify/notary/<id>/request-more-info/
+    -- a third outcome alongside confirm/reject: the video/photos are
+    mostly fine but something specific needs redoing (blurry video,
+    wrong document photographed, a chip read that didn't take, ...).
+    Unlike notary_reject_view this is NOT a final decision -- it sends
+    the record back to PENDING so the user's own app picks the pipeline
+    back up (same non-destructive resume path start_verification_view
+    already gives a FAILED record), and unlike
+    admin_reset_verification_view it deletes nothing: whatever was
+    already good stays on the record for the next reviewer to see.
+    `notes` is required here (optional on confirm/reject) -- without it
+    the user has no idea what to actually redo."""
+    record = _get_reviewable_record_or_error(verification_id)
+    if isinstance(record, Response):
+        return record
+    notes = (request.data.get("notes") or "").strip()
+    if not notes:
+        return Response({"error": "Say what the user needs to redo -- notes are required for this."}, status=400)
+    edited_fields = _apply_notary_edits(record, request.data)
+    record.status = IdentityVerification.Status.NEEDS_MORE_INFO
+    record.notary_reviewed_by = request.user
+    record.notary_reviewed_at = timezone.now()
+    record.notary_notes = notes[:2000]
     record.save(
         update_fields=[*edited_fields, "status", "notary_reviewed_by", "notary_reviewed_at", "notary_notes", "updated_at"],
     )
@@ -765,18 +806,20 @@ def _reset_verification(record: IdentityVerification) -> None:
 
 
 @api_view(["POST"])
-@permission_classes([IsRentshieldAdmin])
+@permission_classes([IsRentshieldAdmin | IsNotaryPublic])
 def admin_reset_verification_view(request, verification_id):
-    """POST /api/documents/identity/verify/admin/<id>/reset/ -- lets an
-    admin restart a user's whole identity verification from scratch
-    (wrong document scanned, evidence needs redoing, testing, ...)
-    without a shell session -- this is exactly what was being done by
-    hand via `manage.py shell` before this endpoint existed. Admin-only,
-    not available to a Notary: reviewing/deciding is their job,
-    permanently deleting evidence is a different, more destructive
-    action this project doesn't want the Notary role to carry (see
-    roles.py's header comment on keeping Notary Public deliberately
-    narrow)."""
+    """POST /api/documents/identity/verify/admin/<id>/reset/ -- wipes a
+    user's whole identity verification back to a clean slate (every
+    uploaded photo/video, every OCR/chip/declared field) and lets them
+    start over -- for a case genuinely too broken to send back with
+    notary_request_more_info_view (wrong account entirely, corrupted
+    upload, testing, ...). Opened up to Notary Public as well as Admin
+    (2026-09-14, explicitly requested) -- previously admin-only on the
+    theory that deleting evidence was a heavier action than review, but
+    a Notary triaging the queue is exactly who runs into a record worth
+    throwing away, and gating it behind a separate admin request added
+    friction without adding safety (the frontend already confirms this
+    destructive action before calling it)."""
     try:
         record = IdentityVerification.objects.get(pk=verification_id)
     except (IdentityVerification.DoesNotExist, ValueError, TypeError):

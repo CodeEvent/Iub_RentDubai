@@ -426,8 +426,8 @@ export class RentshieldApiService {
     )
   }
 
-  getIdentityVerificationStatus(): Observable<{ status: string | null; step: string | null }> {
-    return this.http.get<{ status: string | null; step: string | null }>(
+  getIdentityVerificationStatus(): Observable<{ status: string | null; step: string | null; notary_notes: string }> {
+    return this.http.get<{ status: string | null; step: string | null; notary_notes: string }>(
       `${this.base}documents/identity/verify/status/`
     )
   }
@@ -541,12 +541,28 @@ export class RentshieldApiService {
     )
   }
 
-  // Admin-only (documents/rentshield_identity/views.py's
-  // admin_reset_verification_view) -- wipes a user's whole verification
-  // back to a clean slate (every uploaded file, every OCR/chip/declared
-  // field, any Notary decision) so they can redo the pipeline from
-  // scratch. Deliberately not available to a Notary -- reviewing is
-  // their job, permanently deleting evidence is a different action.
+  // A third outcome alongside confirm/reject (views.py's
+  // notary_request_more_info_view) -- not a final decision like reject:
+  // sends the record back to the user's own pipeline without deleting
+  // any of their evidence. `notes` is required by the backend (unlike
+  // confirm/reject) since without it the user has no idea what to redo.
+  requestMoreInfoOnIdentityVerification(
+    id: number,
+    notes: string,
+    edits: Record<string, string> = {}
+  ): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(
+      `${this.base}documents/identity/verify/notary/${id}/request-more-info/`,
+      { notes, ...edits }
+    )
+  }
+
+  // Available to an Admin or a Notary Public (documents/
+  // rentshield_identity/views.py's admin_reset_verification_view) --
+  // wipes a user's whole verification back to a clean slate (every
+  // uploaded file, every OCR/chip/declared field, any Notary decision)
+  // so they can redo the pipeline from scratch. For a record too broken
+  // to send back with requestMoreInfoOnIdentityVerification above.
   resetIdentityVerification(id: number): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(`${this.base}documents/identity/verify/admin/${id}/reset/`, {})
   }

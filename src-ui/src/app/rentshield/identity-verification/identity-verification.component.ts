@@ -43,6 +43,11 @@ export class IdentityVerificationComponent implements OnDestroy {
   starting = signal(false)
   error = signal<string | null>(null)
   status = signal<string | null>(null)
+  // Set only when status() is 'needs_more_info' -- what the Notary
+  // Public said the user needs to redo (views.py's
+  // notary_request_more_info_view requires this, unlike confirm/reject
+  // where it's optional).
+  notaryNotes = signal<string | null>(null)
   pairing = signal<PairingState | null>(null)
   pairingStatus = signal<string | null>(null)
 
@@ -96,6 +101,7 @@ export class IdentityVerificationComponent implements OnDestroy {
       if (!res.status) return
       if (res.status !== 'pending') {
         this.status.set(res.status)
+        this.notaryNotes.set(res.notary_notes || null)
         return
       }
       this.api.getDevicePairingStatus().subscribe((pairRes) => {
