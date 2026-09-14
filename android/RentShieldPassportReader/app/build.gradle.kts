@@ -11,8 +11,19 @@ android {
         applicationId = "com.rentshield.passportreader"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        // Real bug found live (2026-09-14): this never got bumped across
+        // any rebuild this session, including several that changed the
+        // login flow entirely (removing the manual server/username/
+        // password fields). Android's installer treats an APK with an
+        // unchanged versionCode as "not a new version" -- reinstalling
+        // over an already-installed copy can silently no-op instead of
+        // actually replacing it, which is exactly what made an old build
+        // look like it was still running the removed login screen.
+        // Bump this on every rebuild meant for someone to actually
+        // install, not just the debug-cycle "same device, same session"
+        // ones adb install -r already forces through regardless.
+        versionCode = 2
+        versionName = "0.2"
     }
 
     // Real bug found live: without this, the Android Gradle Plugin
