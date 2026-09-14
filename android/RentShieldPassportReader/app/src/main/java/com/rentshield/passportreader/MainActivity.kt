@@ -792,9 +792,21 @@ class MainActivity : AppCompatActivity() {
             return
         }
         pendingCaptureKind = kind
+        imageCapture = null
         sectionPhotoCapture.visibility = View.VISIBLE
         buttonCapturePhoto.visibility = View.VISIBLE
-        buttonCapturePhoto.isEnabled = true
+        // Real bug caught live (2026-09-14): the camera provider binds
+        // asynchronously below, but this button used to become tappable
+        // immediately -- tap it before binding actually finishes (very
+        // easy to do; the preview card appears the instant this
+        // function runs, well before a live camera feed is actually
+        // showing in it) and onCapturePhotoClicked's `imageCapture ?:
+        // return` silently did nothing at all: no photo, no error, no
+        // feedback, indistinguishable from the app being broken.
+        // Disabled here and only re-enabled once bindToLifecycle below
+        // actually succeeds.
+        buttonCapturePhoto.isEnabled = false
+        buttonCapturePhoto.text = "Starting camera…"
         // The capture button lives right after the preview in document
         // order, but this section can be triggered from steps well
         // above it (card photo) or below it (additional-ID) -- without
@@ -810,12 +822,15 @@ class MainActivity : AppCompatActivity() {
                     it.setSurfaceProvider(photoPreviewView.surfaceProvider)
                 }
                 val capture = ImageCapture.Builder().build()
-                imageCapture = capture
                 try {
                     cameraProvider.unbindAll()
                     cameraProvider.bindToLifecycle(this, cameraSelectorFor(kind), preview, capture)
+                    imageCapture = capture
+                    buttonCapturePhoto.isEnabled = true
+                    buttonCapturePhoto.text = "📸 Capture"
                 } catch (e: Exception) {
                     toast("Could not start the camera: ${e.message}")
+                    buttonCapturePhoto.text = "📸 Capture"
                 }
             },
             ContextCompat.getMainExecutor(this),
@@ -823,7 +838,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onCapturePhotoClicked() {
-        val capture = imageCapture ?: return
+        // Defense in depth: the button itself is disabled until the
+        // camera is actually ready (see startInAppPhotoCapture), so
+        // this should be unreachable -- but silently doing nothing here
+        // would be exactly the confusing "tapped it, nothing happened"
+        // failure mode that bug was about, so a stray tap still gets a
+        // visible response rather than dead silence.
+        val capture = imageCapture ?: run {
+            toast("Camera is still starting -- try again in a moment.")
+            return
+        }
         val kind = pendingCaptureKind ?: return
         val dirName = when (kind) {
             CaptureKind.CARD_PHOTO -> "cards"
@@ -840,6 +864,14 @@ class MainActivity : AppCompatActivity() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     runOnUiThread {
+                        // Immediate confirmation that the capture itself
+                        // worked, distinct from whatever the upload/OCR
+                        // result (statusText, a few seconds later) turns
+                        // out to be -- without this there was no signal
+                        // at all between "tapped Capture" and "next
+                        // step's text appeared", which read as "nothing
+                        // happened" even when it had.
+                        toast("Photo captured")
                         sectionPhotoCapture.visibility = View.GONE
                         buttonCapturePhoto.visibility = View.GONE
                         buttonCapturePhoto.isEnabled = true

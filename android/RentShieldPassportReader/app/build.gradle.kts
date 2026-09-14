@@ -22,8 +22,8 @@ android {
         // Bump this on every rebuild meant for someone to actually
         // install, not just the debug-cycle "same device, same session"
         // ones adb install -r already forces through regardless.
-        versionCode = 3
-        versionName = "0.3"
+        versionCode = 4
+        versionName = "0.4"
     }
 
     // Real bug found live: without this, the Android Gradle Plugin
