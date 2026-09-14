@@ -909,6 +909,26 @@ class MainActivity : AppCompatActivity() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     runOnUiThread {
+                        // Real bug found going through this step by step
+                        // (2026-09-14): nothing here ever released the
+                        // camera after a successful capture. CameraX
+                        // use cases bound via bindToLifecycle only let go
+                        // automatically when the Activity itself drops
+                        // below STARTED -- it stays RESUMED for the
+                        // entire rest of this flow (NFC scan, additional
+                        // ID, selfie, video all happen in the same
+                        // Activity), so the camera was left actively
+                        // bound and streaming to a hidden PreviewView
+                        // for the whole time in between, for every
+                        // capture except the last. Real resource/power
+                        // contention right through the NFC step,
+                        // plausibly contributing to it feeling
+                        // unresponsive on top of being wasteful on its
+                        // own. imageCapture is nulled alongside so a
+                        // stray late takePicture() call can't fire
+                        // against an unbound use case.
+                        ProcessCameraProvider.getInstance(this@MainActivity).get().unbindAll()
+                        imageCapture = null
                         // Immediate confirmation that the capture itself
                         // worked, distinct from whatever the upload/OCR
                         // result (statusText, a few seconds later) turns
@@ -970,6 +990,7 @@ class MainActivity : AppCompatActivity() {
         activeRecording = null
         videoCapture = null
         imageCapture = null
+        runCatching { ProcessCameraProvider.getInstance(this).get().unbindAll() }
         buttonCardPhoto.visibility = View.VISIBLE
         buttonScan.visibility = View.GONE
         buttonSelfie.visibility = View.GONE
