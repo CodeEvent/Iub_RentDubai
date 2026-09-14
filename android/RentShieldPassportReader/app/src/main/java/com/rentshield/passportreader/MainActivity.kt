@@ -472,13 +472,39 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val adapter = NfcAdapter.getDefaultAdapter(this) ?: return
+        // Every early-exit below used to be completely silent -- from
+        // the user's side, "this device genuinely has no NFC adapter",
+        // "dispatch is registered but the chip is never detected", and
+        // "the chip IS detected but pendingPaceKey was never set" are
+        // all indistinguishable from each other: nothing happens on
+        // screen either way. Reported live (2026-09-14) as "the NFC
+        // reader isn't triggered" with no way to tell which of those
+        // it actually was. Logged here (Logcat, `adb logcat -s
+        // RentShieldNfc`) since this fires on every resume, not just
+        // once -- a toast on every screen return would be real noise.
+        val adapter = NfcAdapter.getDefaultAdapter(this)
+        if (adapter == null) {
+            android.util.Log.w("RentShieldNfc", "onResume: NfcAdapter.getDefaultAdapter() returned null -- this device is not reporting NFC hardware to this app at all.")
+            return
+        }
         val intent = Intent(applicationContext, javaClass).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_MUTABLE)
         val filter = arrayOf(arrayOf(IsoDep::class.java.name))
-        adapter.enableForegroundDispatch(this, pendingIntent, null, filter)
+        try {
+            adapter.enableForegroundDispatch(this, pendingIntent, null, filter)
+            android.util.Log.i("RentShieldNfc", "onResume: enableForegroundDispatch succeeded, adapter.isEnabled=${adapter.isEnabled}")
+        } catch (e: Exception) {
+            // enableForegroundDispatch throws IllegalStateException if
+            // called while the Activity isn't actually resumed yet --
+            // a real, documented gotcha if this ever runs a beat too
+            // early relative to the lifecycle. Was previously
+            // uncaught, so a failure here would have looked identical
+            // to every other silent failure in this method.
+            android.util.Log.e("RentShieldNfc", "onResume: enableForegroundDispatch threw", e)
+            toast("NFC could not be enabled: ${e.message}")
+        }
     }
 
     override fun onPause() {
@@ -488,8 +514,27 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val paceKey = pendingPaceKey ?: return
-        val tag: Tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG) ?: return
+        // Logged unconditionally, before any early-exit below -- this
+        // one line answers the single most important open question:
+        // does Android even call this method when the chip is tapped,
+        // or does the tap never reach the app's code at all (a device/
+        // antenna/positioning problem, not anything this app controls).
+        android.util.Log.i("RentShieldNfc", "onNewIntent fired, action=${intent.action}, pendingPaceKey=${if (pendingPaceKey != null) "set" else "NULL"}")
+        val paceKey = pendingPaceKey ?: run {
+            // A tag WAS detected (Android called this method), but
+            // "Ready to scan" was never tapped first (or its state got
+            // cleared some other way) -- previously silent, identical
+            // on screen to the tag never being detected at all.
+            android.util.Log.w("RentShieldNfc", "onNewIntent: tag intent received but pendingPaceKey is null -- ignoring")
+            toast("Chip detected, but tap \"Ready to scan\" first.")
+            return
+        }
+        @Suppress("DEPRECATION")
+        val tag: Tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG) ?: run {
+            android.util.Log.w("RentShieldNfc", "onNewIntent: pendingPaceKey was set but EXTRA_TAG was null/missing on the intent")
+            toast("NFC event received but no tag data was attached -- try tapping again.")
+            return
+        }
         val isoDep = IsoDep.get(tag) ?: run {
             statusText.text = "That isn't a passport/ID chip -- try again."
             return
