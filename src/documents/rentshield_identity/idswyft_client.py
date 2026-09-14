@@ -42,6 +42,7 @@ from io import BytesIO
 
 import requests
 from PIL import Image
+from PIL import ImageOps
 
 IDSWYFT_BASE_URL = os.environ.get("IDSWYFT_BASE_URL", "")
 IDSWYFT_API_KEY = os.environ.get("IDSWYFT_API_KEY", "")
@@ -59,11 +60,30 @@ _IDSWYFT_ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "application/pdf"}
 
 
 def normalize_image_for_idswyft(file_bytes: bytes, content_type: str | None) -> tuple[bytes, str]:
-    if content_type in _IDSWYFT_ALLOWED_CONTENT_TYPES:
+    # PDFs (a scanned back-of-CIE upload) have no orientation/EXIF
+    # concept and PIL can't open one as an Image at all -- unaffected by
+    # the fix below, pass through unchanged as before.
+    if content_type == "application/pdf":
         return file_bytes, content_type
-    image = Image.open(BytesIO(file_bytes)).convert("RGB")
+
+    # Real bug hit live (2026-09-14): a phone's stock camera app
+    # (confirmed on a Samsung Galaxy A71, but this is standard behavior,
+    # not a one-off) writes a JPEG's raw pixels in the sensor's native
+    # (sideways) orientation and relies on the EXIF Orientation tag to
+    # say how to display it upright. Nothing downstream -- Idswyft's
+    # OCR, RentShield's own admin-review thumbnail -- ever looked at
+    # that tag, so a perfectly sharp, well-lit, in-focus photo of a real
+    # ID produced garbage OCR (0.11 confidence, "ON" as the only
+    # extracted field) purely because the text was sideways.
+    # exif_transpose() bakes the rotation into the actual pixel data and
+    # clears the tag, so every consumer sees the same upright image
+    # regardless of whether it looks at EXIF at all. Applied
+    # unconditionally, not just for formats Idswyft doesn't directly
+    # accept -- this hits ordinary image/jpeg uploads, the common case,
+    # every bit as much as the JPEG2000 chip-photo conversion below.
+    image = ImageOps.exif_transpose(Image.open(BytesIO(file_bytes)))
     buffer = BytesIO()
-    image.save(buffer, format="JPEG")
+    image.convert("RGB").save(buffer, format="JPEG")
     return buffer.getvalue(), "image/jpeg"
 
 # Namespace for deriving a stable per-user UUID -- Idswyft requires a
