@@ -1,0 +1,516 @@
+<title>Notarization Process Map</title>
+<style>
+  :root {
+    --paper: #f3f6f4;
+    --ink: #121a1f;
+    --line: #55636e;
+    --surface: #ffffff;
+    --border: #dbe3df;
+    --emerald: #0e8f66;
+    --emerald-soft: #e3f3ec;
+    --amber: #8a5c06;
+    --amber-soft: #fbf0da;
+    --flag: #a3311f;
+    --flag-soft: #fbe9e6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #10161a;
+      --ink: #e7ede9;
+      --line: #9fb0a8;
+      --surface: #161f24;
+      --border: #2a363c;
+      --emerald: #3fcd94;
+      --emerald-soft: #10322a;
+      --amber: #e6ab4a;
+      --amber-soft: #33270f;
+      --flag: #ea7a68;
+      --flag-soft: #3a1712;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #10161a;
+    --ink: #e7ede9;
+    --line: #9fb0a8;
+    --surface: #161f24;
+    --border: #2a363c;
+    --emerald: #3fcd94;
+    --emerald-soft: #10322a;
+    --amber: #e6ab4a;
+    --amber-soft: #33270f;
+    --flag: #ea7a68;
+    --flag-soft: #3a1712;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    padding-inline: max(16px, calc((100% - 800px) / 2));
+    padding-block: 56px 80px;
+  }
+  .wrap { max-width: 800px; margin: 0 auto; }
+
+  h1, h2, h3 { font-family: 'IBM Plex Serif', Georgia, serif; text-wrap: balance; color: var(--ink); }
+  h1 { font-size: 2.1rem; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.35rem; font-weight: 600; margin: 3rem 0 1rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+  h2 .n { color: var(--line); font-family: 'IBM Plex Mono', monospace; font-weight: 400; font-size: 1rem; margin-right: 0.5em; }
+  h3 { font-size: 1rem; font-weight: 600; margin: 0 0 4px; }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--emerald);
+    margin: 0 0 14px;
+  }
+  .lede { color: var(--line); max-width: 62ch; font-size: 1.02rem; }
+
+  code, .mono { font-family: 'IBM Plex Mono', monospace; font-size: 0.88em; }
+  code {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+  }
+
+  figure { margin: 1.75rem 0 0.5rem; }
+  .diagram-frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 14px;
+  }
+  svg.diagram { display: block; width: 100%; height: auto; color: var(--line); }
+  svg.diagram .box rect { fill: var(--surface); stroke: currentColor; stroke-width: 1.3; }
+  svg.diagram .box text { fill: currentColor; }
+  svg.diagram .box .sub { fill: var(--line); opacity: 0.85; }
+  svg.diagram .lane-label { fill: var(--ink); font-weight: 600; }
+  svg.diagram line, svg.diagram path.arrow { stroke: currentColor; stroke-width: 1.3; fill: none; }
+  svg.diagram polygon.head { fill: currentColor; }
+  svg.diagram .flag rect { stroke: var(--flag); stroke-width: 1.6; fill: var(--flag-soft); }
+  svg.diagram .flag text { fill: var(--flag); }
+  svg.diagram .good rect { stroke: var(--emerald); fill: var(--emerald-soft); }
+  svg.diagram .good text { fill: var(--emerald); }
+  svg.diagram .divider { stroke: var(--border); stroke-dasharray: 3 4; }
+
+  figcaption { margin-top: 10px; font-size: 0.88rem; color: var(--line); max-width: 62ch; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 2px 0; font-size: 0.8rem; color: var(--line); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  .findings { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--border); }
+  .finding { display: grid; grid-template-columns: 84px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+  .finding .chip {
+    align-self: start;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 999px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .chip.gap { color: var(--flag); background: var(--flag-soft); }
+  .chip.note { color: var(--amber); background: var(--amber-soft); }
+  .finding h3 { margin-bottom: 3px; }
+  .finding p { margin: 0; color: var(--line); font-size: 0.95rem; }
+  .finding .ref { display: block; margin-top: 6px; color: var(--line); font-size: 0.8rem; }
+
+  .recs { display: flex; flex-direction: column; gap: 14px; }
+  .rec {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: grid;
+    grid-template-columns: 2.4rem 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+  .rec .idx {
+    font-family: 'IBM Plex Serif', serif;
+    font-size: 1.5rem;
+    color: var(--emerald);
+    line-height: 1.1;
+  }
+  .rec h3 { margin-bottom: 4px; }
+  .rec p { margin: 0 0 8px; color: var(--line); font-size: 0.95rem; }
+  .rec .tags { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--line);
+  }
+
+  .closing {
+    margin-top: 3rem;
+    padding: 18px 20px;
+    border-radius: 10px;
+    background: var(--emerald-soft);
+    color: var(--ink);
+    font-size: 0.95rem;
+  }
+  .closing strong { color: var(--emerald); }
+
+  @media (max-width: 560px) {
+    .finding { grid-template-columns: 1fr; }
+    .finding .chip { width: fit-content; }
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<div class="wrap">
+
+  <p class="eyebrow">Process audit &middot; verified against the code, not the intended design</p>
+  <h1>Where RentShield's two "get this notarized" paths actually go</h1>
+  <p class="lede">
+    Every box and arrow below was checked against the real code this session &mdash;
+    <code>notice-form.component.ts</code>, the Workflow definitions, the API views &mdash;
+    not reconstructed from memory of what was supposed to happen. Nothing here has been
+    changed yet; this is the "before," for deciding what to reshape.
+  </p>
+
+  <h2><span class="n">01</span>The property owner's path, start to finish</h2>
+  <figure>
+    <div class="diagram-frame">
+      <svg class="diagram" viewBox="0 0 640 700" role="img" aria-label="Flowchart of the property owner journey from signup through checkout to notice generation, forking three ways depending on which add-on was chosen, all converging on a Notices list the owner must check manually.">
+        <defs>
+          <marker id="arrow1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <polygon class="head" points="0,0 8,4 0,8" />
+          </marker>
+        </defs>
+
+        <g class="box">
+          <rect x="90" y="14" width="460" height="52" rx="7"/>
+          <text x="320" y="35" text-anchor="middle" font-size="13.5" font-weight="600">Sign up &mdash; choose "Property Owner"</text>
+          <text class="sub" x="320" y="53" text-anchor="middle" font-size="11">self-service signup, no approval step</text>
+        </g>
+        <line x1="320" y1="66" x2="320" y2="90" marker-end="url(#arrow1)"/>
+
+        <g class="box">
+          <rect x="90" y="92" width="460" height="52" rx="7"/>
+          <text x="320" y="113" text-anchor="middle" font-size="13.5" font-weight="600">Dashboard</text>
+          <text class="sub" x="320" y="131" text-anchor="middle" font-size="11">8 RentShield saved-view widgets, all live filters</text>
+        </g>
+        <line x1="320" y1="144" x2="320" y2="168" marker-end="url(#arrow1)"/>
+
+        <g class="box">
+          <rect x="90" y="170" width="460" height="60" rx="7"/>
+          <text x="320" y="192" text-anchor="middle" font-size="13.5" font-weight="600">New Notice form</text>
+          <text class="sub" x="320" y="209" text-anchor="middle" font-size="11">pick reason &rarr; period auto-set &middot; pick add-ons (4 checkboxes, none mutually exclusive)</text>
+        </g>
+        <line x1="320" y1="230" x2="320" y2="254" marker-end="url(#arrow1)"/>
+
+        <g class="box">
+          <rect x="90" y="256" width="460" height="52" rx="7"/>
+          <text x="320" y="277" text-anchor="middle" font-size="13.5" font-weight="600">Checkout</text>
+          <text class="sub" x="320" y="295" text-anchor="middle" font-size="11">real Stripe Checkout, or demo mode if no key configured</text>
+        </g>
+        <line x1="320" y1="308" x2="320" y2="332" marker-end="url(#arrow1)"/>
+
+        <g class="box">
+          <rect x="90" y="334" width="460" height="52" rx="7"/>
+          <text x="320" y="355" text-anchor="middle" font-size="13.5" font-weight="600">Notice generated</text>
+          <text class="sub" x="320" y="373" text-anchor="middle" font-size="11">bilingual PDF &middot; tagged "RentShield Notice"</text>
+        </g>
+
+        <line x1="180" y1="386" x2="70" y2="418" marker-end="url(#arrow1)"/>
+        <line x1="320" y1="386" x2="320" y2="418" marker-end="url(#arrow1)"/>
+        <line x1="460" y1="386" x2="570" y2="418" marker-end="url(#arrow1)"/>
+
+        <g class="box">
+          <rect x="10" y="420" width="220" height="56" rx="7"/>
+          <text x="120" y="443" text-anchor="middle" font-size="12" font-weight="600">add_notarization</text>
+          <text class="sub" x="120" y="461" text-anchor="middle" font-size="11">Certified E-Signature path &rarr;</text>
+        </g>
+        <g class="box">
+          <rect x="230" y="420" width="180" height="56" rx="7"/>
+          <text x="320" y="443" text-anchor="middle" font-size="12" font-weight="600">neither add-on</text>
+          <text class="sub" x="320" y="461" text-anchor="middle" font-size="11">sits in the vault</text>
+        </g>
+        <g class="box">
+          <rect x="430" y="420" width="220" height="56" rx="7"/>
+          <text x="540" y="443" text-anchor="middle" font-size="12" font-weight="600">add_real_notarization</text>
+          <text class="sub" x="540" y="461" text-anchor="middle" font-size="11">&larr; Real Notary Public path</text>
+        </g>
+
+        <line x1="120" y1="476" x2="280" y2="518" marker-end="url(#arrow1)"/>
+        <line x1="320" y1="476" x2="320" y2="518" marker-end="url(#arrow1)"/>
+        <line x1="540" y1="476" x2="360" y2="518" marker-end="url(#arrow1)"/>
+
+        <g class="flag box">
+          <rect x="90" y="520" width="460" height="66" rx="7"/>
+          <text x="320" y="544" text-anchor="middle" font-size="13.5" font-weight="600">&#9888; Notices list &mdash; the owner has to look</text>
+          <text class="sub" x="320" y="562" text-anchor="middle" font-size="11" style="fill:var(--flag);opacity:0.85">no email, no push, no badge update on completion &mdash; see Diagram 2</text>
+        </g>
+
+        <line x1="580" y1="553" x2="612" y2="553" stroke="none"/>
+      </svg>
+    </div>
+    <figcaption>
+      Diagram 1 &mdash; every step is a real screen or a real Workflow trigger; the field names
+      on the fork (<code>add_notarization</code>, <code>add_real_notarization</code>) are the
+      actual booleans the checkout view branches on. Every outcome ends the same way: the owner
+      finds out by going back and looking, not by being told.
+    </figcaption>
+  </figure>
+
+  <h2><span class="n">02</span>After checkout: two paths, compared</h2>
+  <p class="lede" style="margin-bottom: 0.5rem;">
+    Both add-ons can be selected on the same notice at once &mdash; nothing in the form stops
+    that, or explains why you'd want both. Here's what each one actually does once checkout
+    succeeds.
+  </p>
+  <figure>
+    <div class="diagram-frame">
+      <svg class="diagram" viewBox="0 0 760 600" role="img" aria-label="Side-by-side comparison of the Certified E-Signature path and the Real Notary Public path, each ending in a flagged, verified gap in the logic.">
+        <defs>
+          <marker id="arrow2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <polygon class="head" points="0,0 8,4 0,8" />
+          </marker>
+        </defs>
+
+        <g class="box">
+          <rect x="220" y="12" width="320" height="46" rx="7"/>
+          <text x="380" y="40" text-anchor="middle" font-size="12.5" font-weight="600">Notice created (checkout succeeds)</text>
+        </g>
+        <line x1="300" y1="58" x2="170" y2="82" marker-end="url(#arrow2)"/>
+        <line x1="460" y1="58" x2="590" y2="82" marker-end="url(#arrow2)"/>
+
+        <line class="divider" x1="380" y1="66" x2="380" y2="580"/>
+        <text class="lane-label" x="170" y="80" text-anchor="middle" font-size="12" letter-spacing="0.04em">CERTIFIED E-SIGNATURE</text>
+        <text class="lane-label" x="590" y="80" text-anchor="middle" font-size="12" letter-spacing="0.04em">REAL NOTARY PUBLIC</text>
+
+        <!-- Left lane -->
+        <g class="box"><rect x="30" y="92" width="280" height="50" rx="7"/>
+          <text x="170" y="112" text-anchor="middle" font-size="12" font-weight="600">Tag: "Pending Review"</text>
+          <text class="sub" x="170" y="129" text-anchor="middle" font-size="10.5">Workflow #14 &middot; fires unconditionally</text>
+        </g>
+        <line x1="170" y1="142" x2="170" y2="164" marker-end="url(#arrow2)"/>
+        <text class="sub" x="170" y="158" text-anchor="middle" font-size="10.5" font-style="italic">meanwhile, in the same request&#8594;</text>
+
+        <g class="box"><rect x="30" y="166" width="280" height="50" rx="7"/>
+          <text x="170" y="186" text-anchor="middle" font-size="12" font-weight="600">Frontend dispatches immediately</text>
+          <text class="sub" x="170" y="203" text-anchor="middle" font-size="10.5">notice-form calls notarize() on generation</text>
+        </g>
+        <line x1="170" y1="216" x2="170" y2="240" marker-end="url(#arrow2)"/>
+
+        <g class="box"><rect x="30" y="242" width="280" height="46" rx="7"/>
+          <text x="170" y="270" text-anchor="middle" font-size="12" font-weight="600">esign_status = "pending"</text>
+        </g>
+        <line x1="170" y1="288" x2="170" y2="312" marker-end="url(#arrow2)"/>
+
+        <g class="flag box"><rect x="30" y="314" width="280" height="52" rx="7"/>
+          <text x="170" y="335" text-anchor="middle" font-size="12" font-weight="600">&#9888; Never checked again</text>
+          <text class="sub" x="170" y="352" text-anchor="middle" font-size="10.5" style="fill:var(--flag);opacity:0.85">no scheduled poll, no inbound webhook from either provider</text>
+        </g>
+        <line x1="170" y1="366" x2="170" y2="390" marker-end="url(#arrow2)"/>
+
+        <g class="flag box"><rect x="30" y="392" width="280" height="52" rx="7"/>
+          <text x="170" y="413" text-anchor="middle" font-size="12" font-weight="600">&#9888; "Pending Review" never clears</text>
+          <text class="sub" x="170" y="430" text-anchor="middle" font-size="10.5" style="fill:var(--flag);opacity:0.85">needs "Details Confirmed" ticked &mdash; no UI exposes that field</text>
+        </g>
+        <line x1="170" y1="444" x2="170" y2="468" marker-end="url(#arrow2)"/>
+
+        <g class="flag box"><rect x="30" y="470" width="280" height="52" rx="7"/>
+          <text x="170" y="491" text-anchor="middle" font-size="12" font-weight="600">Owner sees: "E-Signed &middot; pending"</text>
+          <text class="sub" x="170" y="508" text-anchor="middle" font-size="10.5" style="fill:var(--flag);opacity:0.85">frozen, whether or not it was actually signed hours ago</text>
+        </g>
+
+        <!-- Right lane -->
+        <g class="box"><rect x="450" y="92" width="280" height="50" rx="7"/>
+          <text x="590" y="112" text-anchor="middle" font-size="12" font-weight="600">Tag: "Awaiting Notary Public"</text>
+          <text class="sub" x="590" y="129" text-anchor="middle" font-size="10.5">+ email to the notary officer</text>
+        </g>
+        <line x1="590" y1="142" x2="590" y2="166" marker-end="url(#arrow2)"/>
+
+        <g class="box"><rect x="450" y="168" width="280" height="50" rx="7"/>
+          <text x="590" y="188" text-anchor="middle" font-size="12" font-weight="600">Manual queue work</text>
+          <text class="sub" x="590" y="205" text-anchor="middle" font-size="10.5">physical notarization, entirely offline</text>
+        </g>
+        <line x1="590" y1="218" x2="590" y2="242" marker-end="url(#arrow2)"/>
+
+        <g class="flag box"><rect x="450" y="244" width="280" height="52" rx="7"/>
+          <text x="590" y="265" text-anchor="middle" font-size="12" font-weight="600">&#9888; Status is free text</text>
+          <text class="sub" x="590" y="282" text-anchor="middle" font-size="10.5" style="fill:var(--flag);opacity:0.85">must type "completed" exactly &mdash; a typo fails silently</text>
+        </g>
+        <line x1="590" y1="296" x2="590" y2="320" marker-end="url(#arrow2)"/>
+
+        <g class="box"><rect x="450" y="322" width="280" height="50" rx="7"/>
+          <text x="590" y="342" text-anchor="middle" font-size="12" font-weight="600">Manual tag swap</text>
+          <text class="sub" x="590" y="359" text-anchor="middle" font-size="10.5">Awaiting &rarr; Completed / Rejected</text>
+        </g>
+        <line x1="590" y1="372" x2="590" y2="396" marker-end="url(#arrow2)"/>
+
+        <g class="flag box"><rect x="450" y="398" width="280" height="52" rx="7"/>
+          <text x="590" y="419" text-anchor="middle" font-size="12" font-weight="600">&#9888; No completion notice</text>
+          <text class="sub" x="590" y="436" text-anchor="middle" font-size="10.5" style="fill:var(--flag);opacity:0.85">nothing emails the landlord when this finishes</text>
+        </g>
+        <line x1="590" y1="450" x2="590" y2="474" marker-end="url(#arrow2)"/>
+
+        <g class="flag box"><rect x="450" y="476" width="280" height="46" rx="7"/>
+          <text x="590" y="504" text-anchor="middle" font-size="12" font-weight="600">Owner sees it &mdash; if they look</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      Diagram 2 &mdash; five verified gaps, not five guesses: each flagged box is a real code
+      path (or absence of one) checked this session. The two lanes also share almost no
+      vocabulary at the field level (<code>esign_status</code> vs <code>notary_status</code>,
+      "Being Notarized" vs "Awaiting Notary Public") despite both being, to a property owner,
+      "getting my notice notarized."
+    </figcaption>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--flag)"></i>verified gap in the logic</span>
+      <span><i class="swatch" style="background:var(--line);opacity:.4"></i>works as designed</span>
+    </div>
+  </figure>
+
+  <h2><span class="n">03</span>Findings, with the receipts</h2>
+  <div class="findings">
+
+    <div class="finding">
+      <span class="chip gap">Gap</span>
+      <div>
+        <h3>E-signature status can lie forever</h3>
+        <p>Once dispatched, nothing ever calls the provider again. <code>getNotarizeStatus()</code>
+        exists in the API service but is called from zero places in the UI, and no inbound
+        webhook receiver exists for DocuSeal/OpenSign. The badge shows whatever status came
+        back from the first dispatch, permanently.</p>
+        <span class="ref mono">rentshield-api.service.ts &middot; notarize_status_view (unused) &middot; no webhook route in paperless/urls.py</span>
+      </div>
+    </div>
+
+    <div class="finding">
+      <span class="chip gap">Gap</span>
+      <div>
+        <h3>A whole review-gate workflow nobody can trigger</h3>
+        <p>Workflow #14 tags every certified-e-signature notice "Pending Review" at creation.
+        Workflow #15 only clears it once a "Details Confirmed" custom field is ticked &mdash;
+        but no screen in the app exposes that field to a property owner. The frontend already
+        dispatches immediately on generation, bypassing this gate entirely. The tag just sits
+        there, and the "Pending Review" / "Being Notarized" dashboards likely undercount or
+        misrepresent what's actually happening.</p>
+        <span class="ref mono">create_rentshield_workflows.py &middot; workflows #14 &amp; #15 &middot; "Details Confirmed" field</span>
+      </div>
+    </div>
+
+    <div class="finding">
+      <span class="chip gap">Gap</span>
+      <div>
+        <h3>Notary status is a typo away from silently breaking</h3>
+        <p>"RentShield: Notary Public Status" is a plain string field. Every place that reads
+        it does an exact match against the lowercase literal <code>"completed"</code>. Type
+        "Completed", "done", or leave a trailing space, and the notice quietly never shows as
+        finished anywhere &mdash; no error, no validation.</p>
+        <span class="ref mono">custom_fields.py &middot; notary_status (STRING, not SELECT)</span>
+      </div>
+    </div>
+
+    <div class="finding">
+      <span class="chip gap">Gap</span>
+      <div>
+        <h3>Nobody tells the landlord when either path finishes</h3>
+        <p>The notary officer gets an intake email the moment a request comes in. The
+        landlord gets nothing back &mdash; not on e-signature completion, not on notarization
+        completion or rejection. The loop only closes if they happen to reopen the Notices
+        list.</p>
+        <span class="ref mono">service.py &middot; _notify_notary_fulfillment_requested() has no completion counterpart</span>
+      </div>
+    </div>
+
+    <div class="finding">
+      <span class="chip note">Design note</span>
+      <div>
+        <h3>Two "notarization" concepts, one confusing family of names</h3>
+        <p>Certified E-Signature and Real Notary Public are priced and labeled as clearly
+        different things on the pricing page &mdash; but their internal tags ("Being
+        Notarized" vs "Awaiting Notary Public") and fields (<code>add_notarization</code> vs
+        <code>add_real_notarization</code>) share enough vocabulary to blur together, especially
+        since both can be selected on the same notice with no guidance on why you would.</p>
+        <span class="ref mono">pricing.py ADD_ONS &middot; notice-form.component.html add-ons loop</span>
+      </div>
+    </div>
+
+  </div>
+
+  <h2><span class="n">04</span>Ways to reshape this &mdash; pick any, none are built yet</h2>
+  <div class="recs">
+
+    <div class="rec">
+      <div class="idx">1</div>
+      <div>
+        <h3>Turn the status field into a real choice</h3>
+        <p>Replace the free-text <code>notary_status</code> with a SELECT field
+        (pending / completed / rejected), the same pattern <code>RentShield: Reason</code>
+        and <code>RentShield: Property Type</code> already use. Closes the typo bug outright.</p>
+        <div class="tags"><span class="tag">low effort</span><span class="tag">closes a real bug</span></div>
+      </div>
+    </div>
+
+    <div class="rec">
+      <div class="idx">2</div>
+      <div>
+        <h3>Notify the landlord on completion, not just the notary on intake</h3>
+        <p>Mirror <code>_notify_notary_fulfillment_requested()</code> with a completion email
+        fired from wherever the status flips to completed/rejected &mdash; same reasoning as
+        the existing "operational, not RBAC" fulfillment pattern, just closing the other end
+        of it. Applies to both paths.</p>
+        <div class="tags"><span class="tag">low-medium effort</span><span class="tag">closes the loop</span></div>
+      </div>
+    </div>
+
+    <div class="rec">
+      <div class="idx">3</div>
+      <div>
+        <h3>Give e-signature status a heartbeat</h3>
+        <p>A scheduled task that actually polls DocuSeal/OpenSign for in-flight notices and
+        calls <code>sync_notarization_stage_tag()</code> &mdash; the same recurring-task shape
+        the notary-provider research scanner already uses elsewhere in this codebase, just
+        pointed at a different job.</p>
+        <div class="tags"><span class="tag">medium effort</span><span class="tag">reuses an existing pattern</span></div>
+      </div>
+    </div>
+
+    <div class="rec">
+      <div class="idx">4</div>
+      <div>
+        <h3>Retire or finish the Pending Review gate</h3>
+        <p>Either delete workflows #14/#15 and the two saved views that depend on them (dead
+        weight the frontend already routes around), or actually build the missing piece: a
+        real "confirm before we dispatch" screen, if that review step is still wanted on
+        purpose.</p>
+        <div class="tags"><span class="tag">needs a decision first</span><span class="tag">removes dead weight either way</span></div>
+      </div>
+    </div>
+
+    <div class="rec">
+      <div class="idx">5</div>
+      <div>
+        <h3>Make the two add-ons explain themselves, or block combining them</h3>
+        <p>Either add a line of copy on the form clarifying when you'd want both (e.g.
+        "certified signature now, physical notarization to follow"), or treat them as
+        mutually exclusive choices in the UI if there's no real reason to pick both.</p>
+        <div class="tags"><span class="tag">low effort</span><span class="tag">clarity, not new logic</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="closing">
+    <strong>Nothing above is built.</strong> This is the "before" and a menu, not a plan &mdash;
+    tell me which of these (all, some, a different order, or something not listed here) and
+    I'll turn that into an actual implementation task next.
+  </div>
+
+</div>
