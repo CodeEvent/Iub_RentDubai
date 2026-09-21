@@ -55,6 +55,10 @@ from documents.rentshield_views import legal_skills_view
 from documents.rentshield_views import notarize_status_view
 from documents.rentshield_views import notarize_uploaded_view
 from documents.rentshield_views import notarize_view
+from documents.rentshield_views import signup_done_view
+from documents.rentshield_views import signup_email_view
+from documents.rentshield_views import signup_start_view
+from documents.rentshield_views import signup_verify_view
 from documents.rentshield_views import pricing_view
 from documents.rentshield_views import reasons_view
 from documents.views import BulkDownloadView
@@ -597,7 +601,24 @@ urlpatterns = [
                 # login, logout, signup, account_inactive
                 path("login/", allauth_account_views.login, name="account_login"),
                 path("logout/", allauth_account_views.logout, name="account_logout"),
-                path("signup/", allauth_account_views.signup, name="account_signup"),
+                # RentShield fork (2026-09-18, requested explicitly:
+                # signup is only ever managed through /signup/ --
+                # allauth's own signup.html renders real
+                # username/password fields entirely unconditionally
+                # (confirmed live, unlike login.html's own username/
+                # password block, this one was never gated behind
+                # DISABLE_REGULAR_LOGIN at all) -- a second, parallel
+                # account-creation path that bypasses Authelia/passkeys
+                # completely. Redirecting the URL itself, not just
+                # hiding template fields, so there's no path left to
+                # reach that form at all. Kept the name="account_signup"
+                # -- other allauth code paths reference this URL by
+                # name, e.g. login.html's own "Sign up" link.
+                path(
+                    "signup/",
+                    RedirectView.as_view(pattern_name="rentshield-signup-start", permanent=False),
+                    name="account_signup",
+                ),
                 path(
                     "account_inactive/",
                     allauth_account_views.account_inactive,
@@ -680,6 +701,28 @@ urlpatterns = [
         landing_view,
         name="rentshield-landing",
     ),
+    # Signup (2026-09-15) -- see rentshield_views.py's own header comment
+    # on the signup_* views: email + a real one-time code creates the
+    # account (Django + a matching Authelia entry) directly now --
+    # Authelia is the only signup/signin path, NFC/chip verification
+    # happens afterward, once logged in, on the pre-existing identity-
+    # verification page. Anonymous by nature (same as /welcome/ above),
+    # so registered here, before the login-gated catch-all.
+    #
+    # Path is /login/, not /signup/ (2026-09-18, requested explicitly)
+    # -- this one page is the single entry point for BOTH an existing
+    # user signing in and a new user signing up (its own heading says
+    # "Sign in to RentShield"), so /signup/ read as inconsistent with
+    # what the page actually does. View function/URL names are
+    # unchanged (`signup_*_view` / `rentshield-signup-*`) -- every other
+    # reference to these already goes through reverse()/{% url %} by
+    # name, confirmed by searching the whole repo for hardcoded
+    # "/signup/" strings before this rename (only this file and this
+    # fork's FirstFactorForm.tsx had any).
+    re_path(r"^login/?$", signup_start_view, name="rentshield-signup-start"),
+    re_path(r"^login/email/?$", signup_email_view, name="rentshield-signup-email"),
+    re_path(r"^login/verify/?$", signup_verify_view, name="rentshield-signup-verify"),
+    re_path(r"^login/done/?$", signup_done_view, name="rentshield-signup-done"),
     # Short, stable link to download the Android app (2026-09-14,
     # explicitly requested -- the long cache-busted static URL changes
     # on every rebuild, which is exactly wrong for something meant to

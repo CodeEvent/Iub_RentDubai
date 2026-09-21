@@ -330,6 +330,14 @@ def upload_front_document_view(request):
     if final_result == IdentityVerification.Status.FAILED:
         record.status = final_result
         record.save(update_fields=["status", "updated_at"])
+    elif record.status == IdentityVerification.Status.FAILED:
+        # Requested explicitly (2026-09-14): retrying a failed step
+        # in-place instead of restarting the whole flow only works if a
+        # retake that actually passes can un-stick the record -- without
+        # this, a record that hard-rejected once stayed FAILED forever,
+        # even after a later retry's own final_result came back clean.
+        record.status = IdentityVerification.Status.PENDING
+        record.save(update_fields=["status", "updated_at"])
 
     ocr_data = result.get("ocr_data") or {}
     if ocr_data:
@@ -412,6 +420,15 @@ def upload_live_capture_view(request):
             record.status = final_result
             update_fields.append("status")
         record.save(update_fields=update_fields)
+
+    if final_result != IdentityVerification.Status.FAILED and record.status == IdentityVerification.Status.FAILED:
+        # Same reasoning as upload_front_document_view's matching check:
+        # a retaken selfie that passes this time needs to actually un-
+        # stick a record a previous attempt (front document or this same
+        # selfie step) had already marked FAILED -- otherwise "retry" was
+        # only ever cosmetic, the record stayed dead regardless.
+        record.status = IdentityVerification.Status.PENDING
+        record.save(update_fields=["status", "updated_at"])
 
     # Real gap found live (2026-09-14): unlike upload_front_document_view,
     # this never passed through Idswyft's own rejection_detail (e.g.

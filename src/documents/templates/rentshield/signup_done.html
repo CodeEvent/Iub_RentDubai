@@ -1,0 +1,15 @@
+{% extends "rentshield/signup_base.html" %}
+{% block title %}Account created{% endblock %}
+{% block content %}
+    <h1>You've created your RentShield account</h1>
+    <p class="rs-wizard-hint">
+        One more thing: register a passkey (Face ID, fingerprint, or your device's screen
+        lock) below -- no password to set, this is the only step left before you're signed in.
+    </p>
+    {% if passkey_error %}
+    <div class="rs-wizard-error">
+        That didn't go through ({{ passkey_error }}). No account changes were lost -- try again below.
+    </div>
+    {% endif %}
+    <a class="rs-btn rs-btn-primary" href="{{ bridge_url }}">Register your passkey</a>
+{% endblock %}

@@ -115,6 +115,31 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         # Override with setting, otherwise default to super.
         return getattr(settings, "SOCIALACCOUNT_ALLOW_SIGNUPS", allow_signups)
 
+    def pre_social_login(self, request, sociallogin):
+        """
+        Auto-connect a social login to an existing local User by email
+        instead of allauth's own default behaviour, which is to treat it
+        as a brand-new signup (the confirm-your-username
+        `/accounts/3rdparty/signup/` page) even when a User with that
+        exact email already exists (2026-09-15, confirmed live -- this
+        was previously worked around by hand, once, via direct
+        SocialAccount reassignment for a single admin account; every
+        RentShield account created by rentshield_views.py's
+        signup_verify_view creates the Django User directly rather than
+        through allauth's own social-signup flow, so every one of those
+        would hit this same wall on its very first Authelia login
+        without this hook).
+        """
+        if sociallogin.is_existing:
+            return
+        email = (sociallogin.user.email or "").strip()
+        if not email:
+            return
+        existing_user = User.objects.filter(email__iexact=email).first()
+        if existing_user is None:
+            return
+        sociallogin.connect(request, existing_user)
+
     def get_connect_redirect_url(self, request, socialaccount):
         """
         Returns the default URL to redirect to after successfully

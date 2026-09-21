@@ -3,9 +3,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing'
 import { Clipboard } from '@angular/cdk/clipboard'
 import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
+import { Router } from '@angular/router'
 import {
   NgbAccordionModule,
-  NgbActiveModal,
   NgbModalModule,
   NgbPopoverModule,
 } from '@ng-bootstrap/ng-bootstrap'
@@ -42,6 +42,7 @@ describe('ProfileEditDialogComponent', () => {
   let profileService: ProfileService
   let toastService: ToastService
   let clipboard: Clipboard
+  let router: Router
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -57,7 +58,10 @@ describe('ProfileEditDialogComponent', () => {
         PasswordComponent,
         ConfirmButtonComponent,
       ],
-      providers: [NgbActiveModal, provideHttpClient(withInterceptorsFromDi())],
+      providers: [
+        provideHttpClient(withInterceptorsFromDi()),
+        { provide: Router, useValue: { navigate: jest.fn() } },
+      ],
     })
     profileService = TestBed.inject(ProfileService)
     jest.spyOn(profileService, 'get').mockReturnValue(NEVER)
@@ -66,6 +70,7 @@ describe('ProfileEditDialogComponent', () => {
       .mockReturnValue(of([]))
     toastService = TestBed.inject(ToastService)
     clipboard = TestBed.inject(Clipboard)
+    router = TestBed.inject(Router)
     fixture = TestBed.createComponent(ProfileEditDialogComponent)
     component = fixture.componentInstance
     fixture.detectChanges()
@@ -108,10 +113,9 @@ describe('ProfileEditDialogComponent', () => {
     expect(infoSpy).toHaveBeenCalled()
   })
 
-  it('should close on cancel', () => {
-    const closeSpy = jest.spyOn(component.activeModal, 'close')
+  it('should navigate away on cancel', () => {
     component.cancel()
-    expect(closeSpy).toHaveBeenCalled()
+    expect(router.navigate).toHaveBeenCalledWith(['/dashboard'])
   })
 
   it('should show additional confirmation field when email changes, warn with error & disable save', () => {

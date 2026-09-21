@@ -93,3 +93,15 @@ legacy-v1/**/*.pyc
 .DS_Store
 .env
 dump.rdb
+
+# --- authelia/ (2026-09-15) -- generated secrets, real signing keys,
+# real TLS private key, and the file-backed user store (password
+# hashes) -- none of this belongs in git. configuration.yml itself
+# (no secret material) stays tracked.
+authelia/secrets/
+authelia/configuration.secrets.yml
+authelia/users_database.yml
+authelia/certs/*-key.pem
+authelia/db.sqlite3
+# Dev-only fake mailbox (notifier.filesystem) -- runtime output, not source.
+authelia/notification.txt

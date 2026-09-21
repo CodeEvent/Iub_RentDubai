@@ -6,9 +6,10 @@ import {
   FormsModule,
   ReactiveFormsModule,
 } from '@angular/forms'
+import { Router } from '@angular/router'
 import {
   NgbAccordionModule,
-  NgbActiveModal,
+  NgbNavModule,
   NgbPopoverModule,
 } from '@ng-bootstrap/ng-bootstrap'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
@@ -22,9 +23,17 @@ import { ProfileService } from 'src/app/services/profile.service'
 import { ToastService } from 'src/app/services/toast.service'
 import { setLocationHref } from 'src/app/utils/navigation'
 import { LoadingComponentWithPermissions } from '../../loading-component/loading.component'
+import { AccountSecurityComponent } from '../../../rentshield/account-security/account-security.component'
+import { IdentityVerificationComponent } from '../../../rentshield/identity-verification/identity-verification.component'
 import { ConfirmButtonComponent } from '../confirm-button/confirm-button.component'
 import { PasswordComponent } from '../input/password/password.component'
 import { TextComponent } from '../input/text/text.component'
+
+export enum ProfileNavIDs {
+  Account = 1,
+  Security = 2,
+  IdentityVerification = 3,
+}
 
 @Component({
   selector: 'pngx-profile-edit-dialog',
@@ -37,8 +46,11 @@ import { TextComponent } from '../input/text/text.component'
     FormsModule,
     ReactiveFormsModule,
     NgbAccordionModule,
+    NgbNavModule,
     NgbPopoverModule,
     NgxBootstrapIconsModule,
+    AccountSecurityComponent,
+    IdentityVerificationComponent,
   ],
 })
 export class ProfileEditDialogComponent
@@ -46,9 +58,12 @@ export class ProfileEditDialogComponent
   implements OnInit
 {
   private profileService = inject(ProfileService)
-  activeModal = inject(NgbActiveModal)
+  private router = inject(Router)
   private toastService = inject(ToastService)
   private clipboard = inject(Clipboard)
+
+  readonly ProfileNavIDs = ProfileNavIDs
+  readonly activeNavID = signal(ProfileNavIDs.Account)
 
   readonly networkActive = signal(false)
   readonly error = signal<any>(undefined)
@@ -214,8 +229,9 @@ export class ProfileEditDialogComponent
                 `${window.location.origin}/accounts/logout/?next=/accounts/login/?next=/`
               )
             }, 2500)
+          } else {
+            this.router.navigate(['/dashboard'])
           }
-          this.activeModal.close()
         },
         error: (error) => {
           this.toastService.showError($localize`Error saving profile`, error)
@@ -226,7 +242,7 @@ export class ProfileEditDialogComponent
   }
 
   cancel(): void {
-    this.activeModal.close()
+    this.router.navigate(['/dashboard'])
   }
 
   generateAuthToken(): void {

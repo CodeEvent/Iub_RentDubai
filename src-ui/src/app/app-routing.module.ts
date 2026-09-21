@@ -26,6 +26,7 @@ import { NoticesListComponent } from './rentshield/notices-list/notices-list.com
 import { NotaryGuideComponent } from './rentshield/notary-guide/notary-guide.component'
 import { IdentityVerificationComponent } from './rentshield/identity-verification/identity-verification.component'
 import { IdentityAdminComponent } from './rentshield/identity-admin/identity-admin.component'
+import { ProfileEditDialogComponent } from './components/common/profile-edit-dialog/profile-edit-dialog.component'
 import {
   PermissionAction,
   PermissionType,
@@ -256,6 +257,13 @@ export const routes: Routes = [
       {
         path: 'settings/savedviews',
         redirectTo: '/savedviews',
+      },
+      {
+        path: 'profile',
+        component: ProfileEditDialogComponent,
+        data: {
+          componentName: 'ProfileEditDialogComponent',
+        },
       },
       {
         path: 'settings',

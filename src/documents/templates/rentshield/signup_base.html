@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="robots" content="noindex,nofollow">
+    <title>{% block title %}Create your account{% endblock %} - RentShield</title>
+    <style>
+        /* Design tokens -- see /DESIGN.md. Kept in sync by hand with the
+           copy in authelia/nginx/rentshield-bridge/index.html; these two
+           pages are served by different processes (Django vs a static
+           nginx mount) with no shared build step between them, so a
+           small literal duplication here is simpler than inventing one
+           for two files. */
+        :root {
+            --rs-bg: #0b0d10;
+            --rs-surface: #14171c;
+            --rs-border: #262b33;
+            --rs-text: #e8eaed;
+            --rs-text-muted: #8b93a1;
+            --rs-accent: #7c6cf6;
+            --rs-accent-strong: #9b8cff;
+            --rs-verified: #3ecf8e;
+            --rs-danger: #f26d6d;
+            --rs-danger-bg: #2a1618;
+            --rs-font: -apple-system, "Segoe UI", Inter, sans-serif;
+            --rs-font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: var(--rs-bg);
+            color: var(--rs-text);
+            font-family: var(--rs-font);
+            margin: 0;
+        }
+        .rs-wizard { max-width: 26rem; margin: 4rem auto; padding: 0 1.25rem; }
+        .rs-wizard-step { color: var(--rs-text-muted); font-size: .8rem; font-weight: 500; margin-bottom: .6rem; }
+        .rs-wizard h1 { font-size: 1.625rem; font-weight: 600; line-height: 1.25; margin: 0 0 .9rem; }
+        .rs-wizard-hint { color: var(--rs-text-muted); font-size: .95rem; line-height: 1.5; margin-bottom: 1.4rem; }
+        .rs-wizard-error {
+            background: var(--rs-danger-bg);
+            border-left: 3px solid var(--rs-danger);
+            color: var(--rs-danger);
+            padding: .85rem 1rem;
+            margin-bottom: 1.3rem;
+            font-size: .9rem;
+            border-radius: 0 6px 6px 0;
+        }
+        .rs-wizard-back {
+            display: inline-block;
+            margin-bottom: 1.4rem;
+            color: var(--rs-text-muted);
+            text-decoration: none;
+            font-size: .9rem;
+        }
+        .rs-wizard-back:hover { color: var(--rs-text); }
+
+        label { font-weight: 500; font-size: .9rem; margin-bottom: .4rem; display: block; }
+
+        .rs-input, .rs-input[type="text"], .rs-input[type="email"] {
+            width: 100%;
+            background: var(--rs-surface);
+            border: 1px solid var(--rs-border);
+            color: var(--rs-text);
+            border-radius: 6px;
+            padding: .65rem .8rem;
+            font-size: 1rem;
+            font-family: var(--rs-font);
+            transition: border-color .15s ease-out, box-shadow .15s ease-out;
+        }
+        .rs-input:focus {
+            outline: none;
+            border-color: var(--rs-accent);
+            box-shadow: 0 0 0 3px rgba(124, 108, 246, .25);
+        }
+        .rs-input.rs-input-error { border-color: var(--rs-danger); }
+        .rs-input-code {
+            font-family: var(--rs-font-mono);
+            letter-spacing: .3em;
+            text-align: center;
+            max-width: 11rem;
+            font-size: 1.15rem;
+        }
+
+        .rs-field { margin-bottom: 1.1rem; }
+
+        .rs-check { display: flex; align-items: flex-start; gap: .55rem; margin-bottom: 1.4rem; }
+        .rs-check input { margin-top: .2rem; accent-color: var(--rs-accent); }
+        .rs-check label { font-weight: 400; font-size: .88rem; color: var(--rs-text-muted); margin: 0; }
+
+        .rs-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: .95rem;
+            font-weight: 600;
+            font-family: var(--rs-font);
+            padding: .7rem 1.4rem;
+            cursor: pointer;
+            transition: background-color .15s ease-out, box-shadow .15s ease-out, opacity .15s ease-out;
+        }
+        .rs-btn-primary { background: var(--rs-accent); color: var(--rs-bg); }
+        .rs-btn-primary:hover:not(:disabled) { background: var(--rs-accent-strong); }
+        .rs-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(124, 108, 246, .35); }
+        .rs-btn:disabled { opacity: .55; cursor: not-allowed; }
+        .rs-btn-link {
+            background: none;
+            color: var(--rs-text-muted);
+            padding: 0;
+            font-weight: 500;
+        }
+        .rs-btn-link:hover:not(:disabled) { color: var(--rs-text); text-decoration: underline; }
+
+        .rs-spinner {
+            /* currentColor, not a hardcoded shade -- this is reused on
+               both the solid primary button (dark text on purple) and
+               the borderless link button (muted grey on transparent),
+               and a fixed dark tone would be invisible on the latter. */
+            width: 1em; height: 1em;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            opacity: .85;
+            animation: rs-spin .6s linear infinite;
+        }
+        @keyframes rs-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            .rs-spinner { animation-duration: 1.6s; }
+            .rs-input, .rs-btn { transition: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="rs-wizard">
+        {% block back_link %}{% endblock %}
+        {% if error %}<div class="rs-wizard-error">{{ error }}</div>{% endif %}
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

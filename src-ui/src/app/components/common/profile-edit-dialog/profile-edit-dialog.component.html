@@ -1,11 +1,14 @@
-<form [formGroup]="form" (ngSubmit)="save()" autocomplete="off">
-  <div class="modal-header">
-    <h4 class="modal-title" id="modal-basic-title" i18n>Edit Profile</h4>
-    <button type="button" class="btn-close" aria-label="Close" (click)="cancel()">
-    </button>
+<div class="container-fluid mt-3">
+  <div class="mb-3">
+    <h4 id="page-title" i18n>My Profile</h4>
   </div>
-  <div class="modal-body">
-    <div class="row">
+
+  <ul ngbNav #nav="ngbNav" class="nav-tabs" [activeId]="activeNavID()" (activeIdChange)="activeNavID.set($event)">
+    <li [ngbNavItem]="ProfileNavIDs.Account">
+      <a ngbNavLink i18n>Account</a>
+      <ng-template ngbNavContent>
+        <form [formGroup]="form" (ngSubmit)="save()" autocomplete="off">
+        <div class="row">
       <div class="col-12 col-md-6">
         <pngx-input-text i18n-title title="Email" formControlName="email" (keyup)="onEmailKeyUp($event)" [error]="error()?.email"></pngx-input-text>
         <div ngbAccordion>
@@ -177,9 +180,29 @@
         }
       </div>
     </div>
-    </div>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-outline-secondary" (click)="cancel()" i18n [disabled]="networkActive()">Cancel</button>
-      <button type="submit" class="btn btn-primary" i18n [disabled]="networkActive() || saveDisabled">Save</button>
-    </div>
-  </form>
+
+        <div class="d-flex gap-2 mt-4 mb-3">
+          <button type="button" class="btn btn-outline-secondary" (click)="cancel()" i18n [disabled]="networkActive()">Cancel</button>
+          <button type="submit" class="btn btn-primary" i18n [disabled]="networkActive() || saveDisabled">Save</button>
+        </div>
+        </form>
+      </ng-template>
+    </li>
+
+    <li [ngbNavItem]="ProfileNavIDs.Security">
+      <a ngbNavLink i18n>Security</a>
+      <ng-template ngbNavContent>
+        <pngx-account-security></pngx-account-security>
+      </ng-template>
+    </li>
+
+    <li [ngbNavItem]="ProfileNavIDs.IdentityVerification">
+      <a ngbNavLink i18n>Identity Verification</a>
+      <ng-template ngbNavContent>
+        <app-identity-verification></app-identity-verification>
+      </ng-template>
+    </li>
+  </ul>
+
+  <div [ngbNavOutlet]="nav" class="border-start border-end border-bottom p-3 mb-3 shadow-sm"></div>
+</div>

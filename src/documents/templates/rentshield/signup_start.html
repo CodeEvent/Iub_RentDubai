@@ -1,0 +1,9 @@
+{% extends "rentshield/signup_base.html" %}
+{% block title %}Sign in or create an account{% endblock %}
+{% block content %}
+    <h1>Sign in to RentShield</h1>
+    <p class="rs-wizard-hint">Already have an account? Enter your email and we'll take you straight to signing in with your passkey -- no password, ever.</p>
+    <p class="rs-wizard-hint">New here? You'll need an email address you can check now, a valid photo ID (passport, national ID, driving licence, or residence visa), and your phone with the RentShield app installed for the last step.</p>
+    <p class="rs-wizard-hint">Either way, nothing to remember: a passkey -- your face, fingerprint, or device screen lock -- is what signs you in from now on.</p>
+    <a class="rs-btn rs-btn-primary" href="{% url 'rentshield-signup-email' %}">Continue</a>
+{% endblock %}

@@ -41,6 +41,25 @@
             </div>
         {% endif %}
     {% endif %}
+
+    {% if RENTSHIELD_DEV_ACCOUNTS and not DISABLE_REGULAR_LOGIN %}
+        <div class="mt-4 pt-3 border-top">
+            <p class="small text-muted mb-2">{% translate "Quick dev login (DEBUG only -- never shown outside a dev environment):" %}</p>
+            <div class="d-flex flex-wrap gap-2">
+                {% for account in RENTSHIELD_DEV_ACCOUNTS %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary rs-dev-login-btn" data-username="{{ account.username }}" data-password="{{ account.password }}">{{ account.label }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        <script type="text/javascript">
+            document.querySelectorAll('.rs-dev-login-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    document.getElementById('inputUsername').value = btn.dataset.username;
+                    document.getElementById('inputPassword').value = btn.dataset.password;
+                });
+            });
+        </script>
+    {% endif %}
 {% endblock form_content %}
 
 {% block after_form_content %}

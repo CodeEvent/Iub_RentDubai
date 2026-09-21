@@ -254,3 +254,5 @@ def pair_claim_view(request):
         "declared_can": record.declared_can if record else "",
     }
     return Response({"token": token.key, "username": pairing.user.username, **declared})
+
+

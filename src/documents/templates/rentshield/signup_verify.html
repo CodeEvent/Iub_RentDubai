@@ -1,0 +1,30 @@
+{% extends "rentshield/signup_base.html" %}
+{% load static %}
+{% block title %}Check your email{% endblock %}
+{% block back_link %}<a class="rs-wizard-back" href="{% url 'rentshield-signup-email' %}">&larr; Back</a>{% endblock %}
+{% block content %}
+    <div class="rs-wizard-step">Step 2 of 4</div>
+    <h1>Check your email</h1>
+    <p class="rs-wizard-hint">
+        We've sent a 6-digit code to <strong>{{ email }}</strong>. It expires in 15 minutes.
+        If it doesn't arrive in a few minutes, check your spam folder.
+    </p>
+    <form method="post" class="rs-submit-form">
+        {% csrf_token %}
+        <div class="rs-field">
+            <label for="id_code">6-digit code</label>
+            <input type="text" name="code" id="id_code" class="rs-input rs-input-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus>
+        </div>
+        <button type="submit" class="rs-btn rs-btn-primary">
+            <span class="rs-btn-label">Continue</span>
+        </button>
+    </form>
+    <form method="post" class="rs-submit-form" style="margin-top: .9rem;">
+        {% csrf_token %}
+        <input type="hidden" name="resend" value="1">
+        <button type="submit" class="rs-btn rs-btn-link">
+            <span class="rs-btn-label">Send a new code</span>
+        </button>
+    </form>
+    <script src="{% static 'rentshield/signup-submit.js' %}"></script>
+{% endblock %}

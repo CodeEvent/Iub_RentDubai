@@ -154,6 +154,22 @@
               "localize": [
                 "en-US"
               ]
+            },
+            "dev-single-origin": {
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.dev-single-origin.ts"
+                }
+              ],
+              "outputPath": {
+                "base": "../src/documents/static/frontend/",
+                "browser": ""
+              },
+              "localize": [
+                "en-GB",
+                "en-US"
+              ]
             }
           },
           "defaultConfiguration": ""

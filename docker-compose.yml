@@ -22,6 +22,7 @@ services:
       - docling-service
       - docuseal
       - opensign
+      - authelia
     ports:
       - "8000:8000"
     volumes:
@@ -29,7 +30,33 @@ services:
       - pgx-media:/usr/src/paperless/media
       - ./consume:/usr/src/paperless/consume
       - jibri-recordings:/usr/src/paperless/jibri-recordings
+      # Authelia's dev-only TLS cert is signed by a local mkcert CA, not
+      # a real public one -- Python's `requests` (which allauth's OIDC
+      # discovery/token/userinfo calls go through) needs to be told to
+      # trust it explicitly via REQUESTS_CA_BUNDLE below.
+      - ./authelia/certs/rootCA.pem:/usr/src/paperless/authelia-ca.pem:ro
     environment:
+      # Passwordless SSO via Authelia (2026-09-15) -- see
+      # authelia/configuration.yml's header comment for the full
+      # architecture. AUTHELIA_OIDC_CLIENT_SECRET is the plaintext
+      # counterpart of authelia/configuration.secrets.yml's
+      # client_secret hash -- set it in a real (gitignored) .env file,
+      # never inline here; see authelia/secrets/
+      # oidc_client_secret_plaintext.txt for the generated value.
+      PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+      PAPERLESS_SOCIALACCOUNT_PROVIDERS: >-
+        {"openid_connect": {"SCOPE": ["openid", "profile", "email", "groups"],
+        "APPS": [{"provider_id": "authelia", "name": "RentShield",
+        "client_id": "rentshield", "secret": "${AUTHELIA_OIDC_CLIENT_SECRET:-}",
+        "settings": {"server_url": "https://auth.rentshield.local:9091",
+        "token_auth_method": "client_secret_post"}}]}}
+      PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS: "true"
+      # RentShield is now also reachable at app.rentshield.local over
+      # HTTPS (2026-09-15, see nginx/app-proxy/) -- Django requires an
+      # HTTPS request's Origin to be explicitly trusted for CSRF, unlike
+      # the plain-HTTP localhost:8000 path this was unset for before.
+      PAPERLESS_CSRF_TRUSTED_ORIGINS: https://app.rentshield.local:8443
+      REQUESTS_CA_BUNDLE: /usr/src/paperless/authelia-ca.pem
       PAPERLESS_REDIS: redis://broker:6379
       PAPERLESS_DBENGINE: sqlite
       DOCLING_SERVICE_URL: http://docling-service:8010
@@ -49,6 +76,105 @@ services:
       # __init__.py for why this needs a real domain+HTTPS in production.
       PAPERLESS_RENTSHIELD_JITSI_BASE_URL: ${RENTSHIELD_JITSI_BASE_URL:-http://localhost:8444}
       PAPERLESS_RENTSHIELD_JIBRI_RECORDINGS_DIR: /usr/src/paperless/jibri-recordings
+
+  # Self-hosted OIDC identity provider (2026-09-15, requested
+  # explicitly: "single source of truth" for auth across both the web
+  # app and the native Android app -- see authelia/configuration.yml's
+  # own header comment for the full architecture reasoning). Runs as a
+  # plain OIDC Provider only -- no forward-auth needed, Django talks to
+  # it directly via allauth's own openid_connect provider. Not reachable
+  # from the host directly any more (no `ports`) -- `authelia-proxy`
+  # below is now the only externally-reachable entry point, see its own
+  # header comment for why (strips "Authelia" branding, injects
+  # RentShield's own styling -- needs to see plaintext HTML/JSON, so TLS
+  # moved there too).
+  authelia:
+    # RentShield fork (2026-09-18, requested explicitly: "delete the
+    # passwords intake field and the ability to use the passwords") --
+    # a custom build of Authelia v4.39.26 from source (vendor/authelia/,
+    # a git clone of the matching upstream tag) with password
+    # authentication genuinely removed, not just hidden: the
+    # POST /api/secondfactor/password route (upstream's password
+    # fallback for a passkey login that didn't carry full user
+    # verification) is deleted from internal/server/handlers.go, the
+    # login page's username/password form is gone from
+    # FirstFactorForm.tsx (replaced with a "Sign up" link to
+    # RentShield's own /signup/), and LoginPortal.tsx's second-factor
+    # routing sends an unverified passkey login to a second WebAuthn tap
+    # instead of that now-deleted password screen. See
+    # vendor/authelia/Dockerfile.rentshield for the build and this
+    # session's own notes for the full reasoning -- rebuild with
+    # `docker buildx build -f vendor/authelia/Dockerfile.rentshield -t
+    # rentshield/authelia:custom --load vendor/authelia` (after
+    # temporarily swapping in vendor/authelia/.dockerignore.rentshield,
+    # since the repo's own .dockerignore is written for a different,
+    # packaging-only Dockerfile) whenever vendor/authelia/ changes.
+    # Tradeoff accepted explicitly: an account whose passkey never
+    # achieves user verification (no biometric hardware/PIN-secured
+    # authenticator) can still sign in -- via a second WebAuthn tap --
+    # but can never fall back to a password, ever, on this deployment.
+    image: rentshield/authelia:custom
+    restart: unless-stopped
+    volumes:
+      - ./authelia:/config
+    environment:
+      # Scalar secrets only -- the OIDC signing key + client secret hash
+      # are list-typed config paths _FILE env vars can't address, so
+      # those come from configuration.secrets.yml instead (merged in via
+      # `entrypoint` below).
+      AUTHELIA_SESSION_SECRET_FILE: /config/secrets/session_secret.txt
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /config/secrets/reset_password_jwt_secret.txt
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /config/secrets/storage_encryption_key.txt
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /config/secrets/oidc_hmac_secret.txt
+    entrypoint: ["authelia", "--config=/config/configuration.yml,/config/configuration.secrets.yml"]
+
+  # Fronts `authelia` above (2026-09-15, requested explicitly: remove
+  # "Authelia" branding from its own hosted pages, match RentShield's
+  # look). TLS terminates HERE now (mkcert cert for auth.rentshield.local,
+  # same one Authelia used to hold directly -- see nginx.conf's own
+  # header comment for why a passthrough proxy in front of Authelia's own
+  # TLS couldn't do this). Holds the `auth.rentshield.local` network
+  # alias `authelia` itself used to have -- both the browser-facing LAN
+  # IP and Django's own SOCIALACCOUNT_PROVIDERS server_url hit this
+  # container now, unchanged from the outside (same host:port), just
+  # with Authelia one hop further back.
+  authelia-proxy:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - authelia
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./authelia/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./authelia/nginx/locales:/etc/nginx/rentshield/locales:ro
+      - ./authelia/nginx/manifest.json:/etc/nginx/rentshield/manifest.json:ro
+      - ./authelia/nginx/rentshield-authelia-theme.css:/etc/nginx/rentshield/rentshield-authelia-theme.css:ro
+      - ./authelia/nginx/rentshield-bridge:/etc/nginx/rentshield/rentshield-bridge:ro
+      - ./authelia/certs:/etc/nginx/certs:ro
+    networks:
+      default:
+        aliases:
+          - auth.rentshield.local
+
+  # Fronts the bare Django dev server at app.rentshield.local (2026-09-15)
+  # -- see nginx/app-proxy/nginx.conf's own header comment for why this
+  # exists (shares a parent domain with Authelia so its session cookie
+  # can flow same-site).
+  app-proxy:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./nginx/app-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./authelia/certs:/etc/nginx/certs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      default:
+        aliases:
+          - app.rentshield.local
 
   docling-service:
     build:

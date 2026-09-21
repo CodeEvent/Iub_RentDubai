@@ -1,0 +1,212 @@
+<div class="account-security">
+  @if (loading()) {
+    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+    <span i18n>Loading your security settings&hellip;</span>
+  } @else {
+    <h5 i18n>Passkeys</h5>
+    <ul class="list-group mb-3">
+      @for (credential of credentials(); track credential.id) {
+        <li
+          class="list-group-item d-flex justify-content-between align-items-center"
+        >
+          @if (renamingId() === credential.id) {
+            <input
+              type="text"
+              class="form-control form-control-sm me-2"
+              [(ngModel)]="renameValue"
+              name="renameValue"
+              i18n-aria-label
+              aria-label="Passkey name"
+            />
+            <div class="d-flex gap-1">
+              <button
+                type="button"
+                class="btn btn-sm btn-primary"
+                (click)="confirmRename(credential.id)"
+                i18n
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                (click)="cancelRename()"
+                i18n
+              >
+                Cancel
+              </button>
+            </div>
+          } @else {
+            <div>
+              <div>{{ credential.description }}</div>
+              <div class="form-text text-muted">
+                <ng-container i18n>Added</ng-container>
+                {{ credential.created_at | date: 'medium' }}
+                @if (credential.last_used_at) {
+                  &middot; <ng-container i18n>Last used</ng-container>
+                  {{ credential.last_used_at | date: 'medium' }}
+                } @else {
+                  &middot; <ng-container i18n>Never used</ng-container>
+                }
+              </div>
+            </div>
+            <div class="d-flex gap-1">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                (click)="startRename(credential)"
+                i18n-title
+                title="Rename"
+              >
+                <i-bs width="1em" height="1em" name="pencil"></i-bs>
+              </button>
+              <pngx-confirm-button
+                label=""
+                i18n-title
+                title="Remove {{ credential.description }} passkey"
+                buttonClasses="btn-outline-danger btn-sm"
+                iconName="trash"
+                (confirm)="deleteCredential(credential.id)"
+              >
+              </pngx-confirm-button>
+            </div>
+          }
+        </li>
+      } @empty {
+        <li class="list-group-item text-muted" i18n>
+          No passkeys registered yet.
+        </li>
+      }
+    </ul>
+
+    <div class="input-group mb-4">
+      <input
+        type="text"
+        class="form-control"
+        [(ngModel)]="newPasskeyDescription"
+        name="newPasskeyDescription"
+        i18n-placeholder
+        placeholder="Description, e.g. My iPhone"
+      />
+      <button
+        type="button"
+        class="btn btn-primary"
+        (click)="addPasskey()"
+        [disabled]="!newPasskeyDescription.trim()"
+      >
+        <ng-container i18n>Add a passkey</ng-container>
+      </button>
+    </div>
+
+    <h5 i18n>Change password</h5>
+    <div class="row g-2 mb-4">
+      <div class="col-12 col-md-4">
+        <input
+          type="password"
+          class="form-control"
+          [(ngModel)]="oldPassword"
+          name="oldPassword"
+          autocomplete="current-password"
+          i18n-placeholder
+          placeholder="Current password"
+        />
+      </div>
+      <div class="col-12 col-md-4">
+        <input
+          type="password"
+          class="form-control"
+          [(ngModel)]="newPassword"
+          name="newPassword"
+          autocomplete="new-password"
+          i18n-placeholder
+          placeholder="New password"
+        />
+      </div>
+      <div class="col-12 col-md-4">
+        <input
+          type="password"
+          class="form-control"
+          [(ngModel)]="newPasswordConfirm"
+          name="newPasswordConfirm"
+          autocomplete="new-password"
+          i18n-placeholder
+          placeholder="Confirm new password"
+        />
+      </div>
+      <div class="col-12">
+        <button
+          type="button"
+          class="btn btn-primary"
+          (click)="changePassword()"
+          [disabled]="
+            changingPassword() ||
+            !oldPassword ||
+            !newPassword ||
+            newPassword !== newPasswordConfirm
+          "
+        >
+          @if (changingPassword()) {
+            <div
+              class="spinner-border spinner-border-sm me-2"
+              role="status"
+            ></div>
+          }
+          <ng-container i18n>Change password</ng-container>
+        </button>
+        @if (newPassword && newPassword !== newPasswordConfirm) {
+          <div class="form-text text-danger" role="alert" i18n>
+            Passwords must match
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  @if (elevationPending()) {
+    <div class="modal-backdrop show"></div>
+    <div class="modal d-block" tabindex="-1" role="dialog">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" i18n>Confirm it's you</h5>
+          </div>
+          <div class="modal-body">
+            <p i18n>
+              For your security, we've emailed you a one-time code. Enter
+              it below to continue.
+            </p>
+            <input
+              type="text"
+              class="form-control"
+              [(ngModel)]="elevationCode"
+              name="elevationCode"
+              i18n-aria-label
+              aria-label="One-time code"
+              i18n-placeholder
+              placeholder="One-time code"
+            />
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              (click)="cancelElevation()"
+              i18n
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              (click)="submitElevationCode()"
+              [disabled]="!elevationCode.trim()"
+              i18n
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

@@ -370,6 +370,34 @@ HEADLESS_TOKEN_STRATEGY = "paperless.adapter.DrfTokenStrategy"
 
 MFA_TOTP_ISSUER = "Paperless-ngx"
 
+# Passwordless sign-in via WebAuthn/FIDO2 passkeys (2026-09-14, requested
+# explicitly): the private key is generated and sealed inside the
+# device's own secure hardware (Android Keystore, iOS Secure Enclave)
+# and only ever unlocked by that device's biometric -- allauth.mfa
+# already ships this (RP id/name are auto-derived per-request from
+# get_public_key_credential_rp_entity(), no extra config needed here),
+# it's just off by default. PASSKEY_LOGIN_ENABLED lets a passkey be the
+# *entire* login, not a second factor bolted onto a password, for an
+# EXISTING account (one that signed up the normal way and then added a
+# passkey from account settings). Deliberately NOT also turning on
+# MFA_PASSKEY_SIGNUP_ENABLED (a brand-new account created from a passkey
+# alone, no password ever set) -- allauth's own system check refuses
+# that unless ACCOUNT_EMAIL_VERIFICATION is "mandatory" globally (with
+# no password, a verified email is the only thing proving account
+# ownership), which is a real, separate policy change to every signup
+# on this site, not just passkey ones -- out of scope for "let existing
+# users sign in without a password". Upgrade path: flip
+# ACCOUNT_EMAIL_VERIFICATION to mandatory + MFA_PASSKEY_SIGNUP_ENABLED
+# together, deliberately, if passwordless signup is ever wanted too.
+#
+# Real, separate requirement this doesn't remove: the browser/Android's
+# own WebAuthn implementation refuses to run outside a secure context
+# (https:// or exactly http://localhost) regardless of any server-side
+# setting -- see the Android/Angular integration work for how that's
+# handled.
+MFA_SUPPORTED_TYPES = ["recovery_codes", "totp", "webauthn"]
+MFA_PASSKEY_LOGIN_ENABLED = True
+
 ACCOUNT_EMAIL_SUBJECT_PREFIX = "[Paperless-ngx] "
 
 DISABLE_REGULAR_LOGIN = get_bool_from_env("PAPERLESS_DISABLE_REGULAR_LOGIN")

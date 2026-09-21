@@ -1,0 +1,247 @@
+<!doctype html>
+<!--
+  The one WebAuthn action that can't be a direct call from RentShield's
+  own page: registering a brand-new passkey. Browsers only allow
+  navigator.credentials.create() to run in a document whose origin
+  matches (or is a subdomain of) the RP ID the server returns --
+  Authelia always returns its own hostname here (confirmed live, no
+  config override exists), so this ceremony has to actually run on
+  auth.rentshield.local, no matter what domain RentShield itself is on.
+
+  Reached via a same-tab redirect (never a popup) from My Profile's
+  Security tab, and redirects straight back when done -- see the plan
+  file for why this is the one exception to everything else in that tab
+  being a direct, same-site API call.
+
+  Design tokens below are a literal copy of documents/templates/rentshield/
+  signup_base.html's <style> block -- see /DESIGN.md. This page is served
+  by a separate nginx container with no shared build step with Django's
+  static files, so keeping two small copies in sync by hand is simpler
+  than building a shared-asset pipeline for one stylesheet.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Register your passkey</title>
+<style>
+    :root {
+        --rs-bg: #0b0d10;
+        --rs-surface: #14171c;
+        --rs-border: #262b33;
+        --rs-text: #e8eaed;
+        --rs-text-muted: #8b93a1;
+        --rs-accent: #7c6cf6;
+        --rs-accent-strong: #9b8cff;
+        --rs-verified: #3ecf8e;
+        --rs-danger: #f26d6d;
+        --rs-danger-bg: #2a1618;
+        --rs-font: -apple-system, "Segoe UI", Inter, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+        background: var(--rs-bg);
+        color: var(--rs-text);
+        font-family: var(--rs-font);
+        margin: 0;
+    }
+    .rs-wizard { max-width: 26rem; margin: 4rem auto; padding: 0 1.25rem; }
+    .rs-card {
+        background: var(--rs-surface);
+        border: 1px solid var(--rs-border);
+        border-radius: 8px;
+        padding: 1.5rem;
+        transition: border-color .15s ease-out, box-shadow .15s ease-out;
+    }
+    .rs-card.rs-card-verified {
+        border-color: var(--rs-verified);
+        box-shadow: 0 0 0 3px rgba(62, 207, 142, .2);
+    }
+    .rs-wizard h1 { font-size: 1.4rem; font-weight: 600; line-height: 1.25; margin: 0 0 .7rem; }
+    .rs-wizard-hint { color: var(--rs-text-muted); font-size: .92rem; line-height: 1.5; margin: 0 0 1.3rem; }
+    .rs-status { color: var(--rs-text-muted); font-size: .85rem; margin-top: .8rem; }
+    .rs-wizard-error {
+        background: var(--rs-danger-bg);
+        border-left: 3px solid var(--rs-danger);
+        color: var(--rs-danger);
+        padding: .85rem 1rem;
+        margin: 1rem 0 0;
+        font-size: .9rem;
+        border-radius: 0 6px 6px 0;
+        display: none;
+    }
+    .rs-wizard-error.rs-visible { display: block; }
+    .rs-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+        border: none;
+        border-radius: 6px;
+        font-size: .95rem;
+        font-weight: 600;
+        font-family: var(--rs-font);
+        padding: .7rem 1.4rem;
+        cursor: pointer;
+        width: 100%;
+        transition: background-color .15s ease-out, opacity .15s ease-out;
+    }
+    .rs-btn-primary { background: var(--rs-accent); color: var(--rs-bg); }
+    .rs-btn-primary:hover:not(:disabled) { background: var(--rs-accent-strong); }
+    .rs-btn:disabled { opacity: .55; cursor: not-allowed; }
+    .rs-link { color: var(--rs-text-muted); font-size: .85rem; text-decoration: none; display: inline-block; margin-top: 1rem; }
+    .rs-link:hover { color: var(--rs-text); text-decoration: underline; }
+    .rs-spinner {
+        width: 1em; height: 1em;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        opacity: .85;
+        animation: rs-spin .6s linear infinite;
+    }
+    @keyframes rs-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+        .rs-spinner { animation-duration: 1.6s; }
+        .rs-card, .rs-btn { transition: none; }
+    }
+</style>
+</head>
+<body>
+<div class="rs-wizard">
+    <div class="rs-card" id="rs-card">
+        <h1 id="rs-heading">Register your passkey</h1>
+        <p class="rs-wizard-hint" id="rs-hint">
+            Use your face, fingerprint, or device screen lock to create a passkey for this
+            account. Nothing to type or remember.
+        </p>
+        <button type="button" class="rs-btn rs-btn-primary" id="rs-register-btn">
+            <span id="rs-btn-label">Register with biometrics</span>
+        </button>
+        <div class="rs-status" id="rs-status" hidden></div>
+        <div class="rs-wizard-error" id="rs-error"></div>
+    </div>
+    <a class="rs-link" id="rs-back-link" href="#">Cancel and go back</a>
+</div>
+<script>
+(function () {
+  'use strict';
+
+  // Dev-only allowlist -- mirrors the redirect_uris already listed in
+  // authelia/configuration.secrets.yml for the same reason. A real
+  // deployment replaces this with RentShield's real origin(s).
+  var ALLOWED_RETURN_ORIGINS = [
+    'https://app.rentshield.local:8443',
+  ];
+
+  var params = new URLSearchParams(window.location.search);
+  var description = params.get('description') || '';
+  var returnTo = params.get('return');
+
+  var card = document.getElementById('rs-card');
+  var btn = document.getElementById('rs-register-btn');
+  var btnLabel = document.getElementById('rs-btn-label');
+  var status = document.getElementById('rs-status');
+  var errorBox = document.getElementById('rs-error');
+  var backLink = document.getElementById('rs-back-link');
+
+  function succeed() {
+    var url = new URL(returnTo);
+    url.searchParams.set('passkeyAdded', '1');
+    window.location.replace(url.toString());
+  }
+
+  if (!returnTo || ALLOWED_RETURN_ORIGINS.indexOf(new URL(returnTo).origin) === -1) {
+    document.body.textContent = 'This page must be reached from RentShield.';
+    return;
+  }
+
+  backLink.href = returnTo;
+
+  function showError(message) {
+    errorBox.textContent = message + ' -- you can try again below.';
+    errorBox.classList.add('rs-visible');
+  }
+
+  function setLoading(isLoading) {
+    btn.disabled = isLoading;
+    if (isLoading) {
+      btnLabel.innerHTML = '<span class="rs-spinner" aria-hidden="true"></span> Waiting for your device…';
+      status.hidden = false;
+      status.textContent = 'Follow the prompt from your browser or device now.';
+    } else {
+      btnLabel.textContent = 'Register with biometrics';
+      status.hidden = true;
+    }
+  }
+
+  async function api(method, path, body) {
+    var res = await fetch(path, {
+      method: method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin',
+    });
+    var data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      // no body
+    }
+    if (!res.ok || (data && data.status === 'KO')) {
+      throw new Error((data && data.message) || ('Request failed: ' + res.status));
+    }
+    return data ? data.data : null;
+  }
+
+  async function register() {
+    errorBox.classList.remove('rs-visible');
+    setLoading(true);
+    try {
+      var startResult = await api('PUT', '/api/secondfactor/webauthn/credential/register', { description: description });
+      var creationOptions = startResult && startResult.publicKey;
+      if (!creationOptions) {
+        throw new Error('Authelia did not return WebAuthn creation options.');
+      }
+      var publicKey = PublicKeyCredential.parseCreationOptionsFromJSON(creationOptions);
+      var credential = await navigator.credentials.create({ publicKey: publicKey });
+      if (!credential) {
+        throw new Error('No credential was created.');
+      }
+      var res = await fetch('/api/secondfactor/webauthn/credential/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credential.toJSON()),
+        credentials: 'same-origin',
+      });
+      var data = await res.json().catch(function () { return null; });
+      if (!res.ok || (data && data.status === 'KO')) {
+        throw new Error((data && data.message) || 'Registration failed.');
+      }
+      card.classList.add('rs-card-verified');
+      btnLabel.textContent = 'Passkey registered';
+      status.hidden = false;
+      status.textContent = 'Taking you back to RentShield…';
+      setTimeout(succeed, 500);
+    } catch (err) {
+      // The most common case by far: the person's OS/browser cancelled
+      // its own biometric prompt (they backed out, timed out, or the
+      // platform authenticator wasn't available) -- surfaced as
+      // NotAllowedError by the WebAuthn spec, not a server-side failure,
+      // so it's shown here rather than redirected away where the same
+      // message would flash past on navigation.
+      setLoading(false);
+      showError(err && err.message ? err.message : String(err));
+    }
+  }
+
+  if (!window.PublicKeyCredential) {
+    btn.disabled = true;
+    showError('This browser does not support passkeys');
+    return;
+  }
+
+  btn.addEventListener('click', register);
+})();
+</script>
+</body>
+</html>
