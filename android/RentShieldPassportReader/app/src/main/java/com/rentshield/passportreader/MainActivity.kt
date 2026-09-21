@@ -37,15 +37,23 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.camera.core.ImageAnalysis
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetector
+import com.google.mlkit.vision.face.FaceDetectorOptions
 import org.jmrtd.AccessKeySpec
 import org.jmrtd.BACKey
 import org.jmrtd.PACEKeySpec
 import java.io.File
 import java.util.Calendar
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * Full flow: sign in -> Face ID/fingerprint gate (confirms phone
@@ -95,6 +103,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var photoPreviewView: PreviewView
     private lateinit var buttonCapturePhoto: Button
     private var imageCapture: ImageCapture? = null
+    private lateinit var faceGuideOverlay: FaceGuideOverlay
+    private var faceDetector: FaceDetector? = null
+
+    // Face detection itself runs off Play Services' own threads, but
+    // converting each ImageProxy and kicking that off still shouldn't
+    // happen on the main thread -- one persistent single-thread executor
+    // for the activity's whole lifetime (see onDestroy) rather than a
+    // fresh one per selfie attempt.
+    private val faceAnalysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     // Which primary document type the user declared on the web -- kept
     // to filter the additional-document choices (never the same type
@@ -125,6 +142,7 @@ class MainActivity : AppCompatActivity() {
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
     private val recordingHandler = Handler(Looper.getMainLooper())
+
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
@@ -161,6 +179,7 @@ class MainActivity : AppCompatActivity() {
         sectionPhotoCapture = findViewById(R.id.section_photo_capture)
         photoPreviewView = findViewById(R.id.photo_preview_camera)
         buttonCapturePhoto = findViewById(R.id.button_capture_photo)
+        faceGuideOverlay = findViewById(R.id.face_guide_overlay)
 
         permissionLauncher.launch(
             arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.RECORD_AUDIO),
@@ -413,8 +432,21 @@ class MainActivity : AppCompatActivity() {
                                 // real failure only surfaced several steps
                                 // later as a confusing, unrelated-looking
                                 // selfie error.
+                                //
+                                // Requested explicitly (2026-09-14): a failed
+                                // step should let the user retake and retry
+                                // right here, not send them all the way back
+                                // to "Confirm it's you" (step 1) -- that used
+                                // to go through onVerificationComplete's Done
+                                // screen, whose only action is
+                                // resetToBiometricGate(). views.py's matching
+                                // fix (upload_front_document_view) un-sticks
+                                // the record on a retake that passes, so
+                                // simply re-showing this same button is
+                                // enough for a retry to actually work.
                                 if (it.status == "failed") {
-                                    onVerificationComplete(it)
+                                    statusText.text = it.detail ?: "That photo didn't pass automated checks -- retake it with better lighting/focus and try again."
+                                    buttonCardPhoto.visibility = View.VISIBLE
                                 } else {
                                     statusText.text = "Card read. Now tap the chip: hold it flat against the back of your phone."
                                     buttonScan.visibility = View.VISIBLE
@@ -624,15 +656,29 @@ class MainActivity : AppCompatActivity() {
             api.uploadLiveCapture(selfieBytes, location) { result ->
                 runOnUiThread {
                     result.onSuccess {
+                        // Same reasoning as onCardPhotoCaptured's matching
+                        // fix: retry this same step in place instead of
+                        // sending the user back to step 1 (views.py's
+                        // upload_live_capture_view un-sticks the record on
+                        // a retake that passes).
                         if (it.status == "failed") {
-                            onVerificationComplete(it)
+                            statusText.text = it.detail ?: "That selfie didn't pass automated checks -- try again with your whole face clearly visible."
+                            buttonSelfie.visibility = View.VISIBLE
                         } else {
                             statusText.text = "Selfie submitted. Last step: record a short confirmation video."
                             buttonVideo.visibility = View.VISIBLE
                             updateStep(6, "Record your confirmation video")
                         }
                     }
-                    result.onFailure { statusText.text = it.message }
+                    result.onFailure {
+                        // Real bug found going through this step by step
+                        // (2026-09-14): unlike every other capture step's
+                        // onFailure, this never re-showed buttonSelfie --
+                        // it was hidden at the top of this function and a
+                        // network failure here left no way to retry at all.
+                        statusText.text = it.message
+                        buttonSelfie.visibility = View.VISIBLE
+                    }
                 }
             }
         }
@@ -838,6 +884,14 @@ class MainActivity : AppCompatActivity() {
         }
         pendingCaptureKind = kind
         imageCapture = null
+        // A previous selfie attempt's detector, if any -- closed and
+        // rebuilt fresh rather than reused, same reasoning as
+        // imageCapture above (a stale reference from an earlier attempt
+        // must never keep running against a since-unbound camera).
+        faceDetector?.close()
+        faceDetector = null
+        faceGuideOverlay.visibility = if (kind == CaptureKind.SELFIE) View.VISIBLE else View.GONE
+        faceGuideOverlay.setAligned(false)
         sectionPhotoCapture.visibility = View.VISIBLE
         buttonCapturePhoto.visibility = View.VISIBLE
         // Real bug caught live (2026-09-14): the camera provider binds
@@ -867,9 +921,21 @@ class MainActivity : AppCompatActivity() {
                     it.setSurfaceProvider(photoPreviewView.surfaceProvider)
                 }
                 val capture = ImageCapture.Builder().build()
+                val useCases = mutableListOf<androidx.camera.core.UseCase>(preview, capture)
+                if (kind == CaptureKind.SELFIE) {
+                    val detector = FaceDetection.getClient(
+                        FaceDetectorOptions.Builder()
+                            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                            .build(),
+                    )
+                    faceDetector = detector
+                    useCases += ImageAnalysis.Builder().build().also {
+                        it.setAnalyzer(faceAnalysisExecutor) { proxy -> analyzeSelfieFrame(proxy, detector) }
+                    }
+                }
                 try {
                     cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(this, cameraSelectorFor(kind), preview, capture)
+                    cameraProvider.bindToLifecycle(this, cameraSelectorFor(kind), *useCases.toTypedArray())
                     imageCapture = capture
                     buttonCapturePhoto.isEnabled = true
                     buttonCapturePhoto.text = "📸 Capture"
@@ -880,6 +946,46 @@ class MainActivity : AppCompatActivity() {
             },
             ContextCompat.getMainExecutor(this),
         )
+    }
+
+    // Runs on faceAnalysisExecutor, not the main thread -- ImageAnalysis
+    // requires every ImageProxy to be closed exactly once or the camera
+    // stalls (no more frames delivered), so `close()` happens in
+    // addOnCompleteListener, which fires whether detection succeeded or
+    // failed. `detector` is passed in rather than read from the
+    // faceDetector field so a stray late frame from a just-replaced
+    // detector (see startInAppPhotoCapture's close-and-rebuild) can never
+    // run against the wrong one.
+    private fun analyzeSelfieFrame(proxy: androidx.camera.core.ImageProxy, detector: FaceDetector) {
+        val mediaImage = proxy.image
+        if (mediaImage == null) {
+            proxy.close()
+            return
+        }
+        val image = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)
+        detector.process(image)
+            .addOnSuccessListener { faces ->
+                runOnUiThread { faceGuideOverlay.setAligned(isWellPositioned(faces, image.width, image.height)) }
+            }
+            .addOnFailureListener {
+                runOnUiThread { faceGuideOverlay.setAligned(false) }
+            }
+            .addOnCompleteListener { proxy.close() }
+    }
+
+    // A single face, filling a reasonable fraction of the frame and
+    // roughly centered -- a live hint, not the real gate: Idswyft's own
+    // liveness/face-match checks (see onSelfieCaptured) are still what
+    // actually decides pass/fail, this just means a badly framed selfie
+    // doesn't have to be discovered only after uploading it.
+    private fun isWellPositioned(faces: List<Face>, frameWidth: Int, frameHeight: Int): Boolean {
+        val face = faces.singleOrNull() ?: return false
+        val box = face.boundingBox
+        val widthRatio = box.width().toFloat() / frameWidth
+        if (widthRatio < 0.2f || widthRatio > 0.9f) return false
+        val centerX = box.exactCenterX() / frameWidth
+        val centerY = box.exactCenterY() / frameHeight
+        return centerX in 0.25f..0.75f && centerY in 0.2f..0.85f
     }
 
     private fun onCapturePhotoClicked() {
@@ -929,6 +1035,9 @@ class MainActivity : AppCompatActivity() {
                         // against an unbound use case.
                         ProcessCameraProvider.getInstance(this@MainActivity).get().unbindAll()
                         imageCapture = null
+                        faceDetector?.close()
+                        faceDetector = null
+                        faceGuideOverlay.visibility = View.GONE
                         // Immediate confirmation that the capture itself
                         // worked, distinct from whatever the upload/OCR
                         // result (statusText, a few seconds later) turns
@@ -990,6 +1099,8 @@ class MainActivity : AppCompatActivity() {
         activeRecording = null
         videoCapture = null
         imageCapture = null
+        faceDetector?.close()
+        faceDetector = null
         runCatching { ProcessCameraProvider.getInstance(this).get().unbindAll() }
         buttonCardPhoto.visibility = View.VISIBLE
         buttonScan.visibility = View.GONE
@@ -1000,6 +1111,7 @@ class MainActivity : AppCompatActivity() {
         buttonRecordToggle.visibility = View.GONE
         sectionPhotoCapture.visibility = View.GONE
         buttonCapturePhoto.visibility = View.GONE
+        faceGuideOverlay.visibility = View.GONE
         photoPreview.setImageDrawable(null)
         statusText.text = ""
 
@@ -1021,4 +1133,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+
+    override fun onDestroy() {
+        super.onDestroy()
+        faceDetector?.close()
+        faceAnalysisExecutor.shutdown()
+    }
 }

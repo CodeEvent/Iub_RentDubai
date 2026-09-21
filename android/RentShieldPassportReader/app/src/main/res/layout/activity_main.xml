@@ -115,6 +115,7 @@
                 android:layout_height="56dp"
                 android:textSize="16sp"
                 android:text="📷 Scan QR to sign in" />
+
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
@@ -375,6 +376,17 @@
                 android:id="@+id/photo_preview_camera"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
+
+            <!-- Selfie-only live alignment guide (requested explicitly,
+                 2026-09-14): red until MainActivity's face-detection
+                 analyzer reports a single, well-centered face, green once
+                 it does. Hidden (GONE) for the card-photo/additional-ID
+                 capture kinds, which reuse this same shared section. -->
+            <com.rentshield.passportreader.FaceGuideOverlay
+                android:id="@+id/face_guide_overlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
         </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 

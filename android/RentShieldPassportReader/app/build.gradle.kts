@@ -22,8 +22,8 @@ android {
         // Bump this on every rebuild meant for someone to actually
         // install, not just the debug-cycle "same device, same session"
         // ones adb install -r already forces through regardless.
-        versionCode = 6
-        versionName = "0.6"
+        versionCode = 10
+        versionName = "0.10"
     }
 
     // Real bug found live: without this, the Android Gradle Plugin
@@ -114,6 +114,14 @@ dependencies {
     // real/latest against Google's Maven repo directly (dl.google.com),
     // not guessed.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
+    // Live selfie-alignment guide (requested explicitly, 2026-09-14):
+    // on-device face detection to drive the red/green oval overlay drawn
+    // over the selfie preview -- separate ML Kit artifact from the
+    // barcode scanner above, bundles its own model so it also works
+    // offline. Latest standalone release confirmed against Google's own
+    // Maven repo, not guessed.
+    implementation("com.google.mlkit:face-detection:16.1.7")
 
     // In-app camera for the confirmation video specifically (the card
     // photo/selfie steps still use the plain MediaStore.ACTION_*_CAPTURE

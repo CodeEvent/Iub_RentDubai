@@ -103,6 +103,7 @@ class RentShieldApiClient(private val baseUrl: String, initialToken: String? = n
         })
     }
 
+
     fun startVerification(callback: (Result<VerificationStatus>) -> Unit) {
         authed("/api/documents/identity/verify/start/", "POST", callback = callback)
     }
