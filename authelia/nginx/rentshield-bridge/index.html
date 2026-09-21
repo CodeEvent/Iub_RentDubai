@@ -26,16 +26,16 @@
 <title>Register your passkey</title>
 <style>
     :root {
-        --rs-bg: #0b0d10;
-        --rs-surface: #14171c;
-        --rs-border: #262b33;
+        --rs-bg: #09090b;
+        --rs-surface: #18181b;
+        --rs-border: #27272a;
         --rs-text: #e8eaed;
         --rs-text-muted: #8b93a1;
         --rs-accent: #7c6cf6;
         --rs-accent-strong: #9b8cff;
-        --rs-verified: #3ecf8e;
-        --rs-danger: #f26d6d;
-        --rs-danger-bg: #2a1618;
+        --rs-verified: #10b981;
+        --rs-danger: #fb7185;
+        --rs-danger-bg: #2a1215;
         --rs-font: -apple-system, "Segoe UI", Inter, sans-serif;
     }
     * { box-sizing: border-box; }
@@ -53,9 +53,13 @@
         padding: 1.5rem;
         transition: border-color .15s ease-out, box-shadow .15s ease-out;
     }
+    .rs-card:focus-within {
+        border-color: var(--rs-accent);
+        box-shadow: 0 0 0 3px rgba(124, 108, 246, .12);
+    }
     .rs-card.rs-card-verified {
         border-color: var(--rs-verified);
-        box-shadow: 0 0 0 3px rgba(62, 207, 142, .2);
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, .2);
     }
     .rs-wizard h1 { font-size: 1.4rem; font-weight: 600; line-height: 1.25; margin: 0 0 .7rem; }
     .rs-wizard-hint { color: var(--rs-text-muted); font-size: .92rem; line-height: 1.5; margin: 0 0 1.3rem; }
@@ -203,7 +207,18 @@
         throw new Error('Authelia did not return WebAuthn creation options.');
       }
       var publicKey = PublicKeyCredential.parseCreationOptionsFromJSON(creationOptions);
-      var credential = await navigator.credentials.create({ publicKey: publicKey });
+      // Confirmed live (2026-09-21): Chromium does not reliably honor
+      // publicKey.timeout on its own -- with no platform authenticator
+      // enrolled and no security key plugged in, navigator.credentials
+      // .create() just sits pending forever instead of rejecting once
+      // that timeout elapses, leaving the button stuck on "Waiting for
+      // your device..." with no error and no way back except the
+      // separate "Cancel and go back" link. AbortSignal.timeout gives
+      // this its own client-side deadline so the promise always settles.
+      var credential = await navigator.credentials.create({
+        publicKey: publicKey,
+        signal: AbortSignal.timeout((creationOptions.timeout || 120000) + 1000),
+      });
       if (!credential) {
         throw new Error('No credential was created.');
       }
@@ -230,7 +245,11 @@
       // so it's shown here rather than redirected away where the same
       // message would flash past on navigation.
       setLoading(false);
-      showError(err && err.message ? err.message : String(err));
+      if (err && err.name === 'TimeoutError') {
+        showError('Timed out waiting for your device');
+      } else {
+        showError(err && err.message ? err.message : String(err));
+      }
     }
   }
 

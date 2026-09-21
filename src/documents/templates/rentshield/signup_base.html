@@ -13,16 +13,16 @@
            small literal duplication here is simpler than inventing one
            for two files. */
         :root {
-            --rs-bg: #0b0d10;
-            --rs-surface: #14171c;
-            --rs-border: #262b33;
+            --rs-bg: #09090b;
+            --rs-surface: #18181b;
+            --rs-border: #27272a;
             --rs-text: #e8eaed;
             --rs-text-muted: #8b93a1;
             --rs-accent: #7c6cf6;
             --rs-accent-strong: #9b8cff;
-            --rs-verified: #3ecf8e;
-            --rs-danger: #f26d6d;
-            --rs-danger-bg: #2a1618;
+            --rs-verified: #10b981;
+            --rs-danger: #fb7185;
+            --rs-danger-bg: #2a1215;
             --rs-font: -apple-system, "Segoe UI", Inter, sans-serif;
             --rs-font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
         }
@@ -34,6 +34,17 @@
             margin: 0;
         }
         .rs-wizard { max-width: 26rem; margin: 4rem auto; padding: 0 1.25rem; }
+        .rs-card {
+            background: var(--rs-surface);
+            border: 1px solid var(--rs-border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color .15s ease-out, box-shadow .15s ease-out;
+        }
+        .rs-card:focus-within {
+            border-color: var(--rs-accent);
+            box-shadow: 0 0 0 3px rgba(124, 108, 246, .12);
+        }
         .rs-wizard-step { color: var(--rs-text-muted); font-size: .8rem; font-weight: 500; margin-bottom: .6rem; }
         .rs-wizard h1 { font-size: 1.625rem; font-weight: 600; line-height: 1.25; margin: 0 0 .9rem; }
         .rs-wizard-hint { color: var(--rs-text-muted); font-size: .95rem; line-height: 1.5; margin-bottom: 1.4rem; }
@@ -129,15 +140,17 @@
         @keyframes rs-spin { to { transform: rotate(360deg); } }
         @media (prefers-reduced-motion: reduce) {
             .rs-spinner { animation-duration: 1.6s; }
-            .rs-input, .rs-btn { transition: none; }
+            .rs-input, .rs-btn, .rs-card { transition: none; }
         }
     </style>
 </head>
 <body>
     <div class="rs-wizard">
         {% block back_link %}{% endblock %}
-        {% if error %}<div class="rs-wizard-error">{{ error }}</div>{% endif %}
-        {% block content %}{% endblock %}
+        <div class="rs-card">
+            {% if error %}<div class="rs-wizard-error">{{ error }}</div>{% endif %}
+            {% block content %}{% endblock %}
+        </div>
     </div>
 </body>
 </html>
