@@ -115,16 +115,22 @@ class ZitadelProvisioningError(Exception):
     pass
 
 
-def _headers() -> dict:
+def _headers(org_id: str = ZITADEL_ORG_ID) -> dict:
     pat = PROVISIONER_PAT_PATH.read_text().strip()
     return {
         "Authorization": f"Bearer {pat}",
         "Content-Type": "application/json",
-        "x-zitadel-orgid": ZITADEL_ORG_ID,
+        "x-zitadel-orgid": org_id,
     }
 
 
-def provision_zitadel_user(username: str, email: str, groups: list[str], displayname: str = "") -> str:
+def provision_zitadel_user(
+    username: str,
+    email: str,
+    groups: list[str],
+    displayname: str = "",
+    organization=None,
+) -> str:
     """Creates a passwordless ZITADEL human user (email pre-verified --
     RentShield's own OTP step already proved it, so ZITADEL is never
     asked to send its own verification mail) and grants the matching
@@ -134,12 +140,22 @@ def provision_zitadel_user(username: str, email: str, groups: list[str], display
     RentShield's signup wizard collects neither today -- filled with a
     placeholder (username / "RentShield User") rather than blocked on
     adding a name field to the wizard, which is a real product decision
-    this module has no business making unilaterally."""
+    this module has no business making unilaterally.
+
+    organization (2026-09-22, cross-tenant isolation -- see /home/giova/
+    .claude/plans/synchronous-finding-storm.md): a documents.models.
+    Organization, for B2B accounts only -- individual self-serve
+    signups (signup_verify_view, the overwhelmingly common case) pass
+    None and get the original single-org behavior unchanged. Assumes
+    the ZITADEL-side Organization + project grant already exist (the
+    onboarding guide's own §3 manual steps) -- this only points a new
+    user at the right existing one, it doesn't create it."""
+    org_id = organization.zitadel_org_id if organization else ZITADEL_ORG_ID
     response = requests.post(
         f"{ZITADEL_BASE_URL}/v2/users/new",
-        headers=_headers(),
+        headers=_headers(org_id),
         json={
-            "organizationId": ZITADEL_ORG_ID,
+            "organizationId": org_id,
             "username": username,
             "human": {
                 "profile": {
@@ -160,7 +176,7 @@ def provision_zitadel_user(username: str, email: str, groups: list[str], display
     if groups:
         grant_response = requests.post(
             f"{ZITADEL_BASE_URL}/management/v1/users/{user_id}/grants",
-            headers=_headers(),
+            headers=_headers(org_id),
             json={"project_id": ZITADEL_PROJECT_ID, "role_keys": groups},
             timeout=10,
         )
@@ -168,6 +184,12 @@ def provision_zitadel_user(username: str, email: str, groups: list[str], display
             raise ZitadelProvisioningError(
                 f"ZITADEL role grant failed: {grant_response.status_code} {grant_response.text}",
             )
+
+    if organization:
+        from django.contrib.auth import get_user_model
+
+        django_user = get_user_model().objects.get(username=username)
+        django_user.groups.add(organization.group)
 
     return user_id
 

@@ -43,6 +43,26 @@ class ModelWithOwner(models.Model):
         abstract = True
 
 
+class Organization(models.Model):
+    """RentShield B2B tenant (2026-09-22) -- a corporate real estate
+    client's own isolated account, see /home/giova/.claude/plans/
+    synchronous-finding-storm.md for the design. Membership is ordinary
+    Django group membership (`group`), not a separate join table -- a
+    user's organization is whichever Organization.group they belong to,
+    looked up via documents/rentshield/roles.py's get_user_organization().
+    Individual self-serve signups have no Organization at all, and their
+    visibility is unaffected by any of this (see documents/rentshield/
+    signals.py's own comment on the document_consumption_finished
+    handler that actually grants access)."""
+
+    name = models.CharField(max_length=200)
+    zitadel_org_id = models.CharField(max_length=64, unique=True)
+    group = models.OneToOneField(Group, on_delete=models.CASCADE)
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class MatchingModel(ModelWithOwner):
     MATCH_NONE = 0
     MATCH_ANY = 1
@@ -2023,3 +2043,38 @@ class WorkflowRun(SoftDeleteModel):
 
     def __str__(self) -> str:
         return f"WorkflowRun of {self.workflow} at {self.run_at} on {self.document}"
+
+
+class RentShieldLoginLog(models.Model):
+    """One row per successful login (documents/rentshield/login_audit.py's
+    user_logged_in receiver) -- backs the admin dashboard's "Last 10
+    Logins" table without reaching into Authelia's own internal sqlite
+    file, which is undocumented and not meant to be read by other
+    services."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="rentshield_login_logs",
+    )
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self) -> str:
+        return f"{self.user} logged in at {self.timestamp}"
+
+
+class RentShieldAdminDashboard(models.Model):
+    """No table, never queried -- registering it is just the standard
+    trick to get a normal sidebar/index entry in Django admin for free
+    (documents/admin.py points its changelist at the real
+    /admin/dashboard/ view) without fighting admin/index.html's
+    self-extending-template recursion."""
+
+    class Meta:
+        managed = False
+        verbose_name = "System & Business Dashboard"
+        verbose_name_plural = "System & Business Dashboard"

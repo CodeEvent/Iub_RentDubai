@@ -31,6 +31,7 @@
 # queue, there's no "which specific rows" layer to get wrong.
 from __future__ import annotations
 
+from django.contrib.auth.models import Group
 from django.contrib.auth.models import User
 from rest_framework.permissions import BasePermission
 
@@ -73,6 +74,32 @@ BASELINE_PERMISSIONS: list[str] = ["view_uisettings", "change_uisettings", "view
 
 def user_in_group(user: User | None, group_name: str) -> bool:
     return bool(user and user.is_authenticated and user.groups.filter(name=group_name).exists())
+
+
+def get_user_organization(user: User | None):
+    """B2B cross-tenant isolation (2026-09-22, see /home/giova/.claude/
+    plans/synchronous-finding-storm.md) -- returns the Organization
+    `user` belongs to, or None for an individual self-serve account
+    (the common case; unaffected by any of this). A user's org is
+    whichever Organization.group they're a member of -- ordinary Django
+    group membership, not a separate table. Deliberately the only
+    lookup function for this: documents/rentshield/signals.py's
+    document_consumption_finished handler is the one caller."""
+    from documents.models import Organization
+
+    if not user or not user.is_authenticated:
+        return None
+    return Organization.objects.filter(group__in=user.groups.all()).first()
+
+
+def grant_property_owner(user: User) -> None:
+    """Every self-serve signup path grants exactly this one role (see
+    this file's header comment on why Tenant/Notary/Lawyer aren't
+    self-serve) -- shared by RentShieldSignupExtra.signup() (the normal
+    web signup form) and pairing_views.py's signup_complete_view (the
+    QR+biometric+NFC signup) so the two paths can't drift apart."""
+    group, _ = Group.objects.get_or_create(name=PROPERTY_OWNER_GROUP_NAME)
+    user.groups.add(group)
 
 
 def can_manage_notices(user: User | None) -> bool:
