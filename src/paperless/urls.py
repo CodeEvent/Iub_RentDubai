@@ -58,6 +58,8 @@ from documents.rentshield_views import notarize_uploaded_view
 from documents.rentshield_views import notarize_view
 from documents.rentshield_views import organization_dashboard_view
 from documents.rentshield_views import organization_status_view
+from documents.rentshield_views import rentshield_invite_accept_view
+from documents.rentshield_views import rentshield_invite_view
 from documents.rentshield_views import signup_done_view
 from documents.rentshield_views import signup_email_view
 from documents.rentshield_views import signup_start_view
@@ -305,6 +307,11 @@ urlpatterns = [
                                 "^organization/dashboard/$",
                                 organization_dashboard_view,
                                 name="rentshield-organization-dashboard",
+                            ),
+                            re_path(
+                                "^organization/invite/$",
+                                rentshield_invite_view,
+                                name="rentshield-organization-invite",
                             ),
                             # Property-owner identity verification --
                             # documents/rentshield_identity/, a separate
@@ -768,6 +775,11 @@ urlpatterns = [
     re_path(r"^login/email/?$", signup_email_view, name="rentshield-signup-email"),
     re_path(r"^login/verify/?$", signup_verify_view, name="rentshield-signup-verify"),
     re_path(r"^login/done/?$", signup_done_view, name="rentshield-signup-done"),
+    # B2B teammate invites (2026-09-22) -- public, no login required,
+    # same as the /login/* signup steps above: an invited user has no
+    # session yet either. See rentshield_invite_accept_view's own
+    # comment.
+    re_path(r"^invite/accept/?$", rentshield_invite_accept_view, name="rentshield-invite-accept"),
     # ZITADEL migration Phase D -- called cross-origin from the
     # zitadel.rentshield.local bridge page, not from anything on this
     # domain. Not yet reachable through the real signup flow (Phase F).

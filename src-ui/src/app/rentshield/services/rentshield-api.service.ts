@@ -801,4 +801,12 @@ export class RentshieldApiService {
   getOrganizationDashboard(): Observable<OrganizationDashboard> {
     return this.http.get<OrganizationDashboard>(`${this.base}documents/organization/dashboard/`)
   }
+
+  // Backend creates the account and emails the invite link immediately
+  // (documents/rentshield_views.py's rentshield_invite_view's own
+  // comment on why) -- this call either succeeds (201, no body) or
+  // fails with a plain { error: string } the caller shows directly.
+  inviteTeammate(email: string): Observable<void> {
+    return this.http.post<void>(`${this.base}documents/organization/invite/`, { email })
+  }
 }

@@ -1,9 +1,14 @@
 import { CommonModule } from '@angular/common'
+import { HttpErrorResponse } from '@angular/common/http'
 import { Component, OnInit, inject, signal } from '@angular/core'
+import { FormsModule } from '@angular/forms'
 import { Router, RouterModule } from '@angular/router'
 import { NgbPopoverModule } from '@ng-bootstrap/ng-bootstrap'
+import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
+import { firstValueFrom } from 'rxjs'
 import { PageHeaderComponent } from 'src/app/components/common/page-header/page-header.component'
 import { WidgetFrameComponent } from 'src/app/components/dashboard/widgets/widget-frame/widget-frame.component'
+import { ToastService } from 'src/app/services/toast.service'
 import {
   OrganizationDashboard,
   RentshieldApiService,
@@ -24,8 +29,10 @@ import {
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     RouterModule,
     NgbPopoverModule,
+    NgxBootstrapIconsModule,
     PageHeaderComponent,
     WidgetFrameComponent,
   ],
@@ -35,9 +42,13 @@ import {
 export class AgencyDashboardComponent implements OnInit {
   private api = inject(RentshieldApiService)
   private router = inject(Router)
+  private toastService = inject(ToastService)
 
   readonly loading = signal(true)
   readonly dashboard = signal<OrganizationDashboard | null>(null)
+
+  inviteEmail = ''
+  readonly inviting = signal(false)
 
   ngOnInit(): void {
     this.api.getOrganizationDashboard().subscribe({
@@ -49,6 +60,25 @@ export class AgencyDashboardComponent implements OnInit {
         this.router.navigate(['/dashboard'])
       },
     })
+  }
+
+  async inviteTeammate(): Promise<void> {
+    const email = this.inviteEmail.trim()
+    if (!email) return
+    this.inviting.set(true)
+    try {
+      await firstValueFrom(this.api.inviteTeammate(email))
+      this.toastService.showInfo($localize`Invite sent to ${email}`)
+      this.inviteEmail = ''
+    } catch (error) {
+      const message =
+        error instanceof HttpErrorResponse && error.error?.error
+          ? error.error.error
+          : $localize`Unable to send that invite`
+      this.toastService.showError(message)
+    } finally {
+      this.inviting.set(false)
+    }
   }
 
   statusBadgeClass(daysRemaining: number): string {

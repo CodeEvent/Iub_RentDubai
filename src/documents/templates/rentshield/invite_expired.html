@@ -1,0 +1,7 @@
+{% extends "rentshield/signup_base.html" %}
+{% block title %}Invitation expired{% endblock %}
+{% block content %}
+    <h1>This invitation has expired</h1>
+    <p class="rs-wizard-hint">Invite links are only valid for 7 days. Ask whoever invited you to send a new one from their Agency Dashboard.</p>
+    <a class="rs-btn rs-btn-primary" href="{% url 'rentshield-signup-start' %}">Go to RentShield</a>
+{% endblock %}

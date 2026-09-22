@@ -24,7 +24,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
+from django.core.signing import BadSignature
+from django.core.signing import SignatureExpired
+from django.core.signing import dumps
+from django.core.signing import loads
 from django.core.validators import validate_email
+from django.db import transaction
 from django.db.models import Count
 from django.http import Http404
 from django.http import JsonResponse
@@ -934,6 +939,129 @@ def organization_dashboard_view(request):
             "recent_activity": recent_activity,
         },
     )
+
+
+INVITE_TOKEN_SALT = "rentshield-invite"
+INVITE_TOKEN_MAX_AGE_SECONDS = int(timedelta(days=7).total_seconds())
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def rentshield_invite_view(request):
+    """POST /api/documents/organization/invite/ -- adds a new teammate
+    to the logged-in user's own Organization (2026-09-22, B2B
+    self-service invites). Any org member can invite -- no separate
+    org-admin role; the Organization model has no owner/admin field at
+    all, and adding one was explicitly decided against as its own
+    prerequisite piece of scope, not something to bundle in here.
+
+    Deliberately reuses signup_verify_view's own user-creation shape
+    (unusable password, grant_property_owner, provision_zitadel_user)
+    with organization= finally passed for the first time anywhere in
+    the codebase -- that parameter has existed on provision_zitadel_user
+    since the cross-tenant isolation work but had no real caller until
+    this.
+
+    An email that already has an account is rejected outright, not
+    merged or moved into this org -- explicitly decided over silently
+    re-parenting an existing account's Organization, which could pull
+    an individual's private documents into a company org with no
+    warning.
+
+    The user (and its ZITADEL counterpart) is created immediately, at
+    invite time, not at accept time -- deliberately: it means
+    re-sending the same invite is simply unnecessary (the account
+    already exists, GET /invite/accept/ is idempotent, and the invitee
+    can just ask for the email again -- see rentshield_invite_accept_view's
+    own comment), with no separate pending-invite row/status to keep in
+    sync. The real limitation this trades away -- no way to revoke a
+    sent invite, or to list who's pending -- is an explicit, accepted
+    v1 non-goal."""
+    organization = get_user_organization(request.user)
+    if organization is None:
+        return Response(
+            {"error": "You must belong to an Organization to invite teammates."},
+            status=403,
+        )
+
+    email = (request.data.get("email") or "").strip().lower()
+    try:
+        validate_email(email)
+    except DjangoValidationError:
+        return Response({"error": "Enter a valid email address."}, status=400)
+
+    User = get_user_model()
+    if User.objects.filter(email__iexact=email).exists():
+        return Response({"error": "This email address already has an account."}, status=400)
+
+    username = _unique_username_from_email(email)
+    with transaction.atomic():
+        user = User.objects.create(username=username, email=email)
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+        grant_property_owner(user)
+        user.groups.add(organization.group)
+
+        # Deliberately inside the same atomic block as the user creation
+        # above, not after it -- a failed ZITADEL call (network error,
+        # misconfigured org, ...) must roll back the local User row too,
+        # or it's left permanently orphaned: no ZITADEL identity means
+        # no passkey is ever possible (passwordless-only, no fallback),
+        # and its mere existence would then block a retried invite to
+        # the same email forever (the exists() check above). Confirmed
+        # live: a real ZITADEL 403 here left exactly that orphaned row
+        # before this was wrapped in the transaction.
+        zitadel_user_id = provision_zitadel_user(
+            username,
+            email,
+            groups=["Property Owner"],
+            organization=organization,
+        )
+
+    token = dumps(
+        {"zitadel_user_id": zitadel_user_id, "username": username},
+        salt=INVITE_TOKEN_SALT,
+    )
+    accept_url = request.build_absolute_uri(
+        f"{reverse('rentshield-invite-accept')}?token={quote(token, safe='')}",
+    )
+    inviter_label = request.user.email or request.user.username
+    send_mail(
+        subject=f"You've been invited to {organization.name} on RentShield",
+        message=(
+            f"{inviter_label} has invited you to join {organization.name} on RentShield.\n\n"
+            f"Accept your invite: {accept_url}\n\n"
+            "This link expires in 7 days."
+        ),
+        from_email=None,
+        recipient_list=[email],
+        fail_silently=False,
+    )
+    return Response(status=201)
+
+
+def rentshield_invite_accept_view(request):
+    """GET /invite/accept/?token=... -- public, no login required (same
+    as signup_done_view -- an invited user has no session yet either).
+    Sets the exact two session keys signup_verify_view already sets on
+    a successful OTP, then hands off to signup_done_view completely
+    unmodified -- the passkey-bridge/login-scoping logic there
+    (including the wrong-account SSO session reuse fix, see that
+    view's own comment) needs no changes to also serve an invited
+    user; visiting this link twice is harmless for the same reason --
+    it just re-mints a fresh passkey nonce and shows the bridge link
+    again, there is no one-time state consumed here."""
+    token = request.GET.get("token", "")
+    try:
+        payload = loads(token, salt=INVITE_TOKEN_SALT, max_age=INVITE_TOKEN_MAX_AGE_SECONDS)
+    except SignatureExpired:
+        return render(request, "rentshield/invite_expired.html", status=400)
+    except BadSignature:
+        raise Http404
+
+    request.session["signup_zitadel_user_id"] = payload["zitadel_user_id"]
+    request.session["signup_zitadel_username"] = payload["username"]
+    return redirect("rentshield-signup-done")
 
 
 def rentshield_logout_view(request):

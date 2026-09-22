@@ -88,4 +88,31 @@
       </div>
     </pngx-widget-frame>
   </div>
+
+  <div class="col-12">
+    <pngx-widget-frame title="Invite a Teammate" i18n-title titleIcon="people">
+      <div content>
+        <form class="d-flex gap-2" (ngSubmit)="inviteTeammate()">
+          <input
+            type="email"
+            class="form-control"
+            name="inviteEmail"
+            placeholder="teammate@company.com"
+            i18n-placeholder
+            required
+            [(ngModel)]="inviteEmail"
+            [disabled]="inviting()">
+          <button type="submit" class="btn btn-primary text-nowrap" [disabled]="inviting() || !inviteEmail.trim()">
+            @if (inviting()) {
+              <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            } @else {
+              <i-bs class="me-1" name="envelope"></i-bs>
+            }
+            <ng-container i18n>Send Invite</ng-container>
+          </button>
+        </form>
+        <p class="text-muted small mt-2 mb-0" i18n>They'll get an email to join {{ dashboard()?.organization?.name }} and set up their own passkey -- no password to share.</p>
+      </div>
+    </pngx-widget-frame>
+  </div>
 </div>
