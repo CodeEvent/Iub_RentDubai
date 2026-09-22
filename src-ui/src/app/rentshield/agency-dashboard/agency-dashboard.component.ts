@@ -6,11 +6,13 @@ import { Router, RouterModule } from '@angular/router'
 import { NgbPopoverModule } from '@ng-bootstrap/ng-bootstrap'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
 import { firstValueFrom } from 'rxjs'
+import { ConfirmButtonComponent } from 'src/app/components/common/confirm-button/confirm-button.component'
 import { PageHeaderComponent } from 'src/app/components/common/page-header/page-header.component'
 import { WidgetFrameComponent } from 'src/app/components/dashboard/widgets/widget-frame/widget-frame.component'
 import { ToastService } from 'src/app/services/toast.service'
 import {
   OrganizationDashboard,
+  OrganizationMember,
   RentshieldApiService,
 } from '../services/rentshield-api.service'
 
@@ -33,6 +35,7 @@ import {
     RouterModule,
     NgbPopoverModule,
     NgxBootstrapIconsModule,
+    ConfirmButtonComponent,
     PageHeaderComponent,
     WidgetFrameComponent,
   ],
@@ -50,6 +53,10 @@ export class AgencyDashboardComponent implements OnInit {
   inviteEmail = ''
   readonly inviting = signal(false)
 
+  readonly members = signal<OrganizationMember[]>([])
+  readonly membersLoading = signal(true)
+  readonly memberActionIds = signal<Set<number>>(new Set())
+
   ngOnInit(): void {
     this.api.getOrganizationDashboard().subscribe({
       next: (res) => {
@@ -60,6 +67,26 @@ export class AgencyDashboardComponent implements OnInit {
         this.router.navigate(['/dashboard'])
       },
     })
+    this.loadMembers()
+  }
+
+  private loadMembers(): void {
+    this.membersLoading.set(true)
+    this.api.listOrganizationMembers().subscribe({
+      next: (members) => {
+        this.members.set(members)
+        this.membersLoading.set(false)
+      },
+      error: () => {
+        this.membersLoading.set(false)
+      },
+    })
+  }
+
+  private errorMessage(error: unknown, fallback: string): string {
+    return error instanceof HttpErrorResponse && error.error?.error
+      ? error.error.error
+      : fallback
   }
 
   async inviteTeammate(): Promise<void> {
@@ -70,14 +97,47 @@ export class AgencyDashboardComponent implements OnInit {
       await firstValueFrom(this.api.inviteTeammate(email))
       this.toastService.showInfo($localize`Invite sent to ${email}`)
       this.inviteEmail = ''
+      this.loadMembers()
     } catch (error) {
-      const message =
-        error instanceof HttpErrorResponse && error.error?.error
-          ? error.error.error
-          : $localize`Unable to send that invite`
-      this.toastService.showError(message)
+      this.toastService.showError(this.errorMessage(error, $localize`Unable to send that invite`))
     } finally {
       this.inviting.set(false)
+    }
+  }
+
+  isActingOn(memberId: number): boolean {
+    return this.memberActionIds().has(memberId)
+  }
+
+  private setActing(memberId: number, acting: boolean): void {
+    const next = new Set(this.memberActionIds())
+    if (acting) next.add(memberId)
+    else next.delete(memberId)
+    this.memberActionIds.set(next)
+  }
+
+  async resendInvite(member: OrganizationMember): Promise<void> {
+    this.setActing(member.id, true)
+    try {
+      await firstValueFrom(this.api.resendInvite(member.id))
+      this.toastService.showInfo($localize`Invite resent to ${member.email}`)
+    } catch (error) {
+      this.toastService.showError(this.errorMessage(error, $localize`Unable to resend that invite`))
+    } finally {
+      this.setActing(member.id, false)
+    }
+  }
+
+  async revokeInvite(member: OrganizationMember): Promise<void> {
+    this.setActing(member.id, true)
+    try {
+      await firstValueFrom(this.api.revokeInvite(member.id))
+      this.toastService.showInfo($localize`Invite for ${member.email} revoked`)
+      this.members.update((current) => current.filter((row) => row.id !== member.id))
+    } catch (error) {
+      this.toastService.showError(this.errorMessage(error, $localize`Unable to revoke that invite`))
+    } finally {
+      this.setActing(member.id, false)
     }
   }
 

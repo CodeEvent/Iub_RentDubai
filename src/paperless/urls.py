@@ -57,8 +57,11 @@ from documents.rentshield_views import notarize_status_view
 from documents.rentshield_views import notarize_uploaded_view
 from documents.rentshield_views import notarize_view
 from documents.rentshield_views import organization_dashboard_view
+from documents.rentshield_views import organization_members_view
 from documents.rentshield_views import organization_status_view
 from documents.rentshield_views import rentshield_invite_accept_view
+from documents.rentshield_views import rentshield_invite_resend_view
+from documents.rentshield_views import rentshield_invite_revoke_view
 from documents.rentshield_views import rentshield_invite_view
 from documents.rentshield_views import signup_done_view
 from documents.rentshield_views import signup_email_view
@@ -312,6 +315,21 @@ urlpatterns = [
                                 "^organization/invite/$",
                                 rentshield_invite_view,
                                 name="rentshield-organization-invite",
+                            ),
+                            re_path(
+                                "^organization/members/$",
+                                organization_members_view,
+                                name="rentshield-organization-members",
+                            ),
+                            re_path(
+                                r"^organization/members/(?P<user_id>\d+)/resend/$",
+                                rentshield_invite_resend_view,
+                                name="rentshield-organization-member-resend",
+                            ),
+                            re_path(
+                                r"^organization/members/(?P<user_id>\d+)/$",
+                                rentshield_invite_revoke_view,
+                                name="rentshield-organization-member-revoke",
                             ),
                             # Property-owner identity verification --
                             # documents/rentshield_identity/, a separate

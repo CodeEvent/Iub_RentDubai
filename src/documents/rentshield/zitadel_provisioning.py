@@ -275,6 +275,55 @@ def remove_passkey(user_id: str, passkey_id: str) -> None:
         )
 
 
+def find_zitadel_user_id_by_username(username: str, organization=None) -> str | None:
+    """Resolves a ZITADEL user_id from the Django username that was
+    passed as ZITADEL's own `username` at provision_zitadel_user() time
+    -- they're always identical by construction, since that's the exact
+    value passed as both. Needed for team-management resend/revoke
+    (2026-09-22): a still-pending invitee has no allauth SocialAccount
+    row yet (that IS the definition of "pending" -- see
+    rentshield_views.py's organization_members_view), so
+    _zitadel_user_id_for(), which reads that row, can't resolve them --
+    this is the only other handle available. Confirmed live against the
+    real running ZITADEL instance (not guessed from docs) that v2's
+    ListUsers supports an exact-match userNameQuery."""
+    org_id = organization.zitadel_org_id if organization else ZITADEL_ORG_ID
+    response = requests.post(
+        f"{ZITADEL_BASE_URL}/v2/users",
+        headers=_headers(org_id),
+        json={
+            "queries": [
+                {"userNameQuery": {"userName": username, "method": "TEXT_QUERY_METHOD_EQUALS"}},
+            ],
+        },
+        timeout=10,
+    )
+    if response.status_code != 200:
+        raise ZitadelProvisioningError(
+            f"ZITADEL user search failed: {response.status_code} {response.text}",
+        )
+    results = response.json().get("result", [])
+    return results[0]["userId"] if results else None
+
+
+def delete_zitadel_user(zitadel_user_id: str, organization=None) -> None:
+    """Revokes a still-pending invite's ZITADEL side (2026-09-22, team
+    management) -- the Django User row is deleted separately by the
+    caller. Live-verified against the real running instance while
+    cleaning up this session's own test data before this helper
+    existed as real code."""
+    org_id = organization.zitadel_org_id if organization else ZITADEL_ORG_ID
+    response = requests.delete(
+        f"{ZITADEL_BASE_URL}/v2/users/{zitadel_user_id}",
+        headers=_headers(org_id),
+        timeout=10,
+    )
+    if response.status_code != 200:
+        raise ZitadelProvisioningError(
+            f"ZITADEL user deletion failed: {response.status_code} {response.text}",
+        )
+
+
 def build_end_session_url(post_logout_redirect_uri: str) -> str:
     """RP-Initiated Logout (2026-09-22, requested explicitly: "force
     full re-auth on every logout") -- Django's own /accounts/logout/

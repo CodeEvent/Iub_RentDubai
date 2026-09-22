@@ -20,6 +20,7 @@ from datetime import timedelta
 from urllib.parse import quote
 from urllib.parse import urlencode
 
+from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -61,6 +62,8 @@ from documents.rentshield.pricing import BASE_PRICE_AED
 from documents.rentshield.zitadel_provisioning import ZITADEL_BRIDGE_URL
 from documents.rentshield.zitadel_provisioning import ZitadelProvisioningError
 from documents.rentshield.zitadel_provisioning import build_end_session_url
+from documents.rentshield.zitadel_provisioning import delete_zitadel_user
+from documents.rentshield.zitadel_provisioning import find_zitadel_user_id_by_username
 from documents.rentshield.zitadel_provisioning import issue_passkey_nonce
 from documents.rentshield.zitadel_provisioning import list_passkeys
 from documents.rentshield.zitadel_provisioning import provision_zitadel_user
@@ -969,14 +972,12 @@ def rentshield_invite_view(request):
     warning.
 
     The user (and its ZITADEL counterpart) is created immediately, at
-    invite time, not at accept time -- deliberately: it means
-    re-sending the same invite is simply unnecessary (the account
-    already exists, GET /invite/accept/ is idempotent, and the invitee
-    can just ask for the email again -- see rentshield_invite_accept_view's
-    own comment), with no separate pending-invite row/status to keep in
-    sync. The real limitation this trades away -- no way to revoke a
-    sent invite, or to list who's pending -- is an explicit, accepted
-    v1 non-goal."""
+    invite time, not at accept time -- deliberately: it means the
+    account already exists to resend or revoke against (see
+    organization_members_view/rentshield_invite_resend_view/
+    rentshield_invite_revoke_view below), with no separate
+    pending-invite row/status to keep in sync -- "pending" is just
+    "this Organization member has no allauth SocialAccount yet"."""
     organization = get_user_organization(request.user)
     if organization is None:
         return Response(
@@ -1010,16 +1011,36 @@ def rentshield_invite_view(request):
         # and its mere existence would then block a retried invite to
         # the same email forever (the exists() check above). Confirmed
         # live: a real ZITADEL 403 here left exactly that orphaned row
-        # before this was wrapped in the transaction.
-        zitadel_user_id = provision_zitadel_user(
+        # before this was wrapped in the transaction. _send_invite_email
+        # is in this same block for the identical reason -- an
+        # unnotified invitee is just as useless as an unprovisioned one.
+        provision_zitadel_user(
             username,
             email,
             groups=["Property Owner"],
             organization=organization,
         )
+        _send_invite_email(request, user, organization)
+
+    return Response(status=201)
+
+
+def _send_invite_email(request, user, organization) -> None:
+    """Shared by rentshield_invite_view (initial send) and
+    rentshield_invite_resend_view (resend) -- mints a fresh signed
+    token and emails the same accept link either way. Looks up the
+    ZITADEL user_id by username (find_zitadel_user_id_by_username)
+    rather than accepting it as a parameter, so both call sites share
+    the exact same code instead of the resend path needing a near-copy:
+    a still-pending user's Django username is always identical to their
+    ZITADEL username (both set from the same value at
+    provision_zitadel_user() time), so this always resolves."""
+    zitadel_user_id = find_zitadel_user_id_by_username(user.username, organization)
+    if zitadel_user_id is None:
+        raise ZitadelProvisioningError(f"No ZITADEL user found for username {user.username!r}")
 
     token = dumps(
-        {"zitadel_user_id": zitadel_user_id, "username": username},
+        {"zitadel_user_id": zitadel_user_id, "username": user.username},
         salt=INVITE_TOKEN_SALT,
     )
     accept_url = request.build_absolute_uri(
@@ -1034,10 +1055,99 @@ def rentshield_invite_view(request):
             "This link expires in 7 days."
         ),
         from_email=None,
-        recipient_list=[email],
+        recipient_list=[user.email],
         fail_silently=False,
     )
-    return Response(status=201)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def organization_members_view(request):
+    """GET /api/documents/organization/members/ -- the requester's own
+    Organization roster (2026-09-22, team management). `pending` is
+    computed with ONE bulk query against allauth's SocialAccount table
+    for the whole team, not one ZITADEL API call per member -- a member
+    has no SocialAccount row until they complete their first real OIDC
+    login (allauth only creates it then), which is exactly what
+    "pending" means here. No separate status field/model anywhere."""
+    organization = get_user_organization(request.user)
+    if organization is None:
+        return Response(
+            {"error": "You must belong to an Organization to view its team."},
+            status=403,
+        )
+
+    members = list(organization.group.user_set.order_by("date_joined"))
+    active_user_ids = set(
+        SocialAccount.objects.filter(
+            user__in=members,
+            provider="zitadel",
+        ).values_list("user_id", flat=True),
+    )
+    return Response(
+        [
+            {
+                "id": member.id,
+                "username": member.username,
+                "email": member.email,
+                "date_joined": member.date_joined,
+                "pending": member.id not in active_user_ids,
+            }
+            for member in members
+        ],
+    )
+
+
+def _resolve_pending_teammate(request, user_id: int):
+    """Shared guard for resend/revoke below. Raises Http404 if the
+    requester has no Organization, or if user_id isn't a member of the
+    requester's OWN Organization -- 404, not 403, same anti-enumeration
+    reasoning as organization_dashboard_view's own 404: another org's
+    member id existing or not is not this caller's business to learn
+    either way. Returns (organization, None) if user_id IS a real
+    teammate but has already completed setup -- the explicit non-goal
+    both resend and revoke share: this never touches an active
+    account."""
+    organization = get_user_organization(request.user)
+    if organization is None:
+        raise Http404
+    member = get_object_or_404(organization.group.user_set, pk=user_id)
+    if SocialAccount.objects.filter(user=member, provider="zitadel").exists():
+        return organization, None
+    return organization, member
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def rentshield_invite_resend_view(request, user_id: int):
+    """POST /api/documents/organization/members/<id>/resend/"""
+    organization, member = _resolve_pending_teammate(request, user_id)
+    if member is None:
+        return Response({"error": "This teammate has already completed setup."}, status=400)
+    _send_invite_email(request, member, organization)
+    return Response(status=204)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def rentshield_invite_revoke_view(request, user_id: int):
+    """DELETE /api/documents/organization/members/<id>/ -- deletes both
+    the ZITADEL user and the local Django User row entirely (not just a
+    group removal), so the email is immediately re-invitable. Only ever
+    reaches a still-pending account (_resolve_pending_teammate's own
+    guard) -- revoking an ALREADY-ACTIVE teammate who may already own
+    real documents is a materially different, higher-stakes offboarding
+    action, deliberately out of scope here."""
+    organization, member = _resolve_pending_teammate(request, user_id)
+    if member is None:
+        return Response({"error": "This teammate has already completed setup."}, status=400)
+
+    zitadel_user_id = find_zitadel_user_id_by_username(member.username, organization)
+    with transaction.atomic():
+        if zitadel_user_id is not None:
+            delete_zitadel_user(zitadel_user_id, organization)
+        member.delete()
+    return Response(status=204)
 
 
 def rentshield_invite_accept_view(request):

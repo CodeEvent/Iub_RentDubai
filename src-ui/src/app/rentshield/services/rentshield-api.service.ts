@@ -229,6 +229,14 @@ export interface OrganizationDashboard {
   recent_activity: OrganizationActivity[]
 }
 
+export interface OrganizationMember {
+  id: number
+  username: string
+  email: string
+  date_joined: string
+  pending: boolean
+}
+
 const RENTSHIELD_TAG_NAME = 'RentShield Notice'
 
 interface PaperlessCustomFieldDef {
@@ -808,5 +816,23 @@ export class RentshieldApiService {
   // fails with a plain { error: string } the caller shows directly.
   inviteTeammate(email: string): Observable<void> {
     return this.http.post<void>(`${this.base}documents/organization/invite/`, { email })
+  }
+
+  // Team management (2026-09-22) -- `pending` on each row is computed
+  // server-side from the presence/absence of a ZITADEL SocialAccount,
+  // not a stored status; resend/revoke both 400 if the target has
+  // already completed setup, and 404 if they're not even in the
+  // caller's own Organization (see rentshield_views.py's
+  // _resolve_pending_teammate for why that's 404, not 403).
+  listOrganizationMembers(): Observable<OrganizationMember[]> {
+    return this.http.get<OrganizationMember[]>(`${this.base}documents/organization/members/`)
+  }
+
+  resendInvite(userId: number): Observable<void> {
+    return this.http.post<void>(`${this.base}documents/organization/members/${userId}/resend/`, {})
+  }
+
+  revokeInvite(userId: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}documents/organization/members/${userId}/`)
   }
 }

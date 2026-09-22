@@ -90,7 +90,7 @@
   </div>
 
   <div class="col-12">
-    <pngx-widget-frame title="Invite a Teammate" i18n-title titleIcon="people">
+    <pngx-widget-frame title="Team" i18n-title titleIcon="people">
       <div content>
         <form class="d-flex gap-2" (ngSubmit)="inviteTeammate()">
           <input
@@ -111,7 +111,48 @@
             <ng-container i18n>Send Invite</ng-container>
           </button>
         </form>
-        <p class="text-muted small mt-2 mb-0" i18n>They'll get an email to join {{ dashboard()?.organization?.name }} and set up their own passkey -- no password to share.</p>
+        <p class="text-muted small mt-2 mb-3" i18n>They'll get an email to join {{ dashboard()?.organization?.name }} and set up their own passkey -- no password to share.</p>
+
+        @if (membersLoading()) {
+          <div class="spinner-border spinner-border-sm" role="status"></div>
+        } @else {
+          <div class="list-group border-light">
+            @for (member of members(); track member.id) {
+              <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <div>{{ member.username }}</div>
+                  <small class="text-muted">{{ member.email }}</small>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  @if (member.pending) {
+                    <span class="badge bg-warning text-dark" i18n>Pending</span>
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary btn-sm"
+                      [disabled]="isActingOn(member.id)"
+                      (click)="resendInvite(member)">
+                      <i-bs name="envelope"></i-bs>
+                      <ng-container i18n>Resend Link</ng-container>
+                    </button>
+                    <pngx-confirm-button
+                      label=""
+                      buttonClasses="btn-outline-danger btn-sm"
+                      iconName="trash"
+                      confirmMessage="Revoke this invite and free up {{ member.email }}?"
+                      i18n-confirmMessage
+                      [disabled]="isActingOn(member.id)"
+                      (confirm)="revokeInvite(member)">
+                    </pngx-confirm-button>
+                  } @else {
+                    <span class="badge bg-success" i18n>Active</span>
+                  }
+                </div>
+              </div>
+            } @empty {
+              <p class="text-muted small mb-0" i18n>No team members yet.</p>
+            }
+          </div>
+        }
       </div>
     </pngx-widget-frame>
   </div>
