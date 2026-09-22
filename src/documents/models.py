@@ -63,6 +63,48 @@ class Organization(models.Model):
         return self.name
 
 
+class RentShieldPermissionAuditLog(models.Model):
+    """One row per automated organization permission grant (documents/
+    rentshield/signals.py's grant_organization_access) -- a compliance
+    trail for "when and why was this Group given access to this
+    Document", same RentShieldLoginLog pattern (queryable DB rows, not
+    log-pipeline lines) rather than a new logging convention. `actor` is
+    always null today: the grant runs from document_consumption_finished,
+    which consumer.py fires with no user/request in its kwargs (this can
+    run from an async Celery consume with no request at all) -- the field
+    exists for a future manual/admin-triggered grant, not this one."""
+
+    ACTION_ORGANIZATION_GRANT = "ORGANIZATION_GRANT"
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+    action = models.CharField(max_length=64, default=ACTION_ORGANIZATION_GRANT)
+    document = models.ForeignKey(
+        "documents.Document",
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="rentshield_permission_audit_logs",
+    )
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="rentshield_permission_audit_logs",
+    )
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="rentshield_permission_audit_logs",
+    )
+    details = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+    def __str__(self) -> str:
+        return f"{self.action} on document {self.document_id} for {self.organization} at {self.timestamp}"
+
+
 class MatchingModel(ModelWithOwner):
     MATCH_NONE = 0
     MATCH_ANY = 1

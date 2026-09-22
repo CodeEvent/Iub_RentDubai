@@ -34,7 +34,12 @@ def grant_organization_access(sender, document, **kwargs) -> None:
     set_correspondent/etc. already run. A document whose owner has no
     Organization (every individual self-serve account) hits the early
     return and nothing changes for them -- confirmed this is the
-    overwhelmingly common case, not the exception."""
+    overwhelmingly common case, not the exception.
+
+    2026-09-22: also writes one RentShieldPermissionAuditLog row per
+    grant, in the same transaction, for compliance review -- same
+    "queryable DB rows, not log-pipeline lines" precedent as
+    RentShieldLoginLog."""
     from documents.rentshield.roles import get_user_organization
 
     if document.owner_id is None:
@@ -43,16 +48,28 @@ def grant_organization_access(sender, document, **kwargs) -> None:
     if organization is None:
         return
 
+    from documents.models import RentShieldPermissionAuditLog
     from documents.permissions import set_permissions_for_object
 
-    set_permissions_for_object(
-        {
-            "view": {"groups": [organization.group_id]},
-            "change": {"groups": [organization.group_id]},
-        },
-        document,
-        merge=True,
-    )
+    with transaction.atomic():
+        set_permissions_for_object(
+            {
+                "view": {"groups": [organization.group_id]},
+                "change": {"groups": [organization.group_id]},
+            },
+            document,
+            merge=True,
+        )
+        RentShieldPermissionAuditLog.objects.create(
+            action=RentShieldPermissionAuditLog.ACTION_ORGANIZATION_GRANT,
+            document=document,
+            organization=organization,
+            details=(
+                f"Automatically granted view/change on document {document.pk} "
+                f"to organization {organization.name!r}'s group "
+                f"(document_consumption_finished, post-consume sync)."
+            ),
+        )
 
 
 def capture_old_notary_status(sender, instance, **kwargs) -> None:
