@@ -138,15 +138,6 @@
                 <i-bs class="me-2" name="person-badge"></i-bs><span class="nav-link-label"><ng-container i18n>Identity Verification</ng-container></span>
               </a>
             </li>
-            @if (permissionsService.isAdmin()) {
-              <li class="nav-item app-link" tourAnchor="tour.rentshield-notary-guide">
-                <a class="nav-link" routerLink="notary-guide" routerLinkActive="active" (click)="closeMenu()"
-                  ngbPopover="Notary Guide" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
-                  container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
-                  <i-bs class="me-2" name="inbox"></i-bs><span class="nav-link-label"><ng-container i18n>Notary Guide</ng-container></span>
-                </a>
-              </li>
-            }
           </ul>
         </div>
 
@@ -165,6 +156,13 @@
                   ngbPopover="Identity Verification Admin" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
                   container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
                   <i-bs class="me-2" name="shield-check"></i-bs><span class="nav-link-label"><ng-container i18n>Identity Verification Admin</ng-container></span>
+                </a>
+              </li>
+              <li class="nav-item app-link" tourAnchor="tour.rentshield-notary-guide">
+                <a class="nav-link" routerLink="notary-guide" routerLinkActive="active" (click)="closeMenu()"
+                  ngbPopover="Notary Guide" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
+                  container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
+                  <i-bs class="me-2" name="inbox"></i-bs><span class="nav-link-label"><ng-container i18n>Notary Guide</ng-container></span>
                 </a>
               </li>
             </ul>
