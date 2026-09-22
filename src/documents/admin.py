@@ -13,6 +13,7 @@ from documents.models import Note
 from documents.models import PaperlessTask
 from documents.models import RentShieldAdminDashboard
 from documents.models import RentShieldLoginLog
+from documents.models import RentShieldPermissionAuditLog
 from documents.models import SavedView
 from documents.models import SavedViewFilterRule
 from documents.models import ShareLink
@@ -247,6 +248,32 @@ class RentShieldLoginLogAdmin(admin.ModelAdmin):
         return False
 
 
+class RentShieldPermissionAuditLogAdmin(admin.ModelAdmin):
+    list_display = ("timestamp", "action", "organization", "document", "actor")
+    list_filter = ("action", "organization")
+    search_fields = (
+        "document__title",
+        "organization__name",
+        "actor__username",
+        "details",
+    )
+    date_hierarchy = "timestamp"
+    raw_id_fields = ("document", "actor")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def get_queryset(self, request):  # pragma: no cover
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("document", "organization", "actor")
+        )
+
+
 class RentShieldAdminDashboardAdmin(admin.ModelAdmin):
     """See RentShieldAdminDashboard's own docstring -- this entry exists
     purely to put a normal sidebar/index link on the real dashboard
@@ -274,6 +301,7 @@ admin.site.register(StoragePath, StoragePathAdmin)
 admin.site.register(PaperlessTask, TaskAdmin)
 admin.site.register(Note, NotesAdmin)
 admin.site.register(RentShieldLoginLog, RentShieldLoginLogAdmin)
+admin.site.register(RentShieldPermissionAuditLog, RentShieldPermissionAuditLogAdmin)
 admin.site.register(RentShieldAdminDashboard, RentShieldAdminDashboardAdmin)
 admin.site.register(ShareLink, ShareLinksAdmin)
 admin.site.register(ShareLinkBundle, ShareLinkBundleAdmin)
