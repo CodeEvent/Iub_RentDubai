@@ -24,6 +24,7 @@ import { LegalSkillsComponent } from './rentshield/legal-skills/legal-skills.com
 import { NoticeFormComponent } from './rentshield/notice-form/notice-form.component'
 import { NoticesListComponent } from './rentshield/notices-list/notices-list.component'
 import { NotaryGuideComponent } from './rentshield/notary-guide/notary-guide.component'
+import { AgencyDashboardComponent } from './rentshield/agency-dashboard/agency-dashboard.component'
 import { IdentityVerificationComponent } from './rentshield/identity-verification/identity-verification.component'
 import { IdentityAdminComponent } from './rentshield/identity-admin/identity-admin.component'
 import { ProfileEditDialogComponent } from './components/common/profile-edit-dialog/profile-edit-dialog.component'
@@ -79,6 +80,11 @@ export const routes: Routes = [
         path: 'notary-guide',
         component: NotaryGuideComponent,
         data: { componentName: 'NotaryGuideComponent' },
+      },
+      {
+        path: 'agency/dashboard',
+        component: AgencyDashboardComponent,
+        data: { componentName: 'AgencyDashboardComponent' },
       },
       {
         path: 'identity-verification',

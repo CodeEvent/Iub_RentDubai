@@ -1,0 +1,91 @@
+<pngx-page-header title="Agency Dashboard" i18n-title [subTitle]="dashboard()?.organization?.name"></pngx-page-header>
+
+<div class="row g-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <pngx-widget-frame title="Active Notices" i18n-title titleIcon="journals" [loading]="loading()">
+      <div content class="display-6 text-center py-2">
+        {{ dashboard()?.active_notices_count ?? 0 }}
+      </div>
+    </pngx-widget-frame>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-9">
+    <pngx-widget-frame title="Workflow Status" i18n-title titleIcon="list-task" [loading]="loading()">
+      <div content>
+        @if (dashboard()?.status_breakdown?.length) {
+          <div class="d-flex justify-content-between align-items-center my-2">
+            <div class="progress flex-grow-1">
+              @for (row of dashboard().status_breakdown; track row.tags__name) {
+                <div
+                  class="progress-bar bg-primary"
+                  role="progressbar"
+                  [ngbPopover]="row.tags__name"
+                  triggers="mouseenter:mouseleave"
+                  [style.width]="statusPercent(row.count) + '%'"
+                  [attr.aria-label]="row.tags__name"
+                  [class.me-1px]="true"
+                  aria-valuemin="0"
+                  aria-valuemax="100">
+                </div>
+              }
+            </div>
+          </div>
+          <div class="list-group border-light">
+            @for (row of dashboard().status_breakdown; track row.tags__name) {
+              <div class="list-group-item d-flex justify-content-between align-items-center">
+                {{ row.tags__name }}
+                <span class="badge bg-secondary text-light rounded-pill">{{ row.count }}</span>
+              </div>
+            }
+          </div>
+        } @else if (!loading()) {
+          <p class="text-muted mb-0" i18n>No notices are currently in a tracked add-on pipeline (notarization, legal review, real notary, or AI review).</p>
+        }
+      </div>
+    </pngx-widget-frame>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <pngx-widget-frame title="Upcoming Deadlines" i18n-title titleIcon="calendar-event" [loading]="loading()">
+      <div content>
+        @if (dashboard()?.upcoming_deadlines?.length) {
+          <div class="list-group border-light">
+            @for (row of dashboard().upcoming_deadlines; track row.document_id) {
+              <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" [routerLink]="['/documents', row.document_id]">
+                <span class="text-truncate me-2">{{ row.title }}</span>
+                <span class="badge rounded-pill" [ngClass]="statusBadgeClass(row.days_remaining)">
+                  @if (row.days_remaining < 0) {
+                    <ng-container i18n>Overdue</ng-container>
+                  } @else {
+                    {{ row.days_remaining }} <ng-container i18n>days</ng-container>
+                  }
+                </span>
+              </a>
+            }
+          </div>
+        } @else if (!loading()) {
+          <p class="text-muted mb-0" i18n>No upcoming legal deadlines.</p>
+        }
+      </div>
+    </pngx-widget-frame>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <pngx-widget-frame title="Recent Activity" i18n-title titleIcon="clock-history" [loading]="loading()">
+      <div content>
+        @if (dashboard()?.recent_activity?.length) {
+          <div class="list-group border-light">
+            @for (row of dashboard().recent_activity; track row.id) {
+              <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" [routerLink]="['/documents', row.id]">
+                <span class="text-truncate me-2">{{ row.title }}</span>
+                <small class="text-muted text-nowrap">{{ row.owner__username }}</small>
+              </a>
+            }
+          </div>
+        } @else if (!loading()) {
+          <p class="text-muted mb-0" i18n>No recent activity.</p>
+        }
+      </div>
+    </pngx-widget-frame>
+  </div>
+</div>

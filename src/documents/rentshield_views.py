@@ -25,6 +25,7 @@ from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
+from django.db.models import Count
 from django.http import Http404
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -41,6 +42,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from documents.models import CustomFieldInstance
 from documents.models import Document
 from documents.permissions import has_perms_owner_aware
 from documents.rentshield.citation_graph import build_citation_graph
@@ -61,8 +63,20 @@ from documents.rentshield.zitadel_provisioning import redeem_passkey_nonce
 from documents.rentshield.zitadel_provisioning import remove_passkey
 from documents.rentshield.zitadel_provisioning import start_passkey_registration
 from documents.rentshield.zitadel_provisioning import verify_passkey_registration
+from documents.rentshield.custom_fields import AWAITING_NOTARY_PUBLIC_TAG_NAME
+from documents.rentshield.custom_fields import BEING_NOTARIZED_TAG_NAME
+from documents.rentshield.custom_fields import LEGAL_REVIEW_REQUESTED_TAG_NAME
+from documents.rentshield.custom_fields import NEEDS_AI_REVIEW_TAG_NAME
+from documents.rentshield.custom_fields import NOTARIZATION_FAILED_TAG_NAME
+from documents.rentshield.custom_fields import NOTARIZED_TAG_NAME
+from documents.rentshield.custom_fields import NOTARY_PUBLIC_COMPLETED_TAG_NAME
+from documents.rentshield.custom_fields import NOTARY_PUBLIC_REJECTED_TAG_NAME
+from documents.rentshield.custom_fields import PENDING_REVIEW_TAG_NAME
+from documents.rentshield.custom_fields import RENTSHIELD_TAG_NAME
+from documents.rentshield.custom_fields import key_to_id_map
 from documents.rentshield.roles import CanActOnDocument
 from documents.rentshield.roles import CanManageNotices
+from documents.rentshield.roles import get_user_organization
 from documents.rentshield.roles import grant_property_owner
 from documents.rentshield.service import check_notarization_status
 from documents.rentshield.service import generate_and_consume
@@ -791,6 +805,135 @@ def rentshield_passkey_delete_view(request, passkey_id: str):
         logger.warning("ZITADEL passkey removal failed: %s", exc)
         return Response({"error": "Could not remove that passkey."}, status=502)
     return Response(status=204)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def organization_status_view(request):
+    """GET /api/documents/organization/status/ -- lets the frontend show
+    the Agency Dashboard nav link only to accounts that belong to a B2B
+    Organization, same "expose the one boolean the frontend needs,
+    nothing else" pattern as rentshield_identity/admin_views.py's
+    notary_status_view. Individual self-serve accounts (the
+    overwhelming majority -- see Organization's own docstring) get
+    in_organization: false and the frontend hides the link entirely."""
+    organization = get_user_organization(request.user)
+    return Response(
+        {
+            "in_organization": organization is not None,
+            "organization_name": organization.name if organization else None,
+        },
+    )
+
+
+_STATUS_PIPELINE_TAG_NAMES = [
+    LEGAL_REVIEW_REQUESTED_TAG_NAME,
+    AWAITING_NOTARY_PUBLIC_TAG_NAME,
+    NOTARY_PUBLIC_COMPLETED_TAG_NAME,
+    NOTARY_PUBLIC_REJECTED_TAG_NAME,
+    PENDING_REVIEW_TAG_NAME,
+    BEING_NOTARIZED_TAG_NAME,
+    NOTARIZED_TAG_NAME,
+    NOTARIZATION_FAILED_TAG_NAME,
+    NEEDS_AI_REVIEW_TAG_NAME,
+]
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def organization_dashboard_view(request):
+    """GET /api/documents/organization/dashboard/ -- aggregate stats for
+    the logged-in user's own B2B Organization (2026-09-22, agency
+    dashboard). 404s for an individual self-serve account (no
+    Organization) rather than an empty/zeroed payload -- there's
+    nothing for this page to show them, and organization_status_view
+    above already tells the frontend to hide the nav link for that
+    case, so landing here at all means a stale link or a direct probe;
+    either way 404, not a confusing empty dashboard.
+
+    Scoped by Document.owner's own Organization group membership -- the
+    same definition of "belongs to this org" documents.rentshield.
+    signals.grant_organization_access already uses to decide who gets
+    the guardian view/change grant -- not a guardian permission-table
+    query, since that answers a different question (who can SEE a given
+    document) than this one (which documents ARE this org's).
+
+    There is no single unified notice "status" in this codebase --
+    notarization e-sign, Real Notary Public fulfillment, legal review,
+    and AI review are four independent tag-driven tracks a notice can
+    be in more than one of at once (see documents/rentshield/
+    custom_fields.py's own comments on each tag). status_breakdown
+    below is a count per real pipeline-stage tag, not an invented
+    linear status enum -- a notice with two add-ons selected is counted
+    in both tags' totals, correctly.
+    """
+    organization = get_user_organization(request.user)
+    if organization is None:
+        raise Http404
+
+    org_documents = Document.objects.filter(owner__groups=organization.group)
+
+    status_breakdown = list(
+        org_documents.filter(tags__name__in=_STATUS_PIPELINE_TAG_NAMES)
+        .values("tags__name")
+        .annotate(count=Count("id"))
+        .order_by("-count"),
+    )
+
+    field_ids = key_to_id_map()
+    notice_date_field_id = field_ids.get("notice_date")
+    period_field_id = field_ids.get("notice_period_days")
+    upcoming_deadlines = []
+    if notice_date_field_id and period_field_id:
+        notice_dates: dict[int, object] = {}
+        period_days: dict[int, int] = {}
+        instances = CustomFieldInstance.objects.filter(
+            document__in=org_documents,
+            field_id__in=[notice_date_field_id, period_field_id],
+        ).select_related("field")
+        for instance in instances:
+            if instance.field_id == notice_date_field_id:
+                notice_dates[instance.document_id] = instance.value
+            else:
+                period_days[instance.document_id] = instance.value
+
+        titles = dict(
+            org_documents.filter(id__in=notice_dates.keys()).values_list("id", "title"),
+        )
+        today = timezone.localdate()
+        for document_id, notice_date in notice_dates.items():
+            days = period_days.get(document_id)
+            if notice_date is None or days is None:
+                continue
+            deadline = notice_date + timedelta(days=days)
+            upcoming_deadlines.append(
+                {
+                    "document_id": document_id,
+                    "title": titles.get(document_id, ""),
+                    "deadline": deadline.isoformat(),
+                    "days_remaining": (deadline - today).days,
+                },
+            )
+        upcoming_deadlines.sort(key=lambda row: row["deadline"])
+
+    recent_activity = list(
+        org_documents.order_by("-modified").values(
+            "id",
+            "title",
+            "modified",
+            "owner__username",
+        )[:10],
+    )
+
+    return Response(
+        {
+            "organization": {"id": organization.id, "name": organization.name},
+            "active_notices_count": org_documents.filter(tags__name=RENTSHIELD_TAG_NAME).count(),
+            "status_breakdown": status_breakdown,
+            "upcoming_deadlines": upcoming_deadlines,
+            "recent_activity": recent_activity,
+        },
+    )
 
 
 def rentshield_logout_view(request):

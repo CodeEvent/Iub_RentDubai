@@ -56,6 +56,8 @@ from documents.rentshield_views import legal_skills_view
 from documents.rentshield_views import notarize_status_view
 from documents.rentshield_views import notarize_uploaded_view
 from documents.rentshield_views import notarize_view
+from documents.rentshield_views import organization_dashboard_view
+from documents.rentshield_views import organization_status_view
 from documents.rentshield_views import signup_done_view
 from documents.rentshield_views import signup_email_view
 from documents.rentshield_views import signup_start_view
@@ -293,6 +295,16 @@ urlpatterns = [
                                 r"^security/passkeys/(?P<passkey_id>[\w-]+)/$",
                                 rentshield_passkey_delete_view,
                                 name="rentshield-passkey-delete",
+                            ),
+                            re_path(
+                                "^organization/status/$",
+                                organization_status_view,
+                                name="rentshield-organization-status",
+                            ),
+                            re_path(
+                                "^organization/dashboard/$",
+                                organization_dashboard_view,
+                                name="rentshield-organization-dashboard",
                             ),
                             # Property-owner identity verification --
                             # documents/rentshield_identity/, a separate

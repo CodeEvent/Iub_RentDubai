@@ -193,6 +193,42 @@ export interface Passkey {
   state: string
 }
 
+// Mirrors documents/rentshield_views.py's organization_status_view /
+// organization_dashboard_view response shapes exactly -- see that
+// file's own docstrings for why status_breakdown is a count per real
+// pipeline-stage tag rather than an invented linear status enum.
+export interface OrganizationStatus {
+  in_organization: boolean
+  organization_name: string | null
+}
+
+export interface OrganizationStatusCount {
+  tags__name: string
+  count: number
+}
+
+export interface OrganizationDeadline {
+  document_id: number
+  title: string
+  deadline: string
+  days_remaining: number
+}
+
+export interface OrganizationActivity {
+  id: number
+  title: string
+  modified: string
+  owner__username: string
+}
+
+export interface OrganizationDashboard {
+  organization: { id: number; name: string }
+  active_notices_count: number
+  status_breakdown: OrganizationStatusCount[]
+  upcoming_deadlines: OrganizationDeadline[]
+  recent_activity: OrganizationActivity[]
+}
+
 const RENTSHIELD_TAG_NAME = 'RentShield Notice'
 
 interface PaperlessCustomFieldDef {
@@ -750,5 +786,19 @@ export class RentshieldApiService {
 
   deletePasskey(passkeyId: string): Observable<void> {
     return this.http.delete<void>(`${this.base}documents/security/passkeys/${passkeyId}/`)
+  }
+
+  // Agency Dashboard (2026-09-22) -- getOrganizationStatus() is the
+  // cheap boolean call app-frame.component.ts's ngOnInit uses to decide
+  // nav-link visibility (same pattern as its existing getNotaryStatus()
+  // call); getOrganizationDashboard() is the heavier aggregate call the
+  // dashboard page itself makes once actually navigated to, not on
+  // every page load.
+  getOrganizationStatus(): Observable<OrganizationStatus> {
+    return this.http.get<OrganizationStatus>(`${this.base}documents/organization/status/`)
+  }
+
+  getOrganizationDashboard(): Observable<OrganizationDashboard> {
+    return this.http.get<OrganizationDashboard>(`${this.base}documents/organization/dashboard/`)
   }
 }

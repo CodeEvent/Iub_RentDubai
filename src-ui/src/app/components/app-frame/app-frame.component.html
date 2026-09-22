@@ -93,6 +93,15 @@
               <i-bs class="me-2" name="house"></i-bs><span class="nav-link-label"><ng-container i18n>Dashboard</ng-container></span>
             </a>
           </li>
+          @if (isOrganizationMember()) {
+            <li class="nav-item app-link">
+              <a class="nav-link" routerLink="agency/dashboard" routerLinkActive="active" (click)="closeMenu()"
+                ngbPopover="Agency Dashboard" i18n-ngbPopover [disablePopover]="!slimSidebarPopoversEnabled" placement="end"
+                container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
+                <i-bs class="me-2" name="building"></i-bs><span class="nav-link-label"><ng-container i18n>Agency Dashboard</ng-container></span>
+              </a>
+            </li>
+          }
           <li class="nav-item app-link" *pngxIfPermissions="{ action: PermissionAction.View, type: PermissionType.Document }">
             <a class="nav-link" routerLink="documents" routerLinkActive="active"
               [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' }"

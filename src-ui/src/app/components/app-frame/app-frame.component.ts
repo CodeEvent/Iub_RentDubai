@@ -101,6 +101,14 @@ export class AppFrameComponent
   // the call fails or hasn't resolved yet -- the safer default, and the
   // backend's own permission check is the real gate regardless.
   readonly isNotaryPublic = signal(false)
+
+  // Agency Dashboard nav link (2026-09-22) -- true only for an account
+  // that belongs to a B2B Organization (documents.models.Organization),
+  // fetched once here the same way isNotaryPublic above is. Defaults
+  // false (link stays hidden) if the call fails or hasn't resolved yet
+  // -- the safer default; organization_dashboard_view's own 404 for a
+  // non-member is the real gate regardless.
+  readonly isOrganizationMember = signal(false)
   private djangoMessagesService = inject(DjangoMessagesService)
 
   readonly appRemoteVersion = signal<AppRemoteVersion>(null)
@@ -155,6 +163,11 @@ export class AppFrameComponent
     this.rentshieldApiService.getNotaryStatus().subscribe({
       next: (res) => this.isNotaryPublic.set(res.is_notary_public),
       error: () => {}, // stays false -- an admin still sees the link via isAdmin()
+    })
+
+    this.rentshieldApiService.getOrganizationStatus().subscribe({
+      next: (res) => this.isOrganizationMember.set(res.in_organization),
+      error: () => {}, // stays false -- link stays hidden
     })
 
     if (this.settingsService.get(SETTINGS_KEYS.UPDATE_CHECKING_ENABLED)) {
