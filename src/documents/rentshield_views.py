@@ -11,13 +11,17 @@
 # bespoke -- see src-ui's rentshield-api.service.ts.
 from __future__ import annotations
 
+import json
+import logging
 import re
 import secrets
 from datetime import datetime
 from datetime import timedelta
 from urllib.parse import quote
+from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
@@ -28,6 +32,7 @@ from django.shortcuts import redirect
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view
 from rest_framework.decorators import parser_classes
 from rest_framework.decorators import permission_classes
@@ -46,9 +51,16 @@ from documents.rentshield.document_analysis import DocumentAnalysisError
 from documents.rentshield.document_analysis import analyze_document
 from documents.rentshield.pricing import ADD_ONS
 from documents.rentshield.pricing import BASE_PRICE_AED
-from documents.rentshield.authelia_provisioning import AUTHELIA_BRIDGE_URL
-from documents.rentshield.authelia_provisioning import bootstrap_authelia_session
-from documents.rentshield.authelia_provisioning import provision_authelia_user
+from documents.rentshield.zitadel_provisioning import ZITADEL_BRIDGE_URL
+from documents.rentshield.zitadel_provisioning import ZitadelProvisioningError
+from documents.rentshield.zitadel_provisioning import build_end_session_url
+from documents.rentshield.zitadel_provisioning import issue_passkey_nonce
+from documents.rentshield.zitadel_provisioning import list_passkeys
+from documents.rentshield.zitadel_provisioning import provision_zitadel_user
+from documents.rentshield.zitadel_provisioning import redeem_passkey_nonce
+from documents.rentshield.zitadel_provisioning import remove_passkey
+from documents.rentshield.zitadel_provisioning import start_passkey_registration
+from documents.rentshield.zitadel_provisioning import verify_passkey_registration
 from documents.rentshield.roles import CanActOnDocument
 from documents.rentshield.roles import CanManageNotices
 from documents.rentshield.roles import grant_property_owner
@@ -58,6 +70,8 @@ from documents.rentshield.service import request_notarization
 from documents.rentshield.service_methods import SERVICE_METHODS
 from documents.rentshield.skills_lib import get_skill
 from documents.rentshield.skills_lib import load_skills
+
+logger = logging.getLogger("paperless.auth")
 
 # Real permission gating (task 5): CanManageNotices (documents/rentshield/
 # roles.py) restricts notice creation and notarization dispatch to the
@@ -222,10 +236,21 @@ def signup_email_view(request):
 
     One single URL channel for signin AND signup (2026-09-15, requested
     explicitly): an email that already has an account transparently
-    redirects into Authelia sign-in (passkey-only, no password prompt,
-    see configuration.yml's webauthn.enable_passkey_login) instead of
+    redirects into sign-in (passkey-only, no password prompt) instead of
     dead-ending with an error -- this one email field is the entire
-    entry point either way."""
+    entry point either way.
+
+    ZITADEL migration Phase F cleanup (2026-09-22): Authelia itself has
+    been permanently deleted (containers, vendor/authelia/, its own
+    config/secrets -- requested explicitly, "clean up server space"),
+    so an existing email now needs to check WHICH provider that account
+    actually has a SocialAccount for before redirecting, rather than
+    blindly sending everyone to Authelia's now-dead URL. Any account
+    created before this cleanup has its passkey on the now-deleted
+    Authelia instance and no way back in -- WebAuthn credentials aren't
+    portable between relying parties, confirmed earlier in this same
+    migration, and there is no migration story for that; this just
+    stops making it worse by redirecting them into a dead link."""
     error = None
     if request.method == "POST":
         email = (request.POST.get("email") or "").strip().lower()
@@ -236,8 +261,15 @@ def signup_email_view(request):
                 validate_email(email)
             except DjangoValidationError:
                 error = "Enter a valid email address."
-        if not error and get_user_model().objects.filter(email__iexact=email).exists():
-            return redirect("/accounts/oidc/authelia/login/")
+        if not error:
+            existing_user = get_user_model().objects.filter(email__iexact=email).first()
+            if existing_user is not None:
+                if existing_user.socialaccount_set.filter(provider="zitadel").exists():
+                    return redirect("/accounts/oidc/zitadel/login/")
+                error = (
+                    "This account was created before a platform migration and can no "
+                    "longer sign in this way -- contact support to regain access."
+                )
         if not error:
             otp = f"{secrets.randbelow(1_000_000):06d}"
             request.session[SIGNUP_SESSION_KEY] = {
@@ -266,14 +298,27 @@ def signup_verify_view(request):
     Verifying the code is also the LAST step now (2026-09-15, requested
     explicitly: Authelia is the only signup/signin path from here on) --
     a successful code creates the Django User (unusable local password,
-    Property Owner group, same as ever) *and* a matching Authelia
-    account (documents/rentshield/authelia_provisioning.py) right away,
-    then sends them to sign in. Document declaration + NFC/selfie/video
-    verification happen afterward, on the existing (pre-session)
-    identity-verification page, once they're actually logged in --
-    pair_start_view/pair_claim_view need no changes at all for that to
-    work, they only ever check request.user.is_authenticated, never how
-    that login happened."""
+    Property Owner group, same as ever) *and* a matching ZITADEL account
+    right away, then sends them to sign in. Document declaration +
+    NFC/selfie/video verification happen afterward, on the existing
+    (pre-session) identity-verification page, once they're actually
+    logged in -- pair_start_view/pair_claim_view need no changes at all
+    for that to work, they only ever check request.user.is_authenticated,
+    never how that login happened.
+
+    ZITADEL migration Phase F (2026-09-22) -- new signups provision into
+    ZITADEL now, not Authelia (see documents/rentshield/
+    zitadel_provisioning.py). Deliberately additive, not a hard replace:
+    Authelia's OIDC app stays registered in PAPERLESS_SOCIALACCOUNT_PROVIDERS
+    and signup_email_view's "already have an account" branch still sends
+    existing emails there unchanged -- every account created before this
+    line shipped has its passkey on Authelia, not ZITADEL, and there's no
+    way to migrate a WebAuthn credential between relying parties, so
+    breaking their sign-in for a same-session naming purity would be a
+    real regression for zero benefit. No cookie to set here any more,
+    unlike the Authelia path -- see provision_zitadel_user's own comment
+    on why: ZITADEL needs no pre-elevated session for the passkey
+    ceremony, only the nonce signup_done_view mints below."""
     draft = _signup_draft(request)
     if "otp" not in draft:
         return redirect("rentshield-signup-email")
@@ -294,34 +339,24 @@ def signup_verify_view(request):
             user.set_unusable_password()
             user.save(update_fields=["password"])
             grant_property_owner(user)
-            authelia_password = provision_authelia_user(username, email, groups=["Property Owner"])
+            zitadel_user_id = provision_zitadel_user(username, email, groups=["Property Owner"])
             request.session.pop(SIGNUP_SESSION_KEY, None)
-
-            response = redirect("rentshield-signup-done")
-            session_cookie = bootstrap_authelia_session(username, authelia_password)
-            response.set_cookie(
-                "authelia_session",
-                session_cookie,
-                domain="rentshield.local",
-                path="/",
-                secure=True,
-                httponly=True,
-                samesite="Lax",
-            )
-            return response
+            request.session["signup_zitadel_user_id"] = zitadel_user_id
+            request.session["signup_zitadel_username"] = username
+            return redirect("rentshield-signup-done")
     return render(request, "rentshield/signup_verify.html", {"error": error, "email": draft.get("email")})
 
 
 def signup_done_view(request):
     """GET /signup/done/ -- GOV.UK-style confirmation. Links to
-    RentShield's own bridge page (not Authelia's native "Add Device"
-    dialog, which has a confirmed live bug -- see
-    authelia_provisioning.AUTHELIA_BRIDGE_URL's own comment) to register
-    the very first passkey. The browser already holds a first-factor
-    session (signup_verify_view's bootstrap_authelia_session call also
-    tries to elevate it server-side, but that's best-effort -- see that
-    function's own comment) -- no password is ever shown or set
-    (2026-09-15, requested explicitly: passwordless only).
+    RentShield's own ZITADEL bridge page (documents/rentshield/
+    zitadel_provisioning.py's own comment on why this exists rather than
+    calling ZITADEL directly: the admin-level provisioner PAT must never
+    reach the browser) to register the very first passkey. Needs no
+    pre-authenticated session at all any more (2026-09-22 -- Authelia's
+    version needed one, ZITADEL's RegisterPasskey doesn't) -- no
+    password is ever shown or set (2026-09-15, requested explicitly:
+    passwordless only).
 
     `return` points back at THIS view, not `/profile` (confirmed live
     bug this caused: /profile requires being logged in, which is
@@ -342,20 +377,129 @@ def signup_done_view(request):
     afterward) -- completes the actual OIDC login (one tap if the
     passkey carried full verification, a second confirming tap
     otherwise, see LoginPortal.tsx's own comment in this fork), landing
-    on the dashboard with no separate manual step."""
+    on the dashboard with no separate manual step.
+
+    ZITADEL migration Phase F (2026-09-22) -- bridge_url now points at
+    the zitadel-proxy bridge page (Phase D) with a freshly-minted
+    single-use nonce (zitadel_provisioning.issue_passkey_nonce) instead
+    of Authelia's `description` param; a fresh one is minted on every
+    GET (cheap, and correctly handles both a plain reload and the
+    passkey_error retry case below without needing to distinguish
+    them). signup_zitadel_user_id has to already be in the session --
+    it's set by signup_verify_view right before redirecting here, never
+    accepted from the client.
+
+    Real bug hit live (2026-09-22): passkey registration is entirely
+    server-to-server (Django's provisioner PAT calls ZITADEL directly --
+    see zitadel_provisioning.py's own comment on why), so it never
+    establishes a browser-side ZITADEL session for the account that was
+    just created. A bare `/accounts/oidc/zitadel/login/` redirect from
+    here silently reused whatever OTHER ZITADEL session was already
+    active in that browser (a stale SSO session from a previous signup
+    in the same tab), landing the user in the WRONG, unrelated account
+    with zero interaction -- confirmed live via the Django access log's
+    own `Syncing groups for user ...` line naming the wrong username.
+    `login_hint` + `prompt=login` via allauth's dynamic
+    `?auth_params=` (django-allauth's oauth2 provider.py, not a custom
+    subclass) forces ZITADEL to authenticate as THIS specific account
+    every time, never silently reusing an unrelated session -- deliberately
+    only applied here, not on signup_email_view's returning-user
+    redirect, where reusing an existing same-account session is exactly
+    the point."""
     if request.GET.get("passkeyAdded") == "1":
-        return redirect("/accounts/oidc/authelia/login/")
+        username = request.session.pop("signup_zitadel_username", None)
+        auth_params = urlencode({"login_hint": username, "prompt": "login"}) if username else ""
+        login_url = "/accounts/oidc/zitadel/login/"
+        if auth_params:
+            login_url += f"?auth_params={quote(auth_params, safe='')}"
+        return redirect(login_url)
+
+    zitadel_user_id = request.session.get("signup_zitadel_user_id")
+    if not zitadel_user_id:
+        return redirect("rentshield-signup-start")
 
     done_url = request.build_absolute_uri(reverse("rentshield-signup-done"))
+    nonce = issue_passkey_nonce(zitadel_user_id)
     bridge_url = (
-        f"{AUTHELIA_BRIDGE_URL}?description=My+passkey"
+        f"{ZITADEL_BRIDGE_URL}?description=My+passkey"
         f"&return={quote(done_url, safe='')}"
+        f"&nonce={quote(nonce, safe='')}"
     )
     return render(
         request,
         "rentshield/signup_done.html",
         {"bridge_url": bridge_url, "passkey_error": request.GET.get("passkeyError")},
     )
+
+
+# MARK: -- ZITADEL migration Phase D (2026-09-22, see /home/giova/.claude/
+# plans/synchronous-finding-storm.md). Not called from anywhere real yet
+# -- signup_verify_view/signup_done_view above still run the Authelia
+# path exclusively; Phase F is what points them at
+# zitadel_provisioning.provision_zitadel_user and a ZITADEL-flavored
+# bridge_url instead. These two views exist now so the adapted bridge
+# page (authelia/nginx/nginx.conf's zitadel-proxy counterpart) has
+# something real to call during Phase D's own live verification.
+#
+# Cross-origin from zitadel.rentshield.local, same reason
+# authelia/nginx/nginx.conf's /api/ location needs its own CORS block --
+# see nginx/app-proxy/nginx.conf's matching location for the allowed
+# origin. Authorized by a single-use nonce (zitadel_provisioning.
+# issue_passkey_nonce), not a shared session cookie -- see that
+# function's own comment for why. @csrf_exempt is safe here for the
+# same reason DRF's api_view endpoints elsewhere in this file don't
+# carry Django's session-cookie-based CSRF risk: nothing here is
+# authenticated by a cookie Django would need to protect, the nonce
+# itself is the credential and it's single-use on the verify path.
+
+
+@csrf_exempt
+def zitadel_passkey_start_view(request):
+    """POST /zitadel/passkey/start {"nonce": "..."} -- returns the
+    WebAuthn creation options for navigator.credentials.create(), same
+    shape the bridge page already consumes from Authelia today."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required."}, status=405)
+    try:
+        nonce = json.loads(request.body)["nonce"]
+    except (ValueError, KeyError):
+        return JsonResponse({"error": "Malformed request."}, status=400)
+    user_id = redeem_passkey_nonce(nonce, consume=False)
+    if not user_id:
+        return JsonResponse({"error": "This link has expired -- go back and try again."}, status=400)
+    try:
+        result = start_passkey_registration(user_id)
+    except ZitadelProvisioningError as exc:
+        logger.warning("ZITADEL passkey start failed: %s", exc)
+        return JsonResponse({"error": "Could not start passkey registration."}, status=502)
+    return JsonResponse(result)
+
+
+@csrf_exempt
+def zitadel_passkey_verify_view(request):
+    """POST /zitadel/passkey/verify {"nonce", "passkeyId", "publicKeyCredential"}
+    -- completes the ceremony. The nonce is consumed here (not on
+    start), so a device prompt the user cancelled and retried doesn't
+    burn the link, but a completed registration can't be replayed."""
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required."}, status=405)
+    try:
+        body = json.loads(request.body)
+        nonce = body["nonce"]
+        passkey_id = body["passkeyId"]
+        credential = body["publicKeyCredential"]
+    except (ValueError, KeyError):
+        return JsonResponse({"error": "Malformed request."}, status=400)
+    passkey_name = (body.get("passkeyName") or "My passkey")[:200]
+    user_id = redeem_passkey_nonce(nonce, consume=True)
+    if not user_id:
+        return JsonResponse({"error": "This link has expired -- go back and try again."}, status=400)
+    try:
+        verify_passkey_registration(user_id, passkey_id, credential, passkey_name)
+    except ZitadelProvisioningError as exc:
+        logger.warning("ZITADEL passkey verify failed: %s", exc)
+        return JsonResponse({"error": "Registration failed -- you can try again below."}, status=502)
+    return JsonResponse({"status": "ok"})
 
 
 def _unique_username_from_email(email: str) -> str:
@@ -570,4 +714,102 @@ def notarize_status_view(request, document_id: int):
         return Response({"error": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001
         return Response({"error": str(exc)}, status=502)
+
+
+# MARK: -- My Profile "Security" tab, ZITADEL-backed (2026-09-22).
+# Replaces authelia-security.service.ts, which called
+# environment.autheliaApiUrl directly and has been fully broken (not
+# just unmigrated) since Authelia was deleted earlier this session.
+# Two features from the old Authelia version are dropped, not ported:
+# - Rename: ZITADEL's passkey API has no update/rename RPC at all
+#   (confirmed against user_service.proto -- Register/Verify/List/Remove
+#   only), so there's nothing to call.
+# - Change password / the whole "elevation" (email one-time-code) gate
+#   on every mutating action: RentShield has no passwords to change any
+#   more, and ZITADEL's RegisterPasskey/RemovePasskey need no elevated
+#   session the way Authelia's did (confirmed live in Phase C) -- the
+#   provisioner PAT calls them the same way it does during signup. Add
+#   and Remove below rely on the same trust boundary every other
+#   authenticated action in this app already does (a valid Django
+#   session), not a bespoke step-up flow that only existed because of
+#   Authelia's own architecture.
+def _zitadel_user_id_for(user) -> str | None:
+    social_account = user.socialaccount_set.filter(provider="zitadel").first()
+    return social_account.uid if social_account else None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def rentshield_passkeys_view(request):
+    """GET /api/documents/security/passkeys/ -- list the logged-in
+    user's own passkeys."""
+    zitadel_user_id = _zitadel_user_id_for(request.user)
+    if not zitadel_user_id:
+        return Response({"error": "This account has no ZITADEL identity linked."}, status=400)
+    try:
+        passkeys = list_passkeys(zitadel_user_id)
+    except ZitadelProvisioningError as exc:
+        logger.warning("ZITADEL passkey list failed: %s", exc)
+        return Response({"error": "Could not load your passkeys."}, status=502)
+    return Response(passkeys)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def rentshield_passkey_add_view(request):
+    """POST /api/documents/security/passkeys/add/ -- mints a single-use
+    nonce for the logged-in user's OWN zitadel_user_id and returns the
+    full bridge-page redirect URL, same nonce mechanism signup already
+    uses (zitadel_provisioning.issue_passkey_nonce) -- the ceremony
+    itself still has to happen on zitadel.rentshield.local (the RP-id
+    origin constraint), so the browser still needs a real redirect, not
+    just an API call."""
+    zitadel_user_id = _zitadel_user_id_for(request.user)
+    if not zitadel_user_id:
+        return Response({"error": "This account has no ZITADEL identity linked."}, status=400)
+    description = (request.data.get("description") or "New passkey").strip()[:200]
+    return_to = request.build_absolute_uri(request.data.get("return_to") or "/")
+    nonce = issue_passkey_nonce(zitadel_user_id)
+    redirect_url = (
+        f"{ZITADEL_BRIDGE_URL}?description={quote(description)}"
+        f"&return={quote(return_to, safe='')}"
+        f"&nonce={quote(nonce, safe='')}"
+    )
+    return Response({"redirect_url": redirect_url})
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def rentshield_passkey_delete_view(request, passkey_id: str):
+    """DELETE /api/documents/security/passkeys/<passkey_id>/"""
+    zitadel_user_id = _zitadel_user_id_for(request.user)
+    if not zitadel_user_id:
+        return Response({"error": "This account has no ZITADEL identity linked."}, status=400)
+    try:
+        remove_passkey(zitadel_user_id, passkey_id)
+    except ZitadelProvisioningError as exc:
+        logger.warning("ZITADEL passkey removal failed: %s", exc)
+        return Response({"error": "Could not remove that passkey."}, status=502)
+    return Response(status=204)
+
+
+def rentshield_logout_view(request):
+    """GET/POST /accounts/logout/ -- replaces allauth's own logout view
+    at this URL (2026-09-22, requested explicitly: "force full re-auth
+    on every logout"). allauth's version only ever cleared the LOCAL
+    Django session; the browser kept a separate, still-valid ZITADEL
+    session the whole time, so signing back in silently reused it with
+    no fresh passkey tap -- confirmed live, not assumed (Django's own
+    session for a test account survived a server restart and a
+    subsequent "log out" here, then still landed back on /dashboard
+    with zero interaction on the next sign-in click). Local logout
+    still happens here first, same as before -- this only adds the
+    redirect through ZITADEL's own end_session_endpoint afterward, per
+    zitadel_provisioning.build_end_session_url's own comment on why
+    that needs no stored id_token."""
+    django_logout(request)
+    post_logout_redirect_uri = request.build_absolute_uri(
+        f"{reverse('account_login')}?loggedout=1",
+    )
+    return redirect(build_end_session_url(post_logout_redirect_uri))
     return Response(result)

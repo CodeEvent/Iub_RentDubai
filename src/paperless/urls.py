@@ -16,6 +16,7 @@ from drf_spectacular.views import SpectacularAPIView
 from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
+from documents.admin_views import dashboard_view
 from documents.rentshield_billing.views import checkout_status_view
 from documents.rentshield_billing.views import create_checkout_view
 from documents.rentshield_billing.views import stripe_webhook_view
@@ -59,6 +60,12 @@ from documents.rentshield_views import signup_done_view
 from documents.rentshield_views import signup_email_view
 from documents.rentshield_views import signup_start_view
 from documents.rentshield_views import signup_verify_view
+from documents.rentshield_views import rentshield_logout_view
+from documents.rentshield_views import rentshield_passkey_add_view
+from documents.rentshield_views import rentshield_passkey_delete_view
+from documents.rentshield_views import rentshield_passkeys_view
+from documents.rentshield_views import zitadel_passkey_start_view
+from documents.rentshield_views import zitadel_passkey_verify_view
 from documents.rentshield_views import pricing_view
 from documents.rentshield_views import reasons_view
 from documents.views import BulkDownloadView
@@ -271,6 +278,21 @@ urlpatterns = [
                                 r"^notice/(?P<document_id>\d+)/notarize-status/$",
                                 notarize_status_view,
                                 name="rentshield-notarize-status",
+                            ),
+                            re_path(
+                                "^security/passkeys/$",
+                                rentshield_passkeys_view,
+                                name="rentshield-passkeys",
+                            ),
+                            re_path(
+                                "^security/passkeys/add/$",
+                                rentshield_passkey_add_view,
+                                name="rentshield-passkey-add",
+                            ),
+                            re_path(
+                                r"^security/passkeys/(?P<passkey_id>[\w-]+)/$",
+                                rentshield_passkey_delete_view,
+                                name="rentshield-passkey-delete",
                             ),
                             # Property-owner identity verification --
                             # documents/rentshield_identity/, a separate
@@ -556,6 +578,11 @@ urlpatterns = [
     ),
     re_path(r"^share/(?P<slug>\w+)/?$", SharedLinkView.as_view()),
     re_path(r"^favicon.ico$", FaviconView.as_view(), name="favicon"),
+    path(
+        "admin/dashboard/",
+        dashboard_view,
+        name="rentshield-admin-dashboard",
+    ),
     re_path(r"admin/", admin.site.urls),
     re_path(
         r"^fetch/",
@@ -600,7 +627,13 @@ urlpatterns = [
                 # see allauth/account/urls.py
                 # login, logout, signup, account_inactive
                 path("login/", allauth_account_views.login, name="account_login"),
-                path("logout/", allauth_account_views.logout, name="account_logout"),
+                # RentShield fork (2026-09-22, requested explicitly:
+                # "force full re-auth on every logout") -- replaces
+                # allauth's own logout view, which only ever cleared the
+                # local Django session; see rentshield_logout_view's own
+                # comment for why that silently left the browser signed
+                # in to ZITADEL.
+                path("logout/", rentshield_logout_view, name="account_logout"),
                 # RentShield fork (2026-09-18, requested explicitly:
                 # signup is only ever managed through /signup/ --
                 # allauth's own signup.html renders real
@@ -723,6 +756,11 @@ urlpatterns = [
     re_path(r"^login/email/?$", signup_email_view, name="rentshield-signup-email"),
     re_path(r"^login/verify/?$", signup_verify_view, name="rentshield-signup-verify"),
     re_path(r"^login/done/?$", signup_done_view, name="rentshield-signup-done"),
+    # ZITADEL migration Phase D -- called cross-origin from the
+    # zitadel.rentshield.local bridge page, not from anything on this
+    # domain. Not yet reachable through the real signup flow (Phase F).
+    re_path(r"^zitadel/passkey/start/?$", zitadel_passkey_start_view, name="rentshield-zitadel-passkey-start"),
+    re_path(r"^zitadel/passkey/verify/?$", zitadel_passkey_verify_view, name="rentshield-zitadel-passkey-verify"),
     # Short, stable link to download the Android app (2026-09-14,
     # explicitly requested -- the long cache-busted static URL changes
     # on every rebuild, which is exactly wrong for something meant to

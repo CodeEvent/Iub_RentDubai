@@ -184,6 +184,15 @@ export interface AdminVerificationRecord {
   updated_at: string
 }
 
+// My Profile > Security tab (2026-09-22) -- mirrors ZITADEL's own
+// Passkey message shape (zitadel/user/v2/user.proto), confirmed live
+// against the running instance, not guessed.
+export interface Passkey {
+  id: string
+  name: string
+  state: string
+}
+
 const RENTSHIELD_TAG_NAME = 'RentShield Notice'
 
 interface PaperlessCustomFieldDef {
@@ -717,5 +726,29 @@ export class RentshieldApiService {
     formData.append('file', file)
     if (useDeepseekOcr) formData.append('use_deepseek_ocr', 'true')
     return this.http.post<DocumentAnalysisResult>(`${this.base}documents/notice/analyze/`, formData)
+  }
+
+  // My Profile > Security tab (2026-09-22) -- replaces the deleted
+  // AutheliaSecurityService. No rename (ZITADEL's passkey API has none)
+  // and no elevation/step-up gate (see rentshield_passkeys_view's own
+  // comment in rentshield_views.py for why that's not a regression).
+  listPasskeys(): Observable<Passkey[]> {
+    return this.http.get<Passkey[]>(`${this.base}documents/security/passkeys/`)
+  }
+
+  // Returns a redirect_url on zitadel.rentshield.local -- the WebAuthn
+  // ceremony can't run on this origin at all (see zitadel/nginx/
+  // rentshield-bridge/index.html's own header comment on the RP-id
+  // constraint). Caller navigates there; returnTo is where the bridge
+  // page sends the browser back once the ceremony completes.
+  startAddPasskey(description: string, returnTo: string): Observable<{ redirect_url: string }> {
+    return this.http.post<{ redirect_url: string }>(`${this.base}documents/security/passkeys/add/`, {
+      description,
+      return_to: returnTo,
+    })
+  }
+
+  deletePasskey(passkeyId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}documents/security/passkeys/${passkeyId}/`)
   }
 }

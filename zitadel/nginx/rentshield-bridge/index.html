@@ -1,23 +1,29 @@
 <!doctype html>
 <!--
-  The one WebAuthn action that can't be a direct call from RentShield's
-  own page: registering a brand-new passkey. Browsers only allow
-  navigator.credentials.create() to run in a document whose origin
-  matches (or is a subdomain of) the RP ID the server returns --
-  Authelia always returns its own hostname here (confirmed live, no
-  config override exists), so this ceremony has to actually run on
-  auth.rentshield.local, no matter what domain RentShield itself is on.
+  ZITADEL migration Phase D (2026-09-22) counterpart of
+  authelia/nginx/rentshield-bridge/index.html -- a separate copy, not an
+  in-place edit, because that file is still what the LIVE Authelia
+  signup flow serves; this one is reached only via the ZITADEL side door
+  (zitadel.rentshield.local:9092) until Phase F's cutover.
 
-  Reached via a same-tab redirect (never a popup) from My Profile's
-  Security tab, and redirects straight back when done -- see the plan
-  file for why this is the one exception to everything else in that tab
-  being a direct, same-site API call.
+  Same origin-bound-to-RP-id constraint as the Authelia version's own
+  comment explains (confirmed live for ZITADEL too: rp.id in the
+  creation options this page receives is "zitadel.rentshield.local"),
+  so this ceremony still can't run directly on RentShield's own domain
+  -- but where the Authelia version called its IdP's API directly, this
+  one calls back into Django (documents/rentshield_views.py's
+  zitadel_passkey_start_view/verify_view) instead, since
+  RegisterPasskey/VerifyPasskeyRegistration need the ZITADEL provisioner
+  PAT, and that PAT must never reach the browser. Authorized by a
+  single-use nonce in the URL (see zitadel_provisioning.py's
+  issue_passkey_nonce) instead of the `description` query param the
+  Authelia version used -- ZITADEL requires no equivalent to start the
+  ceremony, only passkey_name later, on verify.
 
   Design tokens below are a literal copy of documents/templates/rentshield/
-  signup_base.html's <style> block -- see /DESIGN.md. This page is served
-  by a separate nginx container with no shared build step with Django's
-  static files, so keeping two small copies in sync by hand is simpler
-  than building a shared-asset pipeline for one stylesheet.
+  signup_base.html's <style> block -- see /DESIGN.md. Same reasoning as
+  the Authelia version for why this is a hand-kept duplicate, not a
+  shared build step.
 -->
 <html lang="en">
 <head>
@@ -136,10 +142,12 @@
   var ALLOWED_RETURN_ORIGINS = [
     'https://app.rentshield.local:8443',
   ];
+  var DJANGO_API_BASE = 'https://app.rentshield.local:8443';
 
   var params = new URLSearchParams(window.location.search);
-  var description = params.get('description') || '';
+  var description = params.get('description') || 'My passkey';
   var returnTo = params.get('return');
+  var nonce = params.get('nonce');
 
   var card = document.getElementById('rs-card');
   var btn = document.getElementById('rs-register-btn');
@@ -154,7 +162,7 @@
     window.location.replace(url.toString());
   }
 
-  if (!returnTo || ALLOWED_RETURN_ORIGINS.indexOf(new URL(returnTo).origin) === -1) {
+  if (!returnTo || ALLOWED_RETURN_ORIGINS.indexOf(new URL(returnTo).origin) === -1 || !nonce) {
     document.body.textContent = 'This page must be reached from RentShield.';
     return;
   }
@@ -178,34 +186,36 @@
     }
   }
 
-  async function api(method, path, body) {
-    var res = await fetch(path, {
-      method: method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      credentials: 'same-origin',
+  // Django endpoints, not ZITADEL's own API -- see this file's own
+  // header comment on why (the admin-level provisioner PAT stays
+  // server-side). credentials: 'omit' is deliberate, not an oversight:
+  // this deliberately doesn't rely on any shared cookie, only the
+  // single-use nonce already in the URL -- see zitadel_provisioning.py's
+  // issue_passkey_nonce for why.
+  async function djangoApi(path, body) {
+    var res = await fetch(DJANGO_API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      credentials: 'omit',
     });
-    var data = null;
-    try {
-      data = await res.json();
-    } catch (e) {
-      // no body
+    var data = await res.json().catch(function () { return null; });
+    if (!res.ok || (data && data.error)) {
+      throw new Error((data && data.error) || ('Request failed: ' + res.status));
     }
-    if (!res.ok || (data && data.status === 'KO')) {
-      throw new Error((data && data.message) || ('Request failed: ' + res.status));
-    }
-    return data ? data.data : null;
+    return data;
   }
 
   async function register() {
     errorBox.classList.remove('rs-visible');
     setLoading(true);
     try {
-      var startResult = await api('PUT', '/api/secondfactor/webauthn/credential/register', { description: description });
+      var startResult = await djangoApi('/zitadel/passkey/start', { nonce: nonce });
       var creationOptions = startResult && startResult.publicKey;
       if (!creationOptions) {
-        throw new Error('Authelia did not return WebAuthn creation options.');
+        throw new Error('ZITADEL did not return WebAuthn creation options.');
       }
+      var passkeyId = startResult.passkeyId;
       var publicKey = PublicKeyCredential.parseCreationOptionsFromJSON(creationOptions);
       // Confirmed live (2026-09-21): Chromium does not reliably honor
       // publicKey.timeout on its own -- with no platform authenticator
@@ -222,16 +232,12 @@
       if (!credential) {
         throw new Error('No credential was created.');
       }
-      var res = await fetch('/api/secondfactor/webauthn/credential/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credential.toJSON()),
-        credentials: 'same-origin',
+      await djangoApi('/zitadel/passkey/verify', {
+        nonce: nonce,
+        passkeyId: passkeyId,
+        publicKeyCredential: credential.toJSON(),
+        passkeyName: description,
       });
-      var data = await res.json().catch(function () { return null; });
-      if (!res.ok || (data && data.status === 'KO')) {
-        throw new Error((data && data.message) || 'Registration failed.');
-      }
       card.classList.add('rs-card-verified');
       btnLabel.textContent = 'Passkey registered';
       status.hidden = false;

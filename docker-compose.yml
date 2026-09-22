@@ -22,7 +22,6 @@ services:
       - docling-service
       - docuseal
       - opensign
-      - authelia
     ports:
       - "8000:8000"
     volumes:
@@ -30,27 +29,53 @@ services:
       - pgx-media:/usr/src/paperless/media
       - ./consume:/usr/src/paperless/consume
       - jibri-recordings:/usr/src/paperless/jibri-recordings
-      # Authelia's dev-only TLS cert is signed by a local mkcert CA, not
-      # a real public one -- Python's `requests` (which allauth's OIDC
-      # discovery/token/userinfo calls go through) needs to be told to
-      # trust it explicitly via REQUESTS_CA_BUNDLE below.
+      # This project's shared local mkcert CA (originally introduced for
+      # Authelia, now also what ZITADEL's dev cert is signed by -- kept
+      # under authelia/certs/ rather than moved, see that directory's
+      # own remaining contents) -- not a real public CA. Python's
+      # `requests` (which allauth's OIDC discovery/token/userinfo calls
+      # go through) needs to be told to trust it explicitly via
+      # REQUESTS_CA_BUNDLE below.
       - ./authelia/certs/rootCA.pem:/usr/src/paperless/authelia-ca.pem:ro
     environment:
-      # Passwordless SSO via Authelia (2026-09-15) -- see
-      # authelia/configuration.yml's header comment for the full
-      # architecture. AUTHELIA_OIDC_CLIENT_SECRET is the plaintext
-      # counterpart of authelia/configuration.secrets.yml's
-      # client_secret hash -- set it in a real (gitignored) .env file,
-      # never inline here; see authelia/secrets/
-      # oidc_client_secret_plaintext.txt for the generated value.
+      # Passwordless SSO (2026-09-15, now via ZITADEL -- see
+      # zitadel_provisioning.py's own header comment for the current
+      # architecture).
       PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+      # ZITADEL migration Phase F cleanup (2026-09-22): Authelia has been
+      # permanently deleted (requested explicitly, "clean up server
+      # space") -- its "authelia" provider_id is gone from here too,
+      # not just left registered pointing at a dead URL. Every account
+      # created before this cleanup lost its working sign-in path along
+      # with it (see signup_email_view's own comment) -- accepted,
+      # explicitly, not an oversight.
+      #
+      # Real bug hit live (2026-09-22): "groups" in SCOPE below was
+      # cargo-culted from Authelia's own convention -- ZITADEL doesn't
+      # recognize it at all. ctx.v1.user.grants came back structurally
+      # null in the setGroupsClaim Action (confirmed by temporarily
+      # dumping the raw context as a debug claim, not guessed) with no
+      # error, so the Action always silently no-opped. Confirmed against
+      # ZITADEL's own docs: role/grant data needs the
+      # urn:iam:org:project:roles scope requested here AND "Assert Roles
+      # on Authentication" enabled on the project itself (the RentShield
+      # project's project_role_assertion, set via the Management API,
+      # not tracked in this repo).
       PAPERLESS_SOCIALACCOUNT_PROVIDERS: >-
-        {"openid_connect": {"SCOPE": ["openid", "profile", "email", "groups"],
-        "APPS": [{"provider_id": "authelia", "name": "RentShield",
-        "client_id": "rentshield", "secret": "${AUTHELIA_OIDC_CLIENT_SECRET:-}",
-        "settings": {"server_url": "https://auth.rentshield.local:9091",
+        {"openid_connect": {"SCOPE": ["openid", "profile", "email", "urn:iam:org:project:roles"],
+        "APPS": [{"provider_id": "zitadel", "name": "RentShield",
+        "client_id": "${ZITADEL_OIDC_CLIENT_ID:-}", "secret": "${ZITADEL_OIDC_CLIENT_SECRET:-}",
+        "settings": {"server_url": "https://zitadel.rentshield.local:9092",
         "token_auth_method": "client_secret_post"}}]}}
       PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS: "true"
+      # Confirmed live (2026-09-22) as genuinely unset in both this file
+      # and the bare-host dev launch command -- regular Django
+      # username/password login was reachable at /accounts/login/ the
+      # whole time, contradicting this app's own stated design
+      # ("only biometrics, no passwords" -- see paperless/adapter.py's
+      # CustomAccountAdapter.pre_authenticate, which already checks this
+      # setting and has since the Authelia days, just never had it set).
+      PAPERLESS_DISABLE_REGULAR_LOGIN: "true"
       # RentShield is now also reachable at app.rentshield.local over
       # HTTPS (2026-09-15, see nginx/app-proxy/) -- Django requires an
       # HTTPS request's Origin to be explicitly trusted for CSRF, unlike
@@ -77,90 +102,16 @@ services:
       PAPERLESS_RENTSHIELD_JITSI_BASE_URL: ${RENTSHIELD_JITSI_BASE_URL:-http://localhost:8444}
       PAPERLESS_RENTSHIELD_JIBRI_RECORDINGS_DIR: /usr/src/paperless/jibri-recordings
 
-  # Self-hosted OIDC identity provider (2026-09-15, requested
-  # explicitly: "single source of truth" for auth across both the web
-  # app and the native Android app -- see authelia/configuration.yml's
-  # own header comment for the full architecture reasoning). Runs as a
-  # plain OIDC Provider only -- no forward-auth needed, Django talks to
-  # it directly via allauth's own openid_connect provider. Not reachable
-  # from the host directly any more (no `ports`) -- `authelia-proxy`
-  # below is now the only externally-reachable entry point, see its own
-  # header comment for why (strips "Authelia" branding, injects
-  # RentShield's own styling -- needs to see plaintext HTML/JSON, so TLS
-  # moved there too).
-  authelia:
-    # RentShield fork (2026-09-18, requested explicitly: "delete the
-    # passwords intake field and the ability to use the passwords") --
-    # a custom build of Authelia v4.39.26 from source (vendor/authelia/,
-    # a git clone of the matching upstream tag) with password
-    # authentication genuinely removed, not just hidden: the
-    # POST /api/secondfactor/password route (upstream's password
-    # fallback for a passkey login that didn't carry full user
-    # verification) is deleted from internal/server/handlers.go, the
-    # login page's username/password form is gone from
-    # FirstFactorForm.tsx (replaced with a "Sign up" link to
-    # RentShield's own /signup/), and LoginPortal.tsx's second-factor
-    # routing sends an unverified passkey login to a second WebAuthn tap
-    # instead of that now-deleted password screen. See
-    # vendor/authelia/Dockerfile.rentshield for the build and this
-    # session's own notes for the full reasoning -- rebuild with
-    # `docker buildx build -f vendor/authelia/Dockerfile.rentshield -t
-    # rentshield/authelia:custom --load vendor/authelia` (after
-    # temporarily swapping in vendor/authelia/.dockerignore.rentshield,
-    # since the repo's own .dockerignore is written for a different,
-    # packaging-only Dockerfile) whenever vendor/authelia/ changes.
-    # Tradeoff accepted explicitly: an account whose passkey never
-    # achieves user verification (no biometric hardware/PIN-secured
-    # authenticator) can still sign in -- via a second WebAuthn tap --
-    # but can never fall back to a password, ever, on this deployment.
-    image: rentshield/authelia:custom
-    restart: unless-stopped
-    volumes:
-      - ./authelia:/config
-    environment:
-      # Scalar secrets only -- the OIDC signing key + client secret hash
-      # are list-typed config paths _FILE env vars can't address, so
-      # those come from configuration.secrets.yml instead (merged in via
-      # `entrypoint` below).
-      AUTHELIA_SESSION_SECRET_FILE: /config/secrets/session_secret.txt
-      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /config/secrets/reset_password_jwt_secret.txt
-      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /config/secrets/storage_encryption_key.txt
-      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /config/secrets/oidc_hmac_secret.txt
-    entrypoint: ["authelia", "--config=/config/configuration.yml,/config/configuration.secrets.yml"]
-
-  # Fronts `authelia` above (2026-09-15, requested explicitly: remove
-  # "Authelia" branding from its own hosted pages, match RentShield's
-  # look). TLS terminates HERE now (mkcert cert for auth.rentshield.local,
-  # same one Authelia used to hold directly -- see nginx.conf's own
-  # header comment for why a passthrough proxy in front of Authelia's own
-  # TLS couldn't do this). Holds the `auth.rentshield.local` network
-  # alias `authelia` itself used to have -- both the browser-facing LAN
-  # IP and Django's own SOCIALACCOUNT_PROVIDERS server_url hit this
-  # container now, unchanged from the outside (same host:port), just
-  # with Authelia one hop further back.
-  authelia-proxy:
-    image: nginx:alpine
-    restart: unless-stopped
-    depends_on:
-      - authelia
-    ports:
-      - "9091:9091"
-    volumes:
-      - ./authelia/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./authelia/nginx/locales:/etc/nginx/rentshield/locales:ro
-      - ./authelia/nginx/manifest.json:/etc/nginx/rentshield/manifest.json:ro
-      - ./authelia/nginx/rentshield-authelia-theme.css:/etc/nginx/rentshield/rentshield-authelia-theme.css:ro
-      - ./authelia/nginx/rentshield-bridge:/etc/nginx/rentshield/rentshield-bridge:ro
-      - ./authelia/certs:/etc/nginx/certs:ro
-    networks:
-      default:
-        aliases:
-          - auth.rentshield.local
-
   # Fronts the bare Django dev server at app.rentshield.local (2026-09-15)
   # -- see nginx/app-proxy/nginx.conf's own header comment for why this
-  # exists (shares a parent domain with Authelia so its session cookie
-  # can flow same-site).
+  # exists (shares a parent domain with the identity provider so its
+  # session cookie can flow same-site; ZITADEL now, Authelia formerly --
+  # permanently removed 2026-09-22, requested explicitly, "clean up
+  # server space": the `authelia`/`authelia-proxy` services, the
+  # vendored Go fork at vendor/authelia/, and its own config/secrets are
+  # all gone, not paused. Every account that only ever had an Authelia
+  # passkey lost its working sign-in path along with it -- see
+  # signup_email_view's own comment).
   app-proxy:
     image: nginx:alpine
     restart: unless-stopped
@@ -175,6 +126,120 @@ services:
       default:
         aliases:
           - app.rentshield.local
+
+  # ZITADEL: the identity provider (2026-09-22, see /home/giova/.claude/
+  # plans/synchronous-finding-storm.md) -- live since Phase F's cutover,
+  # permanently addressed at zitadel.rentshield.local:9092 (deliberately
+  # not "auth.rentshield.local" -- see zitadel_provisioning.py's
+  # ZITADEL_BRIDGE_URL comment on why moving the domain post-bootstrap
+  # was a real, avoidable risk for zero benefit). Service topology
+  # (zitadel-api + a separate zitadel-login Next.js container + postgres)
+  # and the nginx grpc_pass requirement below are both copied from
+  # ZITADEL's own canonical deploy/compose/docker-compose.yml and
+  # reverseproxy/nginx docs (fetched directly, not guessed) -- Traefik's
+  # path-based routing labels in that reference don't apply here since
+  # this project's own nginx TLS-termination pattern (app-proxy) is
+  # reused instead.
+  zitadel-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zitadel
+      POSTGRES_PASSWORD: ${ZITADEL_DB_PASSWORD:?set in .env}
+      POSTGRES_DB: zitadel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d zitadel -U zitadel"]
+      interval: 10s
+      timeout: 30s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - zitadel-db-data:/var/lib/postgresql/data
+
+  zitadel-api:
+    image: ghcr.io/zitadel/zitadel:latest
+    restart: unless-stopped
+    user: "0"
+    command: start-from-init --masterkey "${ZITADEL_MASTERKEY:?set in .env}"
+    environment:
+      ZITADEL_PORT: 8080
+      ZITADEL_EXTERNALDOMAIN: zitadel.rentshield.local
+      ZITADEL_EXTERNALPORT: 9092
+      ZITADEL_EXTERNALSECURE: "true"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_DATABASE_POSTGRES_DSN: "postgresql://zitadel:${ZITADEL_DB_PASSWORD}@zitadel-db:5432/zitadel?sslmode=disable"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: "Automatically Initialized IAM_LOGIN_CLIENT"
+      # Omitted from the first attempt (2026-09-22) -- confirmed live as
+      # the actual reason no login-client.pat ever landed in the shared
+      # bootstrap volume: the canonical reference compose file sources
+      # this from ${LOGIN_CLIENT_PAT_EXPIRATIONDATE} and never defaults
+      # it, so leaving it unset appears to skip PAT generation entirely
+      # rather than falling back to a sane default.
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: "2030-01-01T00:00:00Z"
+      # Separate general-purpose machine user for zitadel_provisioning.py
+      # (Phase C) -- confirmed via ZITADEL's own cmd/setup/steps.yaml
+      # reference that FirstInstance.Org.Machine (distinct from
+      # .LoginClient above) is a real, fully env-var-addressable section
+      # that also grants IAM_OWNER automatically, same file-writing
+      # mechanism as the login-client PAT. No steps.yaml needed for this.
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: rentshield-provisioner
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: "RentShield Provisioning Automation"
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2030-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/provisioner.pat
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: "https://zitadel.rentshield.local:9092/ui/v2/login/"
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap
+    depends_on:
+      zitadel-db:
+        condition: service_healthy
+
+  zitadel-login:
+    image: ghcr.io/zitadel/zitadel-login:latest
+    restart: unless-stopped
+    user: "0"
+    environment:
+      ZITADEL_API_URL: http://zitadel-api:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      CUSTOM_REQUEST_HEADERS: "Host:zitadel.rentshield.local,X-Forwarded-Proto:https"
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - zitadel-bootstrap:/zitadel/bootstrap:ro
+    depends_on:
+      zitadel-api:
+        condition: service_healthy
+
+  zitadel-proxy:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - zitadel-api
+      - zitadel-login
+    ports:
+      - "9092:9092"
+    volumes:
+      - ./zitadel/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./zitadel/nginx/rentshield-bridge:/etc/nginx/rentshield/rentshield-bridge:ro
+      - ./authelia/certs:/etc/nginx/certs:ro
+    networks:
+      default:
+        aliases:
+          - zitadel.rentshield.local
 
   docling-service:
     build:
@@ -366,3 +431,5 @@ volumes:
   opensign-files:
   jitsi-prosody-config:
   jibri-recordings:
+  zitadel-db-data:
+  zitadel-bootstrap:
