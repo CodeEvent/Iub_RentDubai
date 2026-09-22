@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib import admin
+from django.shortcuts import redirect
 from guardian.admin import GuardedModelAdmin
 from treenode.admin import TreeNodeModelAdmin
 
@@ -10,6 +11,8 @@ from documents.models import Document
 from documents.models import DocumentType
 from documents.models import Note
 from documents.models import PaperlessTask
+from documents.models import RentShieldAdminDashboard
+from documents.models import RentShieldLoginLog
 from documents.models import SavedView
 from documents.models import SavedViewFilterRule
 from documents.models import ShareLink
@@ -234,6 +237,34 @@ class CustomFieldInstancesAdmin(GuardedModelAdmin):
         )
 
 
+class RentShieldLoginLogAdmin(admin.ModelAdmin):
+    list_display = ("user", "timestamp")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class RentShieldAdminDashboardAdmin(admin.ModelAdmin):
+    """See RentShieldAdminDashboard's own docstring -- this entry exists
+    purely to put a normal sidebar/index link on the real dashboard
+    view."""
+
+    def has_module_permission(self, request):
+        return request.user.is_active and request.user.is_staff
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        return redirect("rentshield-admin-dashboard")
+
+
 admin.site.register(Correspondent, CorrespondentAdmin)
 admin.site.register(Tag, TagAdmin)
 admin.site.register(DocumentType, DocumentTypeAdmin)
@@ -242,6 +273,8 @@ admin.site.register(SavedView, SavedViewAdmin)
 admin.site.register(StoragePath, StoragePathAdmin)
 admin.site.register(PaperlessTask, TaskAdmin)
 admin.site.register(Note, NotesAdmin)
+admin.site.register(RentShieldLoginLog, RentShieldLoginLogAdmin)
+admin.site.register(RentShieldAdminDashboard, RentShieldAdminDashboardAdmin)
 admin.site.register(ShareLink, ShareLinksAdmin)
 admin.site.register(ShareLinkBundle, ShareLinkBundleAdmin)
 admin.site.register(CustomField, CustomFieldsAdmin)

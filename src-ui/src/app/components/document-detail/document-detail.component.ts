@@ -24,6 +24,7 @@ import {
   NgbNav,
   NgbNavChangeEvent,
   NgbNavModule,
+  NgbPopoverModule,
 } from '@ng-bootstrap/ng-bootstrap'
 import { dirtyCheck, DirtyComponent } from '@ngneat/dirty-check-forms'
 import { NgxBootstrapIconsModule } from 'ngx-bootstrap-icons'
@@ -192,6 +193,7 @@ interface IncomingDocumentUpdate {
     SafeUrlPipe,
     NgbNavModule,
     NgbDropdownModule,
+    NgbPopoverModule,
     NgxBootstrapIconsModule,
     TextAreaComponent,
     RouterModule,
@@ -1748,6 +1750,42 @@ export class DocumentDetailComponent
     instance: CustomFieldInstance
   ): CustomField {
     return this.customFields()?.find((f) => f.id === instance.field)
+  }
+
+  // RentShield: true only for a notice that requested the Real Notary
+  // Public add-on -- see the Notary Guide page (rentshield/notary-guide)
+  // for the full walkthrough this hint links to. Checked by custom
+  // field name/value already loaded on this document, not by tag id or
+  // a new API call, so this is zero-cost and zero-risk for every other
+  // (non-RentShield) document: no matching field, no hint rendered.
+  public isRentshieldRealNotarization(): boolean {
+    return (this.document()?.custom_fields ?? []).some((instance) => {
+      const field = this.getCustomFieldFromInstance(instance)
+      return field?.name === 'RentShield: Real Notarization Add-on' && instance.value === true
+    })
+  }
+
+  private getRentshieldFieldValue(name: string): unknown {
+    const instance = (this.document()?.custom_fields ?? []).find(
+      (i) => this.getCustomFieldFromInstance(i)?.name === name
+    )
+    return instance?.value
+  }
+
+  // RentShield: true for any RentShield-generated notice, regardless of
+  // which (if any) add-ons it has -- gates the legal-service banners
+  // below without a new API call, same zero-cost/zero-risk shape as
+  // isRentshieldRealNotarization() above.
+  public isRentshieldNotice(): boolean {
+    return this.getRentshieldFieldValue('RentShield: Reason') != null
+  }
+
+  public rentshieldNotaryStatus(): string | null {
+    return (this.getRentshieldFieldValue('RentShield: Notary Public Status') as string) ?? null
+  }
+
+  public rentshieldServedDate(): string | null {
+    return (this.getRentshieldFieldValue('RentShield: Served Date') as string) ?? null
   }
 
   public getCustomFieldError(index: number) {

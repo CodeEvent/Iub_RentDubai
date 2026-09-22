@@ -102,8 +102,14 @@
         </div>
       </div>
 
-      <div class="rs-warning-box mt-3" *ngIf="reasons()[form.value.reason] as r">
-        <i-bs name="exclamation-triangle" class="me-2"></i-bs>{{ r.warning }}
+      <div *ngIf="reasons()[form.value.reason] as r">
+        <div class="rs-warning-box mt-3">
+          <i-bs name="exclamation-triangle" class="me-2"></i-bs>{{ r.warning }}
+        </div>
+        <label class="rs-checkbox-row mt-2">
+          <input type="checkbox" formControlName="reason_requirements_acknowledged" />
+          <span>I confirm the above and take responsibility for meeting it.</span>
+        </label>
       </div>
     </div>
 
@@ -111,11 +117,16 @@
       <h3 class="fs-6 fw-bold mb-3 d-flex align-items-center gap-2">
         <i-bs name="card-checklist" class="text-muted"></i-bs> Add-ons
       </h3>
-      <label class="rs-checkbox-row" *ngFor="let key of ['notarization', 'ai_review']">
+      <label class="rs-checkbox-row" *ngFor="let key of ['certified_esignature', 'ai_review', 'legal_review', 'real_notarization']">
         <input
           type="checkbox"
-          [checked]="key === 'notarization' ? form.value.add_notarization : form.value.add_ai_review"
-          (change)="form.patchValue({ add_notarization: key === 'notarization' ? !form.value.add_notarization : form.value.add_notarization, add_ai_review: key === 'ai_review' ? !form.value.add_ai_review : form.value.add_ai_review })"
+          [checked]="key === 'certified_esignature' ? form.value.add_notarization : key === 'ai_review' ? form.value.add_ai_review : key === 'legal_review' ? form.value.add_legal_review : form.value.add_real_notarization"
+          (change)="form.patchValue({
+            add_notarization: key === 'certified_esignature' ? !form.value.add_notarization : form.value.add_notarization,
+            add_ai_review: key === 'ai_review' ? !form.value.add_ai_review : form.value.add_ai_review,
+            add_legal_review: key === 'legal_review' ? !form.value.add_legal_review : form.value.add_legal_review,
+            add_real_notarization: key === 'real_notarization' ? !form.value.add_real_notarization : form.value.add_real_notarization
+          })"
         />
         <span>
           <strong>Add {{ addOns()[key]?.label }}</strong>
@@ -140,8 +151,8 @@
         (click)="generate()"
       >
         <span class="spinner-border spinner-border-sm" *ngIf="saving()"></span>
-        <i-bs name="file-earmark-plus" *ngIf="!saving()"></i-bs>
-        {{ saving() ? 'Generating…' : 'Generate Notice' }}
+        <i-bs name="credit-card" *ngIf="!saving()"></i-bs>
+        {{ saving() ? 'Processing…' : 'Pay & Generate Notice' }}
       </button>
     </div>
     <p class="text-danger small text-end mb-0" *ngIf="saveError()">{{ saveError() }}</p>
@@ -155,6 +166,18 @@
     Routed to your document vault — real OCR + full-text search, findable
     in Documents like anything else you'd upload.
   </p>
+  <div class="alert alert-warning small text-start mx-auto" style="max-width: 34rem" *ngIf="!form.value.add_real_notarization">
+    <i-bs name="exclamation-triangle" class="me-1"></i-bs>
+    <strong>Not yet legally served.</strong> Generating this notice does not serve it on the
+    tenant. Under Article 25(3) of Law No. (33) of 2008, service must happen via Notary Public,
+    registered mail, or a court bailiff. Add Real Notary Public, or arrange one of those
+    yourself, before treating this notice as served.
+  </div>
+  <div class="alert alert-info small text-start mx-auto" style="max-width: 34rem" *ngIf="form.value.add_real_notarization">
+    <i-bs name="info-circle" class="me-1"></i-bs>
+    <strong>Not yet legally served.</strong> This notice is queued for Real Notary Public
+    fulfillment — you'll be emailed once it has actually been served on the tenant.
+  </div>
   <div class="d-flex justify-content-center gap-2 mt-3">
     <a class="btn btn-outline-secondary" [routerLink]="['/documents', savedId()]">
       <i-bs name="file-text" class="me-1"></i-bs> Open in Documents

@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="description" content="RentShield generates RERA and DLD compliant Dubai tenancy notices -- bilingual, statute-cited, with optional notarization and AI compliance review.">
+  <meta name="description" content="RentShield generates RERA and DLD compliant Dubai tenancy notices -- bilingual, statute-cited, with optional certified e-signature delivery and AI compliance review.">
   <title>RentShield &mdash; Dubai Tenancy Notices, Done Right</title>
   <link href="{% static 'bootstrap.min.css' %}" rel="stylesheet">
   <link href="{% static 'base.css' %}" rel="stylesheet">
@@ -33,10 +33,35 @@
     .rs-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
     .rs-brand-text strong { font-size: 1.05rem; }
     .rs-brand-text span { font-size: .65rem; text-transform: uppercase; letter-spacing: .04em; color: var(--rs-text-muted); }
+    .rs-nav-menu { display: flex; align-items: center; gap: 1.75rem; flex: 1; justify-content: flex-end; }
     .rs-nav-links { display: flex; align-items: center; gap: 1.75rem; }
     .rs-nav-links a:not(.btn) { color: #212529; font-size: .92rem; }
     .rs-nav-links a:not(.btn):hover { color: var(--pngx-primary); }
     .rs-nav-cta { display: flex; align-items: center; gap: .6rem; }
+    .rs-nav-toggle {
+      display: none; width: 44px; height: 44px; align-items: center; justify-content: center;
+      background: none; border: none; font-size: 1.4rem; line-height: 1; cursor: pointer; color: #212529;
+    }
+    /* Below ~768px the nav's brand + links + Log In/Get Started no longer
+       fit on one row (confirmed via real overflow testing at 375-430px --
+       this was the one section on this page with no responsive handling
+       at all, unlike every grid below it). Collapse links + CTA behind a
+       hamburger toggle instead of shrinking everything until it's
+       unreadable. */
+    @media (max-width: 768px) {
+      .rs-nav-toggle { display: flex; }
+      .rs-nav-menu {
+        display: none; position: absolute; top: 100%; left: 0; right: 0;
+        flex-direction: column; align-items: stretch; gap: 0;
+        background: #fff; border-bottom: 1px solid var(--rs-border);
+        padding: .5rem 1.5rem 1rem;
+      }
+      .rs-nav-menu.rs-nav-open { display: flex; }
+      .rs-nav-links { flex-direction: column; align-items: stretch; gap: 0; }
+      .rs-nav-links a:not(.btn) { padding: .75rem 0; border-bottom: 1px solid var(--rs-border); }
+      .rs-nav-cta { flex-direction: column; align-items: stretch; gap: .5rem; margin-top: .75rem; }
+      .rs-nav-cta .btn { padding-top: .65rem; padding-bottom: .65rem; }
+    }
 
     section { padding: 4.5rem 1.5rem; }
     .rs-section-inner { max-width: 1140px; margin: 0 auto; }
@@ -87,8 +112,7 @@
     .rs-step h5 { font-weight: 700; margin-bottom: .4rem; }
     .rs-step p { color: var(--rs-text-muted); font-size: .92rem; }
 
-    .rs-role-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
-    @media (max-width: 1000px) { .rs-role-grid { grid-template-columns: repeat(2, 1fr); } }
+    .rs-role-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; max-width: 560px; }
     @media (max-width: 560px) { .rs-role-grid { grid-template-columns: 1fr; } }
     .rs-role-card {
       border: 1px solid var(--rs-border); border-radius: 10px; padding: 1.1rem; background: #fff;
@@ -123,6 +147,22 @@
       font-size: 1.2rem; font-weight: 700;
     }
 
+    .rs-faq-list { max-width: 800px; }
+    .rs-faq-item {
+      border-bottom: 1px solid var(--rs-border); padding: 1rem 0;
+    }
+    .rs-faq-item summary {
+      cursor: pointer; font-weight: 600; list-style: none; padding: .35rem 1.6rem .35rem 0;
+      position: relative; min-height: 44px; display: flex; align-items: center;
+    }
+    .rs-faq-item summary::-webkit-details-marker { display: none; }
+    .rs-faq-item summary::after {
+      content: '+'; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+      font-size: 1.3rem; font-weight: 400; color: var(--rs-text-muted);
+    }
+    .rs-faq-item[open] summary::after { content: '\2212'; }
+    .rs-faq-item p { color: var(--rs-text-muted); font-size: .92rem; margin: .6rem 0 0; }
+
     .rs-modal-overlay {
       position: fixed; inset: 0; background: rgba(20,32,26,.55);
       align-items: center; justify-content: center; z-index: 100; padding: 1rem;
@@ -136,15 +176,7 @@
       position: absolute; top: .75rem; right: .9rem; border: none; background: none;
       font-size: 1.6rem; line-height: 1; color: var(--rs-text-muted); cursor: pointer;
     }
-    .rs-role-choice-grid { display: grid; gap: .75rem; margin-top: 1.25rem; }
-    .rs-role-choice-card {
-      border: 1px solid var(--rs-border); border-radius: 10px; padding: 1rem 1.1rem; text-align: left;
-      background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: .25rem; width: 100%;
-    }
-    .rs-role-choice-card:hover { border-color: var(--pngx-primary); background: var(--rs-green-tint); }
-    .rs-role-choice-card strong { font-size: 1rem; }
-    .rs-role-choice-card span { font-size: .82rem; color: var(--rs-text-muted); }
-    .rs-modal-tabs { display: flex; gap: 1.5rem; border-bottom: 1px solid var(--rs-border); margin-bottom: 1.1rem; }
+    .rs-modal-tabs { display: flex; flex-wrap: wrap; row-gap: .4rem; column-gap: 1.2rem; border-bottom: 1px solid var(--rs-border); margin-bottom: 1.1rem; }
     .rs-modal-tab {
       border: none; background: none; padding: .5rem 0; font-weight: 600; color: var(--rs-text-muted);
       border-bottom: 2px solid transparent; cursor: pointer; font-size: .92rem;
@@ -152,8 +184,6 @@
     .rs-modal-tab.active { color: var(--pngx-primary); border-bottom-color: var(--pngx-primary); }
     .rs-modal-field { margin-bottom: .8rem; }
     .rs-modal-field label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: .3rem; }
-    .rs-modal-back { background: none; border: none; color: var(--rs-text-muted); font-size: .85rem; padding: 0; margin-bottom: .75rem; cursor: pointer; }
-    .rs-modal-back:hover { color: var(--pngx-primary); }
 
     footer.rs-footer { background: #14201a; color: #b9c4bd; padding: 3rem 1.5rem 1.5rem; }
     .rs-footer-inner { max-width: 1140px; margin: 0 auto; }
@@ -176,15 +206,19 @@
           <span>by Paperless-ngx</span>
         </span>
       </a>
-      <div class="rs-nav-links">
-        <a href="#how-it-works">How it works</a>
-        <a href="#roles">Who it's for</a>
-        <a href="#applicable-law">Applicable Law</a>
-        <a href="#pricing">Pricing</a>
-      </div>
-      <div class="rs-nav-cta">
-        <a class="btn btn-outline-secondary btn-sm" href="/accounts/login/">Log In</a>
-        <a class="btn btn-primary btn-sm" href="/accounts/signup/">Get Started</a>
+      <button type="button" class="rs-nav-toggle" id="rsNavToggleBtn" onclick="rsToggleNavMenu()" aria-label="Menu" aria-expanded="false" aria-controls="rsNavMenu">&#9776;</button>
+      <div class="rs-nav-menu" id="rsNavMenu">
+        <div class="rs-nav-links">
+          <a href="#how-it-works">How it works</a>
+          <a href="#roles">Who it's for</a>
+          <a href="#applicable-law">Applicable Law</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#faq">FAQ</a>
+        </div>
+        <div class="rs-nav-cta">
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'rentshield-signup-start' %}">Log In</a>
+          <a class="btn btn-primary btn-sm" href="{% url 'rentshield-signup-start' %}">Get Started</a>
+        </div>
       </div>
     </div>
   </nav>
@@ -201,8 +235,12 @@
           is stored as a real, searchable, permission-controlled document, not a one-off PDF you
           have to track yourself.
         </p>
+        <p class="rs-lead" style="font-weight:600;">
+          AED {{ base_price_aed }} to generate your notice, AED {{ add_ons.certified_esignature.price_aed }} to serve it
+          through certified e-signature &mdash; no subscription required.
+        </p>
         <div class="rs-nav-cta">
-          <a class="btn btn-primary btn-lg" href="/accounts/signup/">Get Started</a>
+          <a class="btn btn-primary btn-lg" href="{% url 'rentshield-signup-start' %}">Get Started</a>
           <a class="btn btn-link" href="#how-it-works">See how it works &rarr;</a>
         </div>
         <div class="rs-trustline">
@@ -231,7 +269,7 @@
           <div class="rs-mock-field mb-2">Tenant name, unit, Ejari No.&hellip;</div>
           <div class="rs-mock-field">Notice date</div>
         </div>
-        <button type="button" class="btn btn-primary rs-mock-cta" onclick="rsOpenAuthModal()">Generate Notice</button>
+        <a class="btn btn-primary rs-mock-cta" href="{% url 'rentshield-signup-start' %}">Generate Notice</a>
         <p class="rs-mock-caption">Register or sign in to generate a real, signed notice for your property.</p>
       </div>
     </div>
@@ -263,8 +301,8 @@
         </div>
         <div class="rs-step">
           <div class="rs-step-num">3</div>
-          <h5>Notarize &amp; review, optionally</h5>
-          <p>Route the notice through a licensed notary for physical notarization, or run an AI
+          <h5>Certify &amp; review, optionally</h5>
+          <p>Route the notice through a certified e-signature and delivery workflow, or run an AI
             compliance review against an uploaded tenancy contract to flag clauses that fall short
             of Article 25 before you rely on them.</p>
         </div>
@@ -277,27 +315,15 @@
       <span class="rs-eyebrow">Who it's for</span>
       <h2 class="rs-h2">Access scoped to who someone actually is</h2>
       <p class="rs-section-lead">
-        RentShield's roles aren't a UI label &mdash; they're enforced on every document, by
-        paperless-ngx's own permission system. A Property Owner sees the notices they generated;
-        a Notary only sees notices once notarization is actually requested; a Lawyer only sees
-        sensitive-reason notices; nobody sees more than their role allows by default.
+        RentShield keeps this simple: a Property Owner sees only the notices they generated,
+        enforced on every document by paperless-ngx's own permission system &mdash; not a UI label.
+        Certified E-Signature and Legal Review are add-ons you request per notice, handled
+        automatically or by our team, not separate logins.
       </p>
       <div class="rs-role-grid">
         <div class="rs-role-card">
           <h6>Property Owner</h6>
-          <p>Generates notices, requests notarization, sees the notices they created.</p>
-        </div>
-        <div class="rs-role-card">
-          <h6>Tenant</h6>
-          <p>Views the notice(s) served to them, once granted access to that specific notice.</p>
-        </div>
-        <div class="rs-role-card">
-          <h6>Notary</h6>
-          <p>Sees a notice automatically once notarization is requested on it, to process it.</p>
-        </div>
-        <div class="rs-role-card">
-          <h6>Lawyer</h6>
-          <p>Sees sensitive-reason notices (personal use, demolition, renovation) for legal review.</p>
+          <p>Generates notices, requests certified e-signature or legal review, sees the notices they created.</p>
         </div>
         <div class="rs-role-card">
           <h6>Admin</h6>
@@ -330,7 +356,7 @@
   <section id="pricing">
     <div class="rs-section-inner">
       <span class="rs-eyebrow">Pricing</span>
-      <h2 class="rs-h2">One notice fee, two optional add-ons</h2>
+      <h2 class="rs-h2">One notice fee, a few optional add-ons</h2>
       <p class="rs-section-lead">No subscriptions, no per-seat pricing &mdash; pay for what you generate.</p>
       <div class="rs-pricing-grid">
         <div class="rs-price-card rs-price-base">
@@ -340,7 +366,7 @@
             real document in your paperless-ngx instance.</p>
         </div>
         {% for key, addon in add_ons.items %}
-        <div class="rs-price-card">
+        <div class="rs-price-card"{% if addon.available == False %} style="opacity:.6;"{% endif %}>
           <h6 class="text-uppercase text-muted" style="font-size:.78rem;letter-spacing:.04em;">{{ addon.label }}</h6>
           <div class="rs-price-amount">+AED {{ addon.price_aed }}</div>
           <p class="rs-price-desc">{{ addon.description }}</p>
@@ -377,6 +403,127 @@
     </div>
   </section>
 
+  <section id="faq" class="rs-alt">
+    <div class="rs-section-inner">
+      <span class="rs-eyebrow">FAQ</span>
+      <h2 class="rs-h2">Common questions about eviction notices in Dubai</h2>
+      <div class="rs-faq-list">
+        <details class="rs-faq-item">
+          <summary>Is RentShield RERA compliant?</summary>
+          <p>Yes. Every notice cites UAE Federal Law No. (33) of 2008 (Amending Law No. (26) of
+            2007 Regulating the Relationship Between Landlords and Tenants in the Emirate of
+            Dubai) and the specific Article 25 provision it relies on &mdash; the same statute
+            RERA and the Rental Dispute Settlement Centre (RDSC) enforce.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>How long is the eviction notice period in Dubai?</summary>
+          <p>It depends on the reason. Selling the property, personal use/recovery, demolition,
+            or extensive renovation require a 12-month (365-day) notice under Article 25(2),
+            served before the current contract's expiry. Non-payment of rent or unauthorized
+            subleasing only require 30 days under Article 25(1). RentShield picks the correct
+            period automatically from the reason you select.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>Does an eviction notice need to be notarized?</summary>
+          <p>Article 25(3) requires the notice to be served through one of three specific
+            channels: a Notary Public, registered mail with acknowledgment of receipt, or a
+            court bailiff &mdash; a WhatsApp message, plain email, or verbal notice doesn't
+            satisfy the law, however clearly it communicates intent. RentShield's optional
+            Certified E-Signature add-on (AED {{ add_ons.certified_esignature.price_aed }}) routes
+            your notice through a certified signing and delivery workflow after you generate it.
+            The Real Notary Public add-on (AED {{ add_ons.real_notarization.price_aed }}) goes
+            further &mdash; an actual licensed UAE notary, not just certified e-signature &mdash;
+            fulfilled by a real notary-services contact rather than an instant API, so it takes
+            longer than the other add-ons but produces a genuinely notarized copy.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>How much does an eviction notice cost in Dubai with RentShield?</summary>
+          <p>AED {{ base_price_aed }} to generate a bilingual, statute-cited notice &mdash; no
+            subscription required. Add Certified E-Signature (AED {{ add_ons.certified_esignature.price_aed }}),
+            AI Compliance Review (AED {{ add_ons.ai_review.price_aed }}), or Legal Review
+            (AED {{ add_ons.legal_review.price_aed }}) only if you need them.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>Do I need to go to court or file with Dubai Land Department to serve a notice?</summary>
+          <p>No &mdash; serving the notice itself doesn't require a court filing. If the tenant
+            doesn't comply once the notice period ends, the next step is filing a case at
+            Dubai's Rental Dispute Settlement Centre (RDSC), not the courts directly. RentShield's
+            Legal Skills library (available once you're signed in) covers the specific RDSC
+            filing requirements.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>Can I generate and serve an eviction notice online?</summary>
+          <p>You can generate it online in minutes &mdash; a real bilingual PDF with the correct
+            statutory citations and notice period, stored as a searchable document. Serving it
+            still has to go through one of the three channels Article 25(3) recognizes (see
+            above), which is exactly why the Certified E-Signature add-on exists &mdash; to route
+            an online-generated notice through a certified delivery workflow rather than leaving
+            you to arrange that separately.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>Do you provide an eviction notice template?</summary>
+          <p>Not a static template you fill in yourself &mdash; RentShield generates the actual
+            bilingual (English/Arabic) notice from your specific details, picks the correct
+            statutory or breach notice period automatically, and cites the exact Article 25
+            provision it relies on. It's stored as a real, searchable document, not a one-off
+            file you have to track.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>What is the process to serve an eviction notice in Dubai?</summary>
+          <p>Three steps, matching how RentShield generates it: pick the reason (which determines
+            whether it's a 12-month statutory notice under Article 25(2) or a 30-day breach
+            notice under Article 25(1)); generate the bilingual, statute-cited notice; then serve
+            it through one of the three channels Article 25(3) recognizes &mdash; Notary Public,
+            registered mail with acknowledgment of receipt, or court bailiff.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>What are the valid reasons for a landlord to evict a tenant in Dubai?</summary>
+          <p>Under Article 25(2), four reasons qualify for the 12-month notice: selling the
+            property, personal use/recovery, demolition, or extensive renovation. Under Article
+            25(1), two reasons qualify for the 30-day notice: non-payment of rent or unauthorized
+            subleasing. RentShield's notice form only offers these six statutory reasons &mdash;
+            nothing else.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>Can a tenant dispute or challenge an eviction notice in Dubai?</summary>
+          <p>Yes &mdash; a tenant can challenge a notice at Dubai's Rental Dispute Settlement
+            Centre (RDSC), the body that enforces Article 25. RentShield's Legal Skills library
+            (available once you're signed in) covers what's typically needed for an RDSC filing,
+            from either side.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>What happens if a landlord doesn't follow the correct eviction procedure?</summary>
+          <p>A notice served the wrong way &mdash; the wrong period for the reason given, or
+            through a method Article 25(3) doesn't recognize &mdash; risks being unenforceable if
+            it's disputed at the RDSC. That's the specific gap RentShield closes: the period and
+            service-method guidance are tied directly to the reason and the statute, not left for
+            you to work out.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>Is there a 90-day eviction notice in Dubai?</summary>
+          <p>Not under Law No. (33) of 2008's Article 25, the statute RentShield implements
+            &mdash; the two periods that exist there are 30 days (Article 25(1)) and 12 months
+            /365 days (Article 25(2)); there's no separate 90-day eviction category. If you've
+            seen "90 days" mentioned elsewhere, double-check whether it's actually describing a
+            different process (e.g. a rent-increase notice) rather than an eviction notice &mdash;
+            RentShield generates eviction notices only, and none of this is legal advice.</p>
+        </details>
+        <details class="rs-faq-item">
+          <summary>What's the difference between "Certified E-Signature" and registered mail?</summary>
+          <p>Article 25(3) treats them as two separate, independently valid channels &mdash;
+            you only need one. RentShield's Certified E-Signature add-on routes your notice
+            through a certified e-signature and delivery workflow; registered mail with
+            acknowledgment of receipt is the other route Article 25(3) names, typically sent
+            through Emirates Post's registered mail/registered digital communication service
+            (TRA-accredited, produces a legally admissible delivery certificate). RentShield
+            doesn't currently dispatch registered mail directly on your behalf &mdash; if you'd
+            rather go that route, generate your notice here and send it through Emirates Post
+            yourself.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
   <footer class="rs-footer">
     <div class="rs-footer-inner">
       <div class="rs-footer-grid">
@@ -404,6 +551,7 @@
           <a href="#applicable-law">Applicable Law</a>
           <a href="#roles">Who it's for</a>
           <a href="#pricing">Pricing</a>
+          <a href="#faq">FAQ</a>
         </div>
       </div>
       <div class="rs-footer-bottom">
@@ -413,104 +561,15 @@
     </div>
   </footer>
 
-  <div id="rsAuthModal" class="rs-modal-overlay" hidden>
-    <div class="rs-modal" role="dialog" aria-modal="true" aria-labelledby="rsModalTitle">
-      <button type="button" class="rs-modal-close" onclick="rsCloseAuthModal()" aria-label="Close">&times;</button>
-
-      <div id="rsStepRole">
-        <h3 id="rsModalTitle" style="font-size:1.3rem;">Generate a Notice</h3>
-        <p class="text-muted small mb-0">First, tell us who you are.</p>
-        <div class="rs-role-choice-grid">
-          <button type="button" class="rs-role-choice-card" onclick="rsChooseRole('Property Owner')">
-            <strong>Property Owner</strong>
-            <span>I own or manage a rental property and need to serve a notice.</span>
-          </button>
-          <button type="button" class="rs-role-choice-card" onclick="rsChooseRole('Tenant')">
-            <strong>Tenant</strong>
-            <span>I've received, or expect to receive, a notice from my landlord.</span>
-          </button>
-        </div>
-      </div>
-
-      <div id="rsStepAuth" hidden>
-        <button type="button" class="rs-modal-back" onclick="rsBackToRole()">&larr; Back</button>
-        <div class="rs-modal-tabs">
-          <button type="button" class="rs-modal-tab active" id="rsTabSignup" onclick="rsSwitchTab('signup')">Sign Up</button>
-          <button type="button" class="rs-modal-tab" id="rsTabLogin" onclick="rsSwitchTab('login')">Log In</button>
-        </div>
-
-        <form id="rsSignupForm" method="POST" action="/accounts/signup/">
-          {% csrf_token %}
-          <input type="hidden" name="next" value="/">
-          <input type="hidden" name="role" id="rsSignupRole" value="Property Owner">
-          <p class="small text-muted mb-3">Signing up as <strong id="rsSignupRoleLabel">Property Owner</strong>.</p>
-          <div class="rs-modal-field">
-            <label for="rsSuUsername">Username</label>
-            <input type="text" name="username" id="rsSuUsername" class="form-control" required>
-          </div>
-          <div class="rs-modal-field">
-            <label for="rsSuEmail">Email</label>
-            <input type="email" name="email" id="rsSuEmail" class="form-control">
-          </div>
-          <div class="rs-modal-field">
-            <label for="rsSuPassword1">Password</label>
-            <input type="password" name="password1" id="rsSuPassword1" class="form-control" required>
-          </div>
-          <div class="rs-modal-field">
-            <label for="rsSuPassword2">Password (again)</label>
-            <input type="password" name="password2" id="rsSuPassword2" class="form-control" required>
-          </div>
-          <button type="submit" class="btn btn-primary w-100 mt-2">Create account</button>
-        </form>
-
-        <form id="rsLoginForm" method="POST" action="/accounts/login/" hidden>
-          {% csrf_token %}
-          <input type="hidden" name="next" value="/">
-          <div class="rs-modal-field">
-            <label for="rsLiLogin">Username or email</label>
-            <input type="text" name="login" id="rsLiLogin" class="form-control" required>
-          </div>
-          <div class="rs-modal-field">
-            <label for="rsLiPassword">Password</label>
-            <input type="password" name="password" id="rsLiPassword" class="form-control" required>
-          </div>
-          <button type="submit" class="btn btn-primary w-100 mt-2">Log in</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
   <script>
-    function rsOpenAuthModal() {
-      document.getElementById('rsAuthModal').hidden = false;
-      document.getElementById('rsStepRole').hidden = false;
-      document.getElementById('rsStepAuth').hidden = true;
+    function rsToggleNavMenu() {
+      var menu = document.getElementById('rsNavMenu');
+      var btn = document.getElementById('rsNavToggleBtn');
+      var isOpen = menu.classList.toggle('rs-nav-open');
+      btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
-    function rsCloseAuthModal() {
-      document.getElementById('rsAuthModal').hidden = true;
-    }
-    function rsChooseRole(role) {
-      document.getElementById('rsSignupRole').value = role;
-      document.getElementById('rsSignupRoleLabel').textContent = role;
-      document.getElementById('rsStepRole').hidden = true;
-      document.getElementById('rsStepAuth').hidden = false;
-    }
-    function rsBackToRole() {
-      document.getElementById('rsStepRole').hidden = false;
-      document.getElementById('rsStepAuth').hidden = true;
-    }
-    function rsSwitchTab(tab) {
-      var isSignup = tab === 'signup';
-      document.getElementById('rsSignupForm').hidden = !isSignup;
-      document.getElementById('rsLoginForm').hidden = isSignup;
-      document.getElementById('rsTabSignup').classList.toggle('active', isSignup);
-      document.getElementById('rsTabLogin').classList.toggle('active', !isSignup);
-    }
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') rsCloseAuthModal();
-    });
-    document.getElementById('rsAuthModal').addEventListener('click', function (e) {
-      if (e.target === this) rsCloseAuthModal();
+    document.getElementById('rsNavMenu').addEventListener('click', function (e) {
+      if (e.target.tagName === 'A') rsToggleNavMenu();
     });
   </script>
 

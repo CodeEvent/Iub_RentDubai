@@ -9,7 +9,7 @@ import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { BrowserModule } from '@angular/platform-browser'
 import { ActivatedRoute, Router } from '@angular/router'
 import { RouterTestingModule } from '@angular/router/testing'
-import { NgbModal, NgbModalModule, NgbModule } from '@ng-bootstrap/ng-bootstrap'
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap'
 import { NgxBootstrapIconsModule, allIcons } from 'ngx-bootstrap-icons'
 import { provideUiTour } from 'ngx-ui-tour-ng-bootstrap'
 import { of, throwError } from 'rxjs'
@@ -34,7 +34,6 @@ import { SettingsService } from 'src/app/services/settings.service'
 import { TasksService } from 'src/app/services/tasks.service'
 import { ToastService } from 'src/app/services/toast.service'
 import { environment } from 'src/environments/environment'
-import { ProfileEditDialogComponent } from '../common/profile-edit-dialog/profile-edit-dialog.component'
 import { DocumentDetailComponent } from '../document-detail/document-detail.component'
 import { AppFrameComponent } from './app-frame.component'
 import { GlobalSearchComponent } from './global-search/global-search.component'
@@ -91,7 +90,6 @@ describe('AppFrameComponent', () => {
   let openDocumentsService: OpenDocumentsService
   let router: Router
   let savedViewSpy
-  let modalService: NgbModal
   let maybeRefreshSpy
   let tasksService: TasksService
 
@@ -104,7 +102,6 @@ describe('AppFrameComponent', () => {
         FormsModule,
         ReactiveFormsModule,
         DragDropModule,
-        NgbModalModule,
         NgxBootstrapIconsModule.pick(allIcons),
         AppFrameComponent,
         IfPermissionsDirective,
@@ -138,7 +135,6 @@ describe('AppFrameComponent', () => {
         DjangoMessagesService,
         OpenDocumentsService,
         SearchService,
-        NgbModal,
         {
           provide: ActivatedRoute,
           useValue: {
@@ -169,7 +165,6 @@ describe('AppFrameComponent', () => {
     toastService = TestBed.inject(ToastService)
     messagesService = TestBed.inject(DjangoMessagesService)
     openDocumentsService = TestBed.inject(OpenDocumentsService)
-    modalService = TestBed.inject(NgbModal)
     router = TestBed.inject(Router)
     tasksService = TestBed.inject(TasksService)
 
@@ -431,15 +426,6 @@ describe('AppFrameComponent', () => {
       SavedView[]
     >)
     expect(toastSpy).toHaveBeenCalled()
-  })
-
-  it('should support edit profile', () => {
-    const modalSpy = jest.spyOn(modalService, 'open')
-    component.editProfile()
-    expect(modalSpy).toHaveBeenCalledWith(ProfileEditDialogComponent, {
-      backdrop: 'static',
-      size: 'xl',
-    })
   })
 
   it('should show toasts for django messages', () => {

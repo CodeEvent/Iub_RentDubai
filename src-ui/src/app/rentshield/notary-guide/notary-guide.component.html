@@ -1,0 +1,198 @@
+<p class="text-muted small mb-4" style="max-width: 46rem">
+  How to fulfill a "Real Notary Public" request &mdash; what RentShield automates, and
+  what you do by hand for the actual notarization. This page is the always-available
+  reference; the guided walkthrough (top right, or replay any time) points at the same
+  steps below. Click the <i-bs name="info-circle" class="mx-1"></i-bs> on any step for
+  more detail.
+</p>
+
+<div class="rs-panel mb-3" tourAnchor="tour.rentshield-notary-guide-intro" style="max-width: 46rem">
+  <div class="rs-panel-body">
+    <div class="fw-bold mb-1 d-flex align-items-center gap-2">
+      <i-bs name="info-circle"></i-bs>What this role is
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0 rs-step-info"
+        ngbPopover="RentShield deliberately has no bespoke screen for this -- Property Owner, Admin, and Notary Public all share the same document editor paperless-ngx already has. That's not a missing feature: it avoids the per-document object-permission-grant machinery that used to be this project's biggest source of real bugs, back when there was a dedicated Lawyer role. You get exactly two outcomes to choose from later: completed or rejected -- nothing in between, and nothing here escalates or expires automatically."
+        popoverTitle="Why there's no dedicated screen"
+        triggers="click"
+        container="body"
+        placement="right"
+        autoClose="outside"
+      >
+        <i-bs name="question-circle"></i-bs>
+      </button>
+    </div>
+    <p class="small text-muted mb-0">
+      When a landlord selects the "Real Notary Public" add-on, RentShield tags their
+      notice <span class="badge rs-badge-notarized">Awaiting Notary Public</span> and
+      emails you. There is no UAE notary that exposes an API today, so everything past
+      that email is you &mdash; you notarize it the same way you always have, then record
+      the result back onto the notice yourself. RentShield doesn't have a special screen
+      for this: you do it all in paperless-ngx's normal document editor, the same one used
+      for every other document here.
+    </p>
+  </div>
+</div>
+
+<div class="rs-panel mb-3" tourAnchor="tour.rentshield-notary-guide-queue" style="max-width: 46rem">
+  <div class="rs-panel-body">
+    <div class="fw-bold mb-1 d-flex align-items-center gap-2">
+      <i-bs name="inbox"></i-bs>1. Find notices waiting on you
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0 rs-step-info"
+        ngbPopover="Nothing chases you if a notice sits here -- there's no auto-escalation or deadline on this step today, so the queue is purely a worklist, not an SLA. Oldest-first sorting is deliberate: it's the fairest default for a first-come queue, but you can re-sort the document list however you like once you're in it."
+        popoverTitle="What happens if I don't act yet"
+        triggers="click"
+        container="body"
+        placement="right"
+        autoClose="outside"
+      >
+        <i-bs name="question-circle"></i-bs>
+      </button>
+    </div>
+    <p class="small text-muted mb-2">
+      Every notice tagged "Awaiting Notary Public" hasn't been handled yet, oldest first.
+      You can also find this list under Saved Views as "RentShield: Notary Public Queue".
+    </p>
+    <a
+      class="btn btn-sm btn-outline-success"
+      *ngIf="awaitingNotaryTagId() as tagId; else queueLinkLoading"
+      [routerLink]="['/documents']"
+      [queryParams]="{ tags__id__in: tagId, sort: 'added' }"
+    >
+      <i-bs name="arrow-right" class="me-1"></i-bs> Open the queue
+    </a>
+    <ng-template #queueLinkLoading>
+      <button class="btn btn-sm btn-outline-success" disabled>
+        <i-bs name="arrow-right" class="me-1"></i-bs> Open the queue
+      </button>
+    </ng-template>
+  </div>
+</div>
+
+<div class="rs-panel mb-3" tourAnchor="tour.rentshield-notary-guide-read" style="max-width: 46rem">
+  <div class="rs-panel-body">
+    <div class="fw-bold mb-1 d-flex align-items-center gap-2">
+      <i-bs name="file-text"></i-bs>2. Open one and read it
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0 rs-step-info"
+        ngbPopover="You're reading, not editing, at this step -- landlord name, tenant name, reason, and notice date all came from what the landlord typed when they generated the notice. If something looks wrong (a typo, a name that doesn't match), don't correct it yourself: flag it to an admin rather than editing someone else's notice, since the notarized copy you'll attach later needs to match what was actually served."
+        popoverTitle="What NOT to do here"
+        triggers="click"
+        container="body"
+        placement="right"
+        autoClose="outside"
+      >
+        <i-bs name="question-circle"></i-bs>
+      </button>
+    </div>
+    <p class="small text-muted mb-0">
+      Landlord, tenant, reason, and notice date are already on the notice as fields &mdash;
+      no separate form to fill in. Open the notice like any other document to see them.
+    </p>
+  </div>
+</div>
+
+<div class="rs-panel mb-3" tourAnchor="tour.rentshield-notary-guide-notarize" style="max-width: 46rem">
+  <div class="rs-panel-body">
+    <div class="fw-bold mb-1 d-flex align-items-center gap-2">
+      <i-bs name="pencil"></i-bs>3. Do the physical notarization
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0 rs-step-info"
+        ngbPopover="This is the one step with nothing to click in the app at all -- no timer, no status to update yet. Take whatever time the real process actually needs; RentShield only picks back up once you come back and touch the notice again in step 5."
+        popoverTitle="Nothing to do in-app here"
+        triggers="click"
+        container="body"
+        placement="right"
+        autoClose="outside"
+      >
+        <i-bs name="question-circle"></i-bs>
+      </button>
+    </div>
+    <p class="small text-muted mb-0">
+      Outside the app, exactly as before this existed &mdash; this step is entirely yours.
+    </p>
+  </div>
+</div>
+
+<div class="rs-panel mb-3" tourAnchor="tour.rentshield-notary-guide-upload" style="max-width: 46rem">
+  <div class="rs-panel-body">
+    <div class="fw-bold mb-1 d-flex align-items-center gap-2">
+      <i-bs name="box-arrow-up"></i-bs>4. Upload the stamped copy
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0 rs-step-info"
+        ngbPopover="This upload becomes its own brand-new document, completely separate from the original notice -- it isn't automatically connected to anything yet. That's what step 5 is for. Give it a title you'll recognize (e.g. the tenant's name) so you can find it again in the next step's document picker."
+        popoverTitle="What this upload actually creates"
+        triggers="click"
+        container="body"
+        placement="right"
+        autoClose="outside"
+      >
+        <i-bs name="question-circle"></i-bs>
+      </button>
+    </div>
+    <p class="small text-muted mb-0">
+      Drag the scanned/stamped notarized PDF anywhere in this app to upload it as its own
+      new document, the same way any document gets added here.
+    </p>
+  </div>
+</div>
+
+<div class="rs-panel mb-3" tourAnchor="tour.rentshield-notary-guide-record" style="max-width: 46rem">
+  <div class="rs-panel-body">
+    <div class="fw-bold mb-1 d-flex align-items-center gap-2">
+      <i-bs name="link"></i-bs>5. Record it on the original notice
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0 rs-step-info"
+        ngbPopover="Linking via &quot;RentShield: Notarized Copy&quot; creates a real, two-way connection between the two documents -- anyone opening the original notice later can jump straight to the notarized copy, and vice versa. Choosing &quot;rejected&quot; doesn't undo anything or notify the landlord automatically today -- write the actual reason in Notary Notes so whoever follows up knows what to fix."
+        popoverTitle="What linking actually does"
+        triggers="click"
+        container="body"
+        placement="right"
+        autoClose="outside"
+      >
+        <i-bs name="question-circle"></i-bs>
+      </button>
+    </div>
+    <p class="small text-muted mb-0">
+      Back on the original notice's edit view, under Custom Fields: link your upload via
+      <strong>RentShield: Notarized Copy</strong>, and fill in
+      <strong>RentShield: Notary Reference No.</strong> Set
+      <strong>RentShield: Notary Public Status</strong> to <code>completed</code> &mdash;
+      or <code>rejected</code> with a note in <strong>RentShield: Notary Notes</strong> if
+      it couldn't be done.
+    </p>
+  </div>
+</div>
+
+<div class="rs-panel mb-3" tourAnchor="tour.rentshield-notary-guide-tag" style="max-width: 46rem">
+  <div class="rs-panel-body">
+    <div class="fw-bold mb-1 d-flex align-items-center gap-2">
+      <i-bs name="check-circle"></i-bs>6. Mark it done
+      <button
+        type="button"
+        class="btn btn-sm btn-link p-0 rs-step-info"
+        ngbPopover="This is the step that actually takes it off your queue -- the tag swap is what the &quot;Awaiting Notary Public&quot; filter looks for, so forgetting it leaves the notice stuck showing as pending even though you finished it. On the landlord's own Notices list, their status badge updates to reflect what you set here -- that's the only signal they get today, there's no separate completion email yet."
+        popoverTitle="What the landlord actually sees"
+        triggers="click"
+        container="body"
+        placement="right"
+        autoClose="outside"
+      >
+        <i-bs name="question-circle"></i-bs>
+      </button>
+    </div>
+    <p class="small text-muted mb-0">
+      Swap the notice's tag: remove <span class="badge rs-badge-notarized">Awaiting
+      Notary Public</span>, add <span class="badge rs-badge-ai">Notary Public
+      Completed</span> (or <span class="badge" style="background:#fee2e2;color:#991b1b">Notary
+      Public Rejected</span>). That's what moves it off your queue.
+    </p>
+  </div>
+</div>

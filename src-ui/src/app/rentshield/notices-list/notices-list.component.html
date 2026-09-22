@@ -73,14 +73,22 @@
           </td>
           <td>
             <span
-              class="badge"
+              class="badge me-1"
               *ngIf="n.add_notarization"
               [class.rs-badge-notarized]="n.esign_status !== 'completed'"
               [class.rs-badge-ai]="n.esign_status === 'completed'"
             >
-              {{ n.esign_status ? ('Notarized · ' + n.esign_status) : 'Notarization due' }}
+              {{ n.esign_status ? ('E-Signed · ' + n.esign_status) : 'E-Signature due' }}
             </span>
-            <span class="text-muted small" *ngIf="!n.add_notarization">&mdash;</span>
+            <span
+              class="badge"
+              *ngIf="n.add_real_notarization"
+              [class.rs-badge-notarized]="n.notary_status !== 'completed'"
+              [class.rs-badge-ai]="n.notary_status === 'completed'"
+            >
+              {{ n.notary_status === 'completed' ? 'Notarized' : n.notary_status === 'rejected' ? 'Notarization rejected' : 'Awaiting Notary Public' }}
+            </span>
+            <span class="text-muted small" *ngIf="!n.add_notarization && !n.add_real_notarization">&mdash;</span>
           </td>
           <td class="text-end fw-bold">{{ n.total_price_aed }} AED</td>
         </tr>

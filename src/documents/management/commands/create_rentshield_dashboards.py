@@ -7,10 +7,15 @@ from documents.models import SavedViewFilterRule
 from documents.models import Tag
 from documents.models import UiSettings
 from documents.rentshield.custom_fields import AI_REVIEWED_TAG_NAME
+from documents.rentshield.custom_fields import AWAITING_NOTARY_PUBLIC_TAG_NAME
+from documents.rentshield.custom_fields import BEING_NOTARIZED_TAG_NAME
 from documents.rentshield.custom_fields import NEEDS_AI_REVIEW_TAG_NAME
+from documents.rentshield.custom_fields import PENDING_REVIEW_TAG_NAME
 from documents.rentshield.custom_fields import RENTSHIELD_TAG_NAME
 from documents.rentshield.custom_fields import TENANCY_CONTRACT_TAG_NAME
 from documents.rentshield.custom_fields import key_to_id_map
+from documents.rentshield.custom_fields import notarization_pending_query as _shared_notarization_pending_query
+from documents.rentshield.custom_fields import old_buggy_notarization_pending_query as _shared_old_buggy_notarization_pending_query
 
 User = get_user_model()
 
@@ -25,7 +30,7 @@ RULE_CUSTOM_FIELDS_QUERY = 42
 
 class Command(BaseCommand):
     help = (
-        "Idempotently creates 8 RentShield paperless-ngx Saved Views "
+        "Idempotently creates 10 RentShield paperless-ngx Saved Views "
         "(see README.md 'Dashboards' section) and pins them to show on "
         "the Dashboard/sidebar for every existing superuser -- "
         "paperless-ngx's own dashboard-widget mechanism, no custom "
@@ -55,6 +60,9 @@ class Command(BaseCommand):
         needs_ai_review_tag = Tag.objects.filter(name=NEEDS_AI_REVIEW_TAG_NAME).first()
         ai_reviewed_tag = Tag.objects.filter(name=AI_REVIEWED_TAG_NAME).first()
         tenancy_contract_tag = Tag.objects.filter(name=TENANCY_CONTRACT_TAG_NAME).first()
+        pending_review_tag = Tag.objects.filter(name=PENDING_REVIEW_TAG_NAME).first()
+        being_notarized_tag = Tag.objects.filter(name=BEING_NOTARIZED_TAG_NAME).first()
+        awaiting_notary_tag = Tag.objects.filter(name=AWAITING_NOTARY_PUBLIC_TAG_NAME).first()
         if not rentshield_tag:
             self.stderr.write(
                 self.style.ERROR(
@@ -68,33 +76,15 @@ class Command(BaseCommand):
         def reason_query(keys):
             return json.dumps([reason_field, "in", keys])
 
+        # See documents/rentshield/custom_fields.py's
+        # notarization_pending_query() docstring for why `exists: False`,
+        # not `isnull: True` -- shared with create_rentshield_workflows.py,
+        # which needs the identical query for its Workflow trigger.
         def notarization_pending_query():
-            # `exists: False`, not `isnull: True` -- see the matching
-            # comment in create_rentshield_workflows.py's
-            # notarization_pending_query() for why: `isnull` only matches
-            # a CustomFieldInstance row whose value is SQL NULL, which
-            # never happens here, so it silently matched nothing for a
-            # document that never had notarization requested at all.
-            return json.dumps(
-                [
-                    "AND",
-                    [
-                        [notarization_field, "exact", True],
-                        ["OR", [[esign_status_field, "exists", False], [esign_status_field, "exact", ""]]],
-                    ],
-                ],
-            )
+            return _shared_notarization_pending_query(notarization_field, esign_status_field)
 
         def old_buggy_notarization_pending_query():
-            return json.dumps(
-                [
-                    "AND",
-                    [
-                        [notarization_field, "exact", True],
-                        ["OR", [[esign_status_field, "isnull", True], [esign_status_field, "exact", ""]]],
-                    ],
-                ],
-            )
+            return _shared_old_buggy_notarization_pending_query(notarization_field, esign_status_field)
 
         view_ids = []
 
@@ -166,6 +156,41 @@ class Command(BaseCommand):
                     ],
                     sort_field="added",
                     sort_reverse=True,
+                ),
+            )
+        if pending_review_tag:
+            view_ids.append(
+                self._create_view(
+                    name="RentShield: Pending Review",
+                    icon=SavedView.Icon.CLOCK_HISTORY,
+                    rules=[(RULE_HAS_TAG, pending_review_tag.id)],
+                    sort_field="added",
+                    sort_reverse=True,
+                ),
+            )
+        if being_notarized_tag:
+            view_ids.append(
+                self._create_view(
+                    name="RentShield: Being Notarized",
+                    icon=SavedView.Icon.FILE_EARMARK_LOCK,
+                    rules=[(RULE_HAS_TAG, being_notarized_tag.id)],
+                    sort_field="added",
+                    sort_reverse=True,
+                ),
+            )
+        if awaiting_notary_tag:
+            # The Real Notary Public add-on's worklist (documents/
+            # rentshield/custom_fields.py's comment above
+            # AWAITING_NOTARY_PUBLIC_TAG_NAME) -- what the human fulfiller
+            # opens to find notices waiting on her, then works entirely
+            # through paperless-ngx's own document editor from here.
+            view_ids.append(
+                self._create_view(
+                    name="RentShield: Notary Public Queue",
+                    icon=SavedView.Icon.FILE_EARMARK_LOCK,
+                    rules=[(RULE_HAS_TAG, awaiting_notary_tag.id)],
+                    sort_field="added",
+                    sort_reverse=False,
                 ),
             )
         view_ids.append(

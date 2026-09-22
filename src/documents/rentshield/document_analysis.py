@@ -23,35 +23,19 @@ class DocumentAnalysisError(Exception):
     pass
 
 
-def _call_docling(filename: str, content: bytes, content_type: str) -> dict:
+def _call_service(base_url: str, path: str, service_name: str, filename: str, content: bytes, content_type: str, timeout: int) -> dict:
     try:
         res = requests.post(
-            f"{DOCLING_SERVICE_URL}/convert",
+            f"{base_url}{path}",
             files={"file": (filename, content, content_type)},
-            timeout=120,
+            timeout=timeout,
         )
     except requests.RequestException as exc:
-        raise DocumentAnalysisError(f"docling-service unavailable: {exc}") from exc
+        raise DocumentAnalysisError(f"{service_name} unavailable: {exc}") from exc
 
     if not res.ok:
         detail = res.json().get("detail", res.text) if res.headers.get("content-type", "").startswith("application/json") else res.text
-        raise DocumentAnalysisError(f"docling-service returned {res.status_code}: {detail}")
-    return res.json()
-
-
-def _call_deepseek_ocr(filename: str, content: bytes, content_type: str) -> dict:
-    try:
-        res = requests.post(
-            f"{DEEPSEEK_OCR_SERVICE_URL}/extract",
-            files={"file": (filename, content, content_type)},
-            timeout=300,
-        )
-    except requests.RequestException as exc:
-        raise DocumentAnalysisError(f"deepseek-ocr-service unavailable: {exc}") from exc
-
-    if not res.ok:
-        detail = res.json().get("detail", res.text) if res.headers.get("content-type", "").startswith("application/json") else res.text
-        raise DocumentAnalysisError(f"deepseek-ocr-service returned {res.status_code}: {detail}")
+        raise DocumentAnalysisError(f"{service_name} returned {res.status_code}: {detail}")
     return res.json()
 
 
@@ -68,5 +52,5 @@ def analyze_document(filename: str, content: bytes, content_type: str, use_deeps
                 "DeepSeek-OCR is disabled (DEEPSEEK_OCR_ENABLED is not set) — it requires a "
                 "CUDA GPU deployment of deepseek-ocr-service/, not available by default."
             )
-        return _call_deepseek_ocr(filename, content, content_type)
-    return _call_docling(filename, content, content_type)
+        return _call_service(DEEPSEEK_OCR_SERVICE_URL, "/extract", "deepseek-ocr-service", filename, content, content_type, timeout=300)
+    return _call_service(DOCLING_SERVICE_URL, "/convert", "docling-service", filename, content, content_type, timeout=120)

@@ -189,6 +189,52 @@
               @if (!isFieldHidden(DocumentDetailFieldID.Tags)) {
                 <pngx-input-tags #tagsInput formControlName="tags" [suggestions]="suggestions()?.tags" [showFilter]="true" [horizontal]="true" (filterDocuments)="filterDocuments($event, DataType.Tag)" [hideAddButton]="createDisabled(DataType.Tag)" *pngxIfPermissions="{ action: PermissionAction.View, type: PermissionType.Tag }"></pngx-input-tags>
               }
+              @if (isRentshieldRealNotarization() && rentshieldNotaryStatus() !== 'completed') {
+                <div class="alert alert-info d-flex align-items-center gap-2 py-2 px-3 mb-3">
+                  <i-bs name="info-circle" width="1rem" height="1rem"></i-bs>
+                  <span class="small">
+                    This notice requested Real Notary Public fulfillment.
+                    <a routerLink="/notary-guide">See the Notary Guide</a>
+                    for what to do with the custom fields below.
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-link p-0 ms-auto"
+                    ngbPopover="Link your scanned/stamped upload via &quot;RentShield: Notarized Copy&quot;, fill in &quot;RentShield: Notary Reference No.&quot;, then set &quot;RentShield: Notary Public Status&quot; to completed (or rejected with a note in Notary Notes). Finally, swap the notice's &quot;Awaiting Notary Public&quot; tag for &quot;Notary Public Completed&quot; (or Rejected) above -- that's what takes it off the fulfillment queue."
+                    popoverTitle="Quick recap"
+                    triggers="click"
+                    container="body"
+                    placement="bottom"
+                    autoClose="outside"
+                  >
+                    <i-bs name="question-circle"></i-bs>
+                  </button>
+                </div>
+              }
+              @if (rentshieldNotaryStatus() === 'completed') {
+                <div class="alert alert-success d-flex align-items-center gap-2 py-2 px-3 mb-3">
+                  <i-bs name="patch-check" width="1rem" height="1rem"></i-bs>
+                  <span class="small">
+                    Legally served via Notary Public
+                    @if (rentshieldServedDate()) {
+                      on {{ rentshieldServedDate() }}
+                    }
+                    -- one of the recognized service methods under Article 25(3) of Law No. (33) of 2008.
+                  </span>
+                </div>
+              }
+              @if (isRentshieldNotice() && !isRentshieldRealNotarization()) {
+                <div class="alert alert-warning d-flex align-items-center gap-2 py-2 px-3 mb-3">
+                  <i-bs name="exclamation-triangle" width="1rem" height="1rem"></i-bs>
+                  <span class="small">
+                    This notice has not been legally served on the tenant. Certified E-Signature
+                    (if selected) certifies the landlord's signature only -- it is not one of the
+                    recognized service methods under Article 25(3) of Law No. (33) of 2008.
+                    Add Real Notary Public, or arrange service via registered mail or a court
+                    bailiff yourself, before relying on this notice as served.
+                  </span>
+                </div>
+              }
               @for (fieldInstance of document()?.custom_fields; track fieldInstance.field; let i = $index) {
                 <div [formGroup]="customFieldFormFields.controls[i]">
                   @switch (getCustomFieldFromInstance(fieldInstance)?.data_type) {

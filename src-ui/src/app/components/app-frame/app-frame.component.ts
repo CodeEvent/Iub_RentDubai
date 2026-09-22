@@ -11,7 +11,6 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router'
 import {
   NgbCollapseModule,
   NgbDropdownModule,
-  NgbModal,
   NgbNavModule,
   NgbPopoverModule,
 } from '@ng-bootstrap/ng-bootstrap'
@@ -48,7 +47,6 @@ import { environment } from 'src/environments/environment'
 import { ChatComponent } from '../chat/chat/chat.component'
 import { BrandMarkComponent } from '../common/logo/brand-mark/brand-mark.component'
 import { LogoComponent } from '../common/logo/logo.component'
-import { ProfileEditDialogComponent } from '../common/profile-edit-dialog/profile-edit-dialog.component'
 import { DocumentDetailComponent } from '../document-detail/document-detail.component'
 import { ComponentWithPermissions } from '../with-permissions/with-permissions.component'
 import { GlobalSearchComponent } from './global-search/global-search.component'
@@ -91,7 +89,6 @@ export class AppFrameComponent
   settingsService = inject(SettingsService)
   tasksService = inject(TasksService)
   private readonly toastService = inject(ToastService)
-  private modalService = inject(NgbModal)
   permissionsService = inject(PermissionsService)
   private rentshieldApiService = inject(RentshieldApiService)
 
@@ -393,14 +390,6 @@ export class AppFrameComponent
 
   closeMenu() {
     this.isMenuCollapsed.set(true)
-  }
-
-  editProfile() {
-    this.modalService.open(ProfileEditDialogComponent, {
-      backdrop: 'static',
-      size: 'xl',
-    })
-    this.closeMenu()
   }
 
   get openDocuments(): Document[] {

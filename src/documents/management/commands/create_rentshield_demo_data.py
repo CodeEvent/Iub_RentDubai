@@ -9,20 +9,11 @@
 # engine's DOCUMENT_ADDED triggers.
 from __future__ import annotations
 
-import os
-import tempfile
 from datetime import date
 from datetime import timedelta
-from pathlib import Path
-from time import mktime
 
-import pathvalidate
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from documents.data_models import ConsumableDocument
-from documents.data_models import DocumentMetadataOverrides
-from documents.data_models import DocumentSource
 from documents.models import Document
 from documents.models import Tag
 from documents.rentshield.custom_fields import DEMO_DATA_TAG_NAME
@@ -30,7 +21,7 @@ from documents.rentshield.custom_fields import TENANCY_CONTRACT_TAG_NAME
 from documents.rentshield.document_analysis import DocumentAnalysisError
 from documents.rentshield.service import generate_and_consume
 from documents.rentshield.service import run_ai_review
-from documents.tasks import consume_file
+from documents.rentshield.service import write_and_consume
 
 User = get_user_model()
 
@@ -295,15 +286,6 @@ class Command(BaseCommand):
         *,
         tag_at_upload: bool,
     ) -> Document:
-        safe_filename = pathvalidate.sanitize_filename(filename)
-        settings.SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
-        temp_dir = Path(tempfile.mkdtemp(dir=settings.SCRATCH_DIR))
-        temp_file_path = temp_dir / safe_filename
-        temp_file_path.write_text(text, encoding="utf-8")
-
-        t = int(mktime(date.today().timetuple()))
-        os.utime(temp_file_path, times=(t, t))
-
         tag_ids = []
         if tag_at_upload:
             tag, _ = Tag.objects.get_or_create(
@@ -312,19 +294,11 @@ class Command(BaseCommand):
             )
             tag_ids = [tag.id]
 
-        input_doc = ConsumableDocument(
-            source=DocumentSource.ApiUpload,
-            original_file=temp_file_path,
-        )
-        overrides = DocumentMetadataOverrides(
-            filename=safe_filename,
+        return write_and_consume(
+            text,
+            filename,
             title=title,
             owner_id=owner_id,
             tag_ids=tag_ids,
+            synchronous=True,
         )
-        result = consume_file(input_doc, overrides)
-        document_id = result.get("document_id") if isinstance(result, dict) else None
-        if document_id is None:
-            msg = f"consume_file did not produce a document for {title!r}: {result!r}"
-            raise RuntimeError(msg)
-        return Document.objects.get(id=document_id)

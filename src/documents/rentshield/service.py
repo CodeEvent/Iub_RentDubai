@@ -6,6 +6,8 @@
 # same behavior, different storage.
 from __future__ import annotations
 
+import logging
+import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +15,7 @@ from time import mktime
 
 import pathvalidate
 from django.conf import settings
+from django.core.mail import send_mail
 from documents.data_models import ConsumableDocument
 from documents.data_models import DocumentMetadataOverrides
 from documents.data_models import DocumentSource
@@ -28,6 +31,163 @@ from documents.rentshield.notice_builder import build_notice
 from documents.rentshield.pdf import render_notice_pdf
 from documents.rentshield.pricing import calculate_total
 from documents.tasks import consume_file
+
+logger = logging.getLogger("paperless.rentshield")
+
+
+def _notify_legal_review_requested(fields: dict) -> None:
+    """Fire-and-forget email to settings.RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL
+    when a notice requests the Legal Review add-on -- fulfillment is
+    operational (an admin reads this, filters Documents by the "Legal
+    Review Requested" tag, and loops in counsel outside the app), not a
+    login role or object-permission grant. Reuses paperless-ngx's own
+    configured EMAIL_BACKEND -- no separate email setup. Deliberately
+    silent no-op when the setting is unset (a real, expected local-dev/
+    not-yet-configured state, not an error), and never lets a mail
+    failure fail notice creation -- logged and swallowed instead."""
+    recipient = settings.RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL
+    if not recipient:
+        logger.debug(
+            "Legal Review requested but RENTSHIELD_LEGAL_REVIEW_NOTIFY_EMAIL "
+            "is unset -- skipping notification email.",
+        )
+        return
+    try:
+        send_mail(
+            subject="RentShield: Legal Review requested",
+            message=(
+                f"A notice has requested Legal Review.\n\n"
+                f"Landlord: {fields.get('landlord_name')}\n"
+                f"Tenant: {fields.get('tenant_name')}\n"
+                f"Reason: {fields.get('reason')}\n"
+                f"Notice date: {fields.get('notice_date')}\n\n"
+                "Filter Documents by the \"Legal Review Requested\" tag "
+                "in paperless-ngx to find it."
+            ),
+            from_email=None,  # falls back to settings.DEFAULT_FROM_EMAIL
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to send Legal Review notification email to %r",
+            recipient,
+        )
+
+
+def _notify_notary_fulfillment_requested(fields: dict) -> None:
+    """Fire-and-forget email to
+    settings.RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL when a notice
+    requests the Real Notary Public add-on -- exact same pattern as
+    _notify_legal_review_requested() above: this is manual, human
+    fulfillment (a real notary-services contact reads this email, then
+    processes the notice through her own real-world notarization
+    process, same as before this feature existed), not an API dispatch.
+    She completes it using paperless-ngx's own document editor (see
+    documents/rentshield/custom_fields.py's comment above
+    AWAITING_NOTARY_PUBLIC_TAG_NAME), not a reply to this email or any
+    bespoke UI -- this just tells her a new one is waiting. Deliberately
+    silent no-op when the setting is unset, and never lets a mail
+    failure fail notice creation -- logged and swallowed instead."""
+    recipient = settings.RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL
+    if not recipient:
+        logger.debug(
+            "Real Notary Public requested but "
+            "RENTSHIELD_NOTARY_FULFILLMENT_NOTIFY_EMAIL is unset -- "
+            "skipping notification email.",
+        )
+        return
+    try:
+        send_mail(
+            subject="RentShield: Real Notary Public requested",
+            message=(
+                f"A notice needs physical notarization.\n\n"
+                f"Landlord: {fields.get('landlord_name')}\n"
+                f"Tenant: {fields.get('tenant_name')}\n"
+                f"Reason: {fields.get('reason')}\n"
+                f"Notice date: {fields.get('notice_date')}\n\n"
+                "Filter Documents by the \"Awaiting Notary Public\" tag "
+                "in paperless-ngx to find it, or open the \"RentShield: "
+                "Notary Public Queue\" saved view. Once notarized, "
+                "upload the scanned/stamped copy as a normal document, "
+                "then on the original notice: link it via the "
+                "\"RentShield: Notarized Copy\" field, fill in "
+                "\"RentShield: Notary Reference No.\", set \"RentShield: "
+                "Notary Public Status\" to \"completed\", and swap the "
+                "\"Awaiting Notary Public\" tag for \"Notary Public "
+                "Completed\" (or \"Notary Public Rejected\" with a note "
+                "in \"RentShield: Notary Notes\" if it can't be done)."
+            ),
+            from_email=None,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to send Real Notary Public notification email to %r",
+            recipient,
+        )
+
+
+def _notify_notice_served(document: Document) -> None:
+    """Fire-and-forget email to the notice's own "RentShield: Landlord
+    Email" (not a fixed settings.-level address like the two notify
+    functions above -- this one has to reach a different landlord per
+    notice) once documents.rentshield.signals detects the Real Notary
+    Public fulfiller's manual "Notary Public Status" edit transition
+    into "completed" or "rejected" -- that transition is itself the
+    legal service event under Article 25(3) (see custom_fields.py's
+    comment above AWAITING_NOTARY_PUBLIC_TAG_NAME), so this is the other
+    half of _notify_notary_fulfillment_requested() above: that one told
+    the fulfiller a request came in, this one tells the landlord it's
+    done. Deliberately silent no-op when there's no landlord_email on
+    this notice, and never lets a mail failure propagate -- logged and
+    swallowed, same as the other two notify functions."""
+    fields = read_notice_fields(document)
+    recipient = fields.get("landlord_email")
+    if not recipient:
+        logger.debug(
+            "Notice %s reached a Notary Public completion state but has "
+            "no landlord_email on file -- skipping notification email.",
+            document.id,
+        )
+        return
+
+    status = fields.get("notary_status")
+    if status == "completed":
+        subject = "RentShield: Your notice has been served"
+        message = (
+            f"Your notice for {fields.get('tenant_name')} has been notarized "
+            "and legally served on the tenant via Notary Public -- one of "
+            "the recognized service methods under Article 25(3) of Law "
+            "No. (33) of 2008.\n\n"
+            f"Reference number: {fields.get('notary_reference_no') or '(not recorded)'}\n"
+            f"Served date: {fields.get('served_date') or '(not recorded)'}\n\n"
+            "The notarized copy is attached to your notice in RentShield."
+        )
+    else:
+        subject = "RentShield: Your notice could not be notarized"
+        message = (
+            f"Your notice for {fields.get('tenant_name')} could not be "
+            "notarized and was not served.\n\n"
+            f"Notes from the notary-services contact: {fields.get('notary_notes') or '(none provided)'}\n\n"
+            "Please review and resubmit if needed."
+        )
+
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=None,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to send notice-served notification email to %r for document %s",
+            recipient,
+            document.id,
+        )
 
 
 def notice_to_builder_input(fields: dict) -> dict:
@@ -59,6 +219,75 @@ def _custom_fields_payload(fields: dict) -> dict[int, object]:
     return payload
 
 
+def write_and_consume(
+    content: bytes | str,
+    filename: str,
+    *,
+    title: str | None = None,
+    owner_id: int | None = None,
+    tag_ids: list[int] | None = None,
+    custom_fields: dict[int, object] | None = None,
+    synchronous: bool = False,
+) -> str | Document:
+    """Writes `content` to a sanitized temp file under settings.SCRATCH_DIR
+    and hands it to paperless-ngx's own consumption pipeline (the same
+    consume_file task its stock upload API uses) -- shared plumbing for
+    generate_and_consume() below and manage.py create_rentshield_demo_data's
+    contract-seeding helper, previously duplicated between the two.
+
+    `filename` is sanitized here, not by the caller -- reason labels like
+    "Personal Use / Recovery" contain characters (e.g. "/") that are
+    unsafe as a path segment; an earlier version of this code sanitized
+    only the temp file's own name and passed the raw string through to
+    DocumentMetadataOverrides.filename, which paperless-ngx's consumer
+    uses to build its own working-copy path -- causing a
+    FileNotFoundError the moment a reason label contained a "/".
+
+    synchronous=True calls consume_file() in-process and returns the
+    resulting Document directly (raises RuntimeError if it somehow
+    didn't produce one) -- what demo-data seeding and tests need.
+    synchronous=False (the default, matching the real API path)
+    dispatches via Celery and returns the task id instead; poll it via
+    paperless-ngx's own GET /api/tasks/?task_id=...
+    """
+    safe_filename = pathvalidate.sanitize_filename(filename)
+    settings.SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+    temp_dir = Path(tempfile.mkdtemp(dir=settings.SCRATCH_DIR))
+    temp_file_path = temp_dir / safe_filename
+    if isinstance(content, bytes):
+        temp_file_path.write_bytes(content)
+    else:
+        temp_file_path.write_text(content, encoding="utf-8")
+
+    t = int(mktime(datetime.now().timetuple()))
+    os.utime(temp_file_path, times=(t, t))
+
+    input_doc = ConsumableDocument(
+        source=DocumentSource.ApiUpload,
+        original_file=temp_file_path,
+    )
+    overrides = DocumentMetadataOverrides(
+        filename=safe_filename,
+        title=title or safe_filename.removesuffix(".pdf"),
+        owner_id=owner_id,
+        tag_ids=tag_ids or [],
+        custom_fields=custom_fields or {},
+    )
+
+    if synchronous:
+        result = consume_file(input_doc, overrides)
+        document_id = result.get("document_id") if isinstance(result, dict) else None
+        if document_id is None:
+            msg = f"consume_file did not produce a document for {title or safe_filename!r}: {result!r}"
+            raise RuntimeError(msg)
+        return Document.objects.get(id=document_id)
+
+    async_task = consume_file.apply_async(
+        kwargs={"input_doc": input_doc, "overrides": overrides},
+    )
+    return async_task.id
+
+
 def generate_and_consume(
     fields: dict,
     owner_id: int | None = None,
@@ -83,7 +312,12 @@ def generate_and_consume(
     reason = fields["reason"]
     period_days = notice_period_days(reason)
     total_price_aed = calculate_total(
-        {"notarization": bool(fields.get("add_notarization")), "ai_review": bool(fields.get("add_ai_review"))},
+        {
+            "certified_esignature": bool(fields.get("add_notarization")),
+            "ai_review": bool(fields.get("add_ai_review")),
+            "legal_review": bool(fields.get("add_legal_review")),
+            "real_notarization": bool(fields.get("add_real_notarization")),
+        },
     )
 
     document_data = build_notice(notice_to_builder_input(fields))
@@ -91,24 +325,7 @@ def generate_and_consume(
 
     reason_meta = ALL_REASONS.get(reason)
     reason_label = reason_meta["label"] if reason_meta else reason
-    # Sanitize once and reuse everywhere -- reason labels like "Personal
-    # Use / Recovery" contain characters (e.g. "/") that are unsafe as a
-    # path segment; a previous version of this code only sanitized the
-    # temp file's own name and passed the raw string through to
-    # DocumentMetadataOverrides.filename, which paperless-ngx's consumer
-    # uses to build its own working-copy path -- causing a
-    # FileNotFoundError the moment a reason label contained a "/".
-    doc_name = pathvalidate.sanitize_filename(f"Notice of {reason_label} - {fields.get('tenant_name')}.pdf")
-
-    settings.SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
-    temp_dir = Path(tempfile.mkdtemp(dir=settings.SCRATCH_DIR))
-    temp_file_path = temp_dir / doc_name
-    temp_file_path.write_bytes(pdf_bytes)
-
-    t = int(mktime(datetime.now().timetuple()))
-    import os
-
-    os.utime(temp_file_path, times=(t, t))
+    doc_name = f"Notice of {reason_label} - {fields.get('tenant_name')}.pdf"
 
     custom_fields_for_document = {
         **fields,
@@ -117,31 +334,37 @@ def generate_and_consume(
     }
 
     tag, _ = Tag.objects.get_or_create(name=RENTSHIELD_TAG_NAME, defaults={"color": "#10b981"})
+    tag_ids = [tag.id]
 
-    input_doc = ConsumableDocument(
-        source=DocumentSource.ApiUpload,
-        original_file=temp_file_path,
-    )
-    overrides = DocumentMetadataOverrides(
-        filename=doc_name,
-        title=doc_name.removesuffix(".pdf"),
+    if fields.get("add_legal_review"):
+        from documents.rentshield.custom_fields import LEGAL_REVIEW_REQUESTED_TAG_NAME
+
+        legal_review_tag, _ = Tag.objects.get_or_create(
+            name=LEGAL_REVIEW_REQUESTED_TAG_NAME,
+            defaults={"color": "#8b5cf6"},
+        )
+        tag_ids.append(legal_review_tag.id)
+        _notify_legal_review_requested(fields)
+
+    if fields.get("add_real_notarization"):
+        from documents.rentshield.custom_fields import AWAITING_NOTARY_PUBLIC_TAG_NAME
+
+        awaiting_notary_tag, _ = Tag.objects.get_or_create(
+            name=AWAITING_NOTARY_PUBLIC_TAG_NAME,
+            defaults={"color": "#f59e0b"},
+        )
+        tag_ids.append(awaiting_notary_tag.id)
+        custom_fields_for_document["notary_status"] = "pending"
+        _notify_notary_fulfillment_requested(fields)
+
+    return write_and_consume(
+        pdf_bytes,
+        doc_name,
         owner_id=owner_id,
-        tag_ids=[tag.id],
+        tag_ids=tag_ids,
         custom_fields=_custom_fields_payload(custom_fields_for_document),
+        synchronous=synchronous,
     )
-
-    if synchronous:
-        result = consume_file(input_doc, overrides)
-        document_id = result.get("document_id") if isinstance(result, dict) else None
-        if document_id is None:
-            msg = f"consume_file did not produce a document (synchronous demo/test path): {result!r}"
-            raise RuntimeError(msg)
-        return Document.objects.get(id=document_id)
-
-    async_task = consume_file.apply_async(
-        kwargs={"input_doc": input_doc, "overrides": overrides},
-    )
-    return async_task.id
 
 
 def _set_custom_field_value(document: Document, key: str, value: object) -> None:
@@ -290,8 +513,47 @@ def check_notarization_status(document: Document) -> dict:
         updates["esign_signed_document_url"] = status["signed_document_url"]
     for key, value in updates.items():
         _set_custom_field_value(document, key, value)
+    sync_notarization_stage_tag(document, status["status"])
     return {
         "provider": provider,
         "status": status["status"],
         "signed_document_url": status.get("signed_document_url"),
     }
+
+
+# Provider status strings (documents/rentshield/esign/docuseal_client.py,
+# opensign_client.py) that mean the request is fully resolved, one way or
+# the other -- everything else ("pending") is still in flight and leaves
+# the "Being Notarized" tag alone. "failed" is not a real provider status;
+# it's the sentinel the Celery task below passes when the DISPATCH itself
+# threw (e.g. neither DocuSeal nor OpenSign was reachable at all), which
+# never produced a provider status string to check here.
+_NOTARIZATION_SUCCESS_STATUSES = {"completed"}
+_NOTARIZATION_FAILURE_STATUSES = {"archived", "declined", "failed"}
+
+
+def sync_notarization_stage_tag(document: Document, status: str) -> None:
+    """Swaps the "Being Notarized" pipeline-stage tag for "Notarized" or
+    "Notarization Failed" once `status` reflects a final outcome; a no-op
+    for an in-flight ("pending") status. Called both right after a fresh
+    dispatch (documents.tasks.run_notarization_task) and every time
+    check_notarization_status() polls again later, so a request that was
+    still pending at dispatch time still gets its tag corrected once
+    someone (or a future scheduled check) discovers it resolved."""
+    from documents.rentshield.custom_fields import BEING_NOTARIZED_TAG_NAME
+    from documents.rentshield.custom_fields import NOTARIZATION_FAILED_TAG_NAME
+    from documents.rentshield.custom_fields import NOTARIZED_TAG_NAME
+
+    if status not in _NOTARIZATION_SUCCESS_STATUSES and status not in _NOTARIZATION_FAILURE_STATUSES:
+        return
+
+    being_notarized_tag = Tag.objects.filter(name=BEING_NOTARIZED_TAG_NAME).first()
+    if being_notarized_tag:
+        document.tags.remove(being_notarized_tag)
+
+    final_tag_name = NOTARIZED_TAG_NAME if status in _NOTARIZATION_SUCCESS_STATUSES else NOTARIZATION_FAILED_TAG_NAME
+    final_tag, _ = Tag.objects.get_or_create(
+        name=final_tag_name,
+        defaults={"color": "#059669" if status in _NOTARIZATION_SUCCESS_STATUSES else "#dc2626"},
+    )
+    document.tags.add(final_tag)

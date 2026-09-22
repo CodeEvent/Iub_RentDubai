@@ -1,11 +1,8 @@
 import json
 
 from django.conf import settings
-from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand
 from documents.models import CustomField
-from documents.models import CustomFieldInstance
-from documents.models import Document
 from documents.models import DocumentType
 from documents.models import StoragePath
 from documents.models import Tag
@@ -14,19 +11,20 @@ from documents.models import WorkflowAction
 from documents.models import WorkflowActionEmail
 from documents.models import WorkflowActionWebhook
 from documents.models import WorkflowTrigger
-from documents.permissions import get_groups_with_only_permission
-from documents.permissions import set_permissions_for_object
 from documents.rentshield.custom_fields import AI_REVIEWED_TAG_NAME
+from documents.rentshield.custom_fields import BEING_NOTARIZED_TAG_NAME
 from documents.rentshield.custom_fields import NEEDS_AI_REVIEW_TAG_NAME
+from documents.rentshield.custom_fields import NOTARIZATION_FAILED_TAG_NAME
+from documents.rentshield.custom_fields import NOTARIZED_TAG_NAME
+from documents.rentshield.custom_fields import PENDING_REVIEW_TAG_NAME
 from documents.rentshield.custom_fields import RENTSHIELD_TAG_NAME
 from documents.rentshield.custom_fields import TENANCY_CONTRACT_TAG_NAME
 from documents.rentshield.custom_fields import key_to_id_map
-from documents.rentshield.roles import LAWYER_GROUP_NAME
-from documents.rentshield.roles import NOTARY_GROUP_NAME
+from documents.rentshield.custom_fields import notarization_pending_query as _shared_notarization_pending_query
+from documents.rentshield.custom_fields import old_buggy_notarization_pending_query as _shared_old_buggy_notarization_pending_query
 
 STATUTORY_REASONS = ["sale", "personal", "demolition", "renovation"]
 BREACH_REASONS = ["nonpayment", "sublease"]
-SENSITIVE_REASONS = ["personal", "demolition", "renovation"]
 
 # Deliberately fake -- there is no way to know the real recipient here,
 # and this repo must never carry a hardcoded personal address. Edit the
@@ -60,6 +58,7 @@ class Command(BaseCommand):
                 "add_notarization",
                 "add_ai_review",
                 "esign_status",
+                "details_confirmed",
             )
             if k not in ids
         ]
@@ -68,7 +67,7 @@ class Command(BaseCommand):
                 self.style.ERROR(
                     "Missing RentShield custom fields: "
                     f"{missing}. Run `manage.py migrate` first "
-                    "(documents.0026_rentshield_custom_fields creates them).",
+                    "(documents.0026/0027/0028_rentshield_* migrations create them).",
                 ),
             )
             return
@@ -89,6 +88,22 @@ class Command(BaseCommand):
             name=TENANCY_CONTRACT_TAG_NAME,
             defaults={"color": "#6366f1"},
         )
+        pending_review_tag, _ = Tag.objects.get_or_create(
+            name=PENDING_REVIEW_TAG_NAME,
+            defaults={"color": "#f59e0b"},
+        )
+        being_notarized_tag, _ = Tag.objects.get_or_create(
+            name=BEING_NOTARIZED_TAG_NAME,
+            defaults={"color": "#6366f1"},
+        )
+        Tag.objects.get_or_create(
+            name=NOTARIZED_TAG_NAME,
+            defaults={"color": "#059669"},
+        )
+        Tag.objects.get_or_create(
+            name=NOTARIZATION_FAILED_TAG_NAME,
+            defaults={"color": "#dc2626"},
+        )
         statutory_type, _ = DocumentType.objects.get_or_create(
             name="12-Month Statutory Notice",
         )
@@ -99,54 +114,26 @@ class Command(BaseCommand):
             name="Tenancy Notices",
             defaults={"path": "Tenancy Notices/{created_year}/{title}"},
         )
-        # Model-level Document permissions on these two groups are set up
-        # by `manage.py create_rentshield_roles` (documents/rentshield/
-        # roles.py) -- get_or_create here just ensures the group exists so
-        # it can be assigned on a Workflow action below; membership is a
-        # human decision made under Settings > Users & Groups.
-        lawyer_group, _ = Group.objects.get_or_create(name=LAWYER_GROUP_NAME)
-        notary_group, _ = Group.objects.get_or_create(name=NOTARY_GROUP_NAME)
 
         reason_field = ids["reason"]
         notarization_field = ids["add_notarization"]
         ai_review_field = ids["add_ai_review"]
         esign_status_field = ids["esign_status"]
+        details_confirmed_field = ids["details_confirmed"]
         notice_date_custom_field = CustomField.objects.get(id=ids["notice_date"])
 
         def reason_query(keys):
             return json.dumps([reason_field, "in", keys])
 
+        # See documents/rentshield/custom_fields.py's
+        # notarization_pending_query() docstring for why `exists: False`,
+        # not `isnull: True` -- shared with create_rentshield_dashboards.py,
+        # which needs the identical query for its Saved View filter.
         def notarization_pending_query():
-            # "esign_status doesn't exist yet OR is blank": the correct op
-            # for "this CustomField was never set on this document" is
-            # `exists: False`, not `isnull: True` -- `isnull` only matches
-            # a CustomFieldInstance row whose value column is SQL NULL,
-            # which request_notarization()/_set_custom_field_value() never
-            # produces (they only ever write a real string). A doc that
-            # never had notarization requested has no esign_status
-            # instance row at all, so `isnull` silently matched nothing --
-            # confirmed via a real un-notarized demo notice returning 0
-            # instead of 1 from this exact query.
-            return json.dumps(
-                [
-                    "AND",
-                    [
-                        [notarization_field, "exact", True],
-                        ["OR", [[esign_status_field, "exists", False], [esign_status_field, "exact", ""]]],
-                    ],
-                ],
-            )
+            return _shared_notarization_pending_query(notarization_field, esign_status_field)
 
         def old_buggy_notarization_pending_query():
-            return json.dumps(
-                [
-                    "AND",
-                    [
-                        [notarization_field, "exact", True],
-                        ["OR", [[esign_status_field, "isnull", True], [esign_status_field, "exact", ""]]],
-                    ],
-                ],
-            )
+            return _shared_old_buggy_notarization_pending_query(notarization_field, esign_status_field)
 
         self._create_workflow(
             name="RentShield: statutory expiry reminder",
@@ -354,29 +341,53 @@ class Command(BaseCommand):
         )
 
         self._create_workflow(
-            name="RentShield: restrict sensitive notices",
-            order=10,
-            trigger_kwargs={
-                "type": WorkflowTrigger.WorkflowTriggerType.DOCUMENT_ADDED,
-                "filter_custom_field_query": reason_query(SENSITIVE_REASONS),
-            },
-            trigger_tags=[rentshield_tag],
-            action_kwargs={"type": WorkflowAction.WorkflowActionType.ASSIGNMENT},
-            action_view_groups=[lawyer_group],
-            action_change_groups=[lawyer_group],
-        )
-
-        self._create_workflow(
-            name="RentShield: grant Notary access on notarization request",
-            order=13,
+            name="RentShield: tag notarization pending review",
+            order=14,
             trigger_kwargs={
                 "type": WorkflowTrigger.WorkflowTriggerType.DOCUMENT_ADDED,
                 "filter_custom_field_query": json.dumps([notarization_field, "exact", True]),
             },
             trigger_tags=[rentshield_tag],
             action_kwargs={"type": WorkflowAction.WorkflowActionType.ASSIGNMENT},
-            action_view_groups=[notary_group],
-            action_change_groups=[notary_group],
+            action_tags=[pending_review_tag],
+        )
+
+        notarize_uploaded_url = f"{settings.RENTSHIELD_INTERNAL_URL}/api/documents/notice/notarize-uploaded/"
+        self._create_workflow(
+            name="RentShield: send confirmed notice to notary",
+            order=15,
+            trigger_kwargs={
+                # DOCUMENT_UPDATED, not DOCUMENT_ADDED: this fires when a
+                # Property Owner/Lawyer reviews an already-created,
+                # notarization-requested notice and ticks "Details
+                # Confirmed" afterward -- not at creation time.
+                "type": WorkflowTrigger.WorkflowTriggerType.DOCUMENT_UPDATED,
+                "filter_custom_field_query": json.dumps([details_confirmed_field, "exact", True]),
+            },
+            # Requiring the "Pending Review" tag here (not just the field
+            # value) is what stops this from re-firing on every later save
+            # of an already-dispatched notice: the first action below
+            # removes that tag, so a subsequent save with
+            # details_confirmed still True no longer matches this trigger.
+            trigger_tags=[pending_review_tag],
+            action_kwargs={"type": WorkflowAction.WorkflowActionType.REMOVAL},
+            remove_tags=[pending_review_tag],
+            extra_actions=[
+                {
+                    "action_kwargs": {"type": WorkflowAction.WorkflowActionType.ASSIGNMENT},
+                    "action_tags": [being_notarized_tag],
+                },
+                {
+                    "action_kwargs": {"type": WorkflowAction.WorkflowActionType.WEBHOOK},
+                    "webhook_kwargs": {
+                        "url": notarize_uploaded_url,
+                        "use_params": True,
+                        "as_json": True,
+                        "params": {"doc_id": "{{ doc_id }}"},
+                        "include_document": False,
+                    },
+                },
+            ],
         )
 
         self._repair_notarization_pending_queries(
@@ -386,23 +397,6 @@ class Command(BaseCommand):
             ],
             old_query=old_buggy_notarization_pending_query(),
             new_query=notarization_pending_query(),
-        )
-
-        self._backfill_object_permissions(
-            group=lawyer_group,
-            document_ids=CustomFieldInstance.objects.filter(
-                field_id=reason_field,
-                value_select__in=SENSITIVE_REASONS,
-            ).values_list("document_id", flat=True),
-            label="sensitive-reason notices -> Lawyer",
-        )
-        self._backfill_object_permissions(
-            group=notary_group,
-            document_ids=CustomFieldInstance.objects.filter(
-                field_id=notarization_field,
-                value_bool=True,
-            ).values_list("document_id", flat=True),
-            label="notarization-requested notices -> Notary",
         )
 
         self.stdout.write(self.style.SUCCESS("RentShield workflows created/verified."))
@@ -422,12 +416,22 @@ class Command(BaseCommand):
                 "etc.) are NOT available in those templates. The receiving "
                 "webhook endpoint should fetch full details via "
                 "GET /api/documents/<doc_id>/ using the id it's given.\n"
-                "  - Workflows #11/#12 (AI review on upload) call back into "
-                f"this same server at {analyze_uploaded_url} -- if this "
-                "Django process isn't reachable at that address from its own "
-                "Celery worker (e.g. in a docker-compose/production "
-                "topology), set PAPERLESS_RENTSHIELD_INTERNAL_URL and "
-                "re-run this command.",
+                "  - Workflows #11/#12 (AI review on upload) and #15 (send "
+                "confirmed notice to notary) call back into this same "
+                f"server ({analyze_uploaded_url}, {notarize_uploaded_url}) "
+                "-- if this Django process isn't reachable at that address "
+                "from its own Celery worker (e.g. in a docker-compose/"
+                "production topology), set PAPERLESS_RENTSHIELD_INTERNAL_URL "
+                "and re-run this command.\n"
+                "  - Workflow #15 only fires on a DOCUMENT_UPDATED save "
+                "where the notice still carries the \"Pending Review\" tag "
+                "(#14 applies it at creation) -- ticking \"Details "
+                "Confirmed\" on a notice that never had notarization "
+                "requested does nothing, by design.\n"
+                "  - Notarization dispatch itself still needs a real "
+                "DocuSeal/OpenSign reachable (see documents/rentshield/"
+                "esign/); without one it fails gracefully and tags the "
+                "notice \"Notarization Failed\" rather than hanging.",
             ),
         )
 
@@ -449,34 +453,34 @@ class Command(BaseCommand):
                     self.style.SUCCESS(f"Repaired notarization-pending query on: {name}"),
                 )
 
-    def _backfill_object_permissions(self, *, group, document_ids, label):
-        """Workflows #10/#13 only grant view/change access at DOCUMENT_ADDED
-        time -- a document consumed before that Workflow existed (or before
-        its group had the right permissions) never got the grant, and
-        never will retroactively just because the Workflow exists now.
-        This closes that gap for whatever already matches today, using the
-        exact same set_permissions_for_object() mechanism the Workflow
-        action itself calls -- not a separate, parallel permission scheme.
-        merge=True only ever adds the grant; it never revokes one, so this
-        is always safe to re-run and never clobbers a manual edit."""
-        granted = 0
-        for document in Document.objects.filter(id__in=set(document_ids)):
-            existing_groups = get_groups_with_only_permission(document, "view_document")
-            if group in existing_groups:
-                continue
-            set_permissions_for_object(
-                {
-                    "view": {"groups": [group.id]},
-                    "change": {"groups": [group.id]},
-                },
-                document,
-                merge=True,
-            )
-            granted += 1
-        if granted:
-            self.stdout.write(
-                self.style.SUCCESS(f"Backfilled {granted} document(s), {label}"),
-            )
+    def _build_action(
+        self,
+        *,
+        action_kwargs,
+        order=0,
+        email_kwargs=None,
+        webhook_kwargs=None,
+        action_tags=None,
+        remove_tags=None,
+        action_view_groups=None,
+        action_change_groups=None,
+    ):
+        action_kwargs = {**action_kwargs, "order": order}
+        if email_kwargs:
+            action_kwargs = {**action_kwargs, "email": WorkflowActionEmail.objects.create(**email_kwargs)}
+        if webhook_kwargs:
+            action_kwargs = {**action_kwargs, "webhook": WorkflowActionWebhook.objects.create(**webhook_kwargs)}
+
+        action = WorkflowAction.objects.create(**action_kwargs)
+        if action_tags:
+            action.assign_tags.set(action_tags)
+        if remove_tags:
+            action.remove_tags.set(remove_tags)
+        if action_view_groups:
+            action.assign_view_groups.set(action_view_groups)
+        if action_change_groups:
+            action.assign_change_groups.set(action_change_groups)
+        return action
 
     def _create_workflow(
         self,
@@ -490,10 +494,17 @@ class Command(BaseCommand):
         email_kwargs=None,
         webhook_kwargs=None,
         action_tags=None,
+        remove_tags=None,
         action_view_groups=None,
         action_change_groups=None,
+        extra_actions=None,
         enabled=True,
     ):
+        """A Workflow has exactly one Trigger but can have several
+        Actions, run in `order` -- `extra_actions` is a list of the same
+        per-action kwargs `_build_action()` takes, for a Workflow that
+        needs to do more than one thing (e.g. #15: swap a pair of
+        pipeline-stage tags *and* fire a webhook)."""
         if Workflow.objects.filter(name=name).exists():
             self.stdout.write(f"Skipping (already exists): {name}")
             return
@@ -504,21 +515,23 @@ class Command(BaseCommand):
         if trigger_not_tags:
             trigger.filter_has_not_tags.set(trigger_not_tags)
 
-        if email_kwargs:
-            action_kwargs = {**action_kwargs, "email": WorkflowActionEmail.objects.create(**email_kwargs)}
-        if webhook_kwargs:
-            action_kwargs = {**action_kwargs, "webhook": WorkflowActionWebhook.objects.create(**webhook_kwargs)}
-
-        action = WorkflowAction.objects.create(**action_kwargs)
-        if action_tags:
-            action.assign_tags.set(action_tags)
-        if action_view_groups:
-            action.assign_view_groups.set(action_view_groups)
-        if action_change_groups:
-            action.assign_change_groups.set(action_change_groups)
+        actions = [
+            self._build_action(
+                action_kwargs=action_kwargs,
+                order=0,
+                email_kwargs=email_kwargs,
+                webhook_kwargs=webhook_kwargs,
+                action_tags=action_tags,
+                remove_tags=remove_tags,
+                action_view_groups=action_view_groups,
+                action_change_groups=action_change_groups,
+            ),
+        ]
+        for i, extra in enumerate(extra_actions or [], start=1):
+            actions.append(self._build_action(order=i, **extra))
 
         workflow = Workflow.objects.create(name=name, order=order, enabled=enabled)
         workflow.triggers.set([trigger])
-        workflow.actions.set([action])
+        workflow.actions.set(actions)
 
         self.stdout.write(self.style.SUCCESS(f"Created: {name}{'' if enabled else ' (disabled)'}"))

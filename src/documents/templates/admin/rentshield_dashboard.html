@@ -1,0 +1,69 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h2>Infrastructure</h2>
+
+{% if docker_containers is not None %}
+<h3>Docker containers</h3>
+<table>
+  <thead><tr><th>Name</th><th>Status</th><th>Health</th></tr></thead>
+  <tbody>
+    {% for c in docker_containers %}
+    <tr>
+      <td>{{ c.Name|default:c.Service }}</td>
+      <td>{{ c.State }}</td>
+      <td>{{ c.Health|default:"-" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3">No containers found (is `docker compose` reachable from this process?)</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3>Disk usage ({{ media_root }})</h3>
+<p>
+  {{ disk_used|filesizeformat }} used of {{ disk_total|filesizeformat }}
+  ({{ disk_free|filesizeformat }} free)
+</p>
+
+<h3>Last 10 logins</h3>
+<table>
+  <thead><tr><th>User</th><th>When</th></tr></thead>
+  <tbody>
+    {% for entry in recent_logins %}
+    <tr><td>{{ entry.user }}</td><td>{{ entry.timestamp }}</td></tr>
+    {% empty %}
+    <tr><td colspan="2">No logins recorded yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Business workflows</h2>
+
+<h3>Role overview</h3>
+<table>
+  <thead><tr><th>Group</th><th>Members</th></tr></thead>
+  <tbody>
+    {% for role in role_counts %}
+    <tr><td>{{ role.name }}</td><td>{{ role.member_count }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>Verification queue</h3>
+<p>{{ pending_notarization_count }} document(s) awaiting notary public.
+   <a href="/dashboard/">See full queue in Saved Views &rarr;</a></p>
+
+<h3>Uploads in the last 7 days, by user</h3>
+<table>
+  <thead><tr><th>User</th><th>Uploads</th></tr></thead>
+  <tbody>
+    {% for row in recent_uploads_by_user %}
+    <tr><td>{{ row.owner__username|default:"(no owner)" }}</td><td>{{ row.count }}</td></tr>
+    {% empty %}
+    <tr><td colspan="2">No uploads in the last 7 days.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

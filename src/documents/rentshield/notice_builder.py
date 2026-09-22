@@ -49,7 +49,7 @@ def _build_statutory_notice(input_data: dict) -> dict:
         "type": "statutory",
         "days": 365,
         "en": {
-            "kicker": "Served via Notary Public",
+            "kicker": "Formal Legal Notice",
             "title": "Notice of Eviction",
             "subtitle": (
                 "Pursuant to Law No. (33) of 2008 Amending Law No. (26) of 2007 Regulating "
@@ -91,13 +91,14 @@ def _build_statutory_notice(input_data: dict) -> dict:
                 "the Tenant's non-compliance with this Notice."
             ),
             "footer": (
-                "Served via Notary Public / Registered Mail / Court Bailiff in accordance with "
-                "Article 25(3) of Law No. (33) of 2008."
+                "To take legal effect, this Notice must be served on the Tenant via Notary "
+                "Public, Registered Mail with Acknowledgment of Receipt, or Court Bailiff, in "
+                "accordance with Article 25(3) of Law No. (33) of 2008."
             ),
             "landlord_name": p["landlord"], "sign_date": notice_date_en,
         },
         "ar": {
-            "kicker": "تم التبليغ عن طريق الكاتب العدل",
+            "kicker": "إنذار قانوني رسمي",
             "title": "إنذار عدلي بالإخلاء",
             "subtitle": (
                 "صادر بموجب القانون رقم (33) لسنة 2008 المعدل للقانون رقم (26) لسنة 2007 بشأن تنظيم "
@@ -136,8 +137,9 @@ def _build_statutory_notice(input_data: dict) -> dict:
                 "اللجوء إلى مركز فض المنازعات الإيجارية في حال عدم امتثال المستأجر لهذا الإنذار."
             ),
             "footer": (
-                "تم التبليغ عن طريق الكاتب العدل / البريد المسجل / محضر المحكمة وفقاً للمادة 25(3) من "
-                "القانون رقم (33) لسنة 2008."
+                "لكي يسري مفعول هذا الإنذار قانوناً، يجب تبليغه إلى المستأجر عن طريق الكاتب "
+                "العدل، أو البريد المسجل مع علم الوصول، أو محضر المحكمة، وذلك وفقاً للمادة "
+                "25(3) من القانون رقم (33) لسنة 2008."
             ),
             "landlord_name": p["landlord"], "sign_date": notice_date_ar,
         },
@@ -166,7 +168,7 @@ def _build_breach_notice(input_data: dict) -> dict:
         "type": "breach",
         "days": 30,
         "en": {
-            "kicker": "Served via Notary Public",
+            "kicker": "Formal Legal Notice",
             "title": "Notice of Lease Breach — 30-Day Statutory Notice",
             "subtitle": (
                 "Pursuant to Article 25(1) of Law No. (33) of 2008 Amending Law No. (26) of 2007 "
@@ -204,13 +206,14 @@ def _build_breach_notice(input_data: dict) -> dict:
                 f'amounts lawfully due.'
             ),
             "footer": (
-                "Served via Notary Public / Registered Mail / Court Bailiff in accordance with "
-                "Article 25(1) of Law No. (33) of 2008."
+                "To take legal effect, this Notice must be served on the Tenant via Notary "
+                "Public, Registered Mail with Acknowledgment of Receipt, or Court Bailiff, in "
+                "accordance with Article 25(1) of Law No. (33) of 2008."
             ),
             "landlord_name": p["landlord"], "sign_date": notice_date_en,
         },
         "ar": {
-            "kicker": "تم التبليغ عن طريق الكاتب العدل",
+            "kicker": "إنذار قانوني رسمي",
             "title": "إنذار بمخالفة عقد الإيجار — إنذار قانوني لمدة 30 يوماً",
             "subtitle": (
                 "صادر بموجب المادة 25(1) من القانون رقم (33) لسنة 2008 المعدل للقانون رقم (26) لسنة "
@@ -244,8 +247,9 @@ def _build_breach_notice(input_data: dict) -> dict:
                 f'والإخلاء، إضافة إلى استرداد جميع المبالغ المستحقة قانوناً.'
             ),
             "footer": (
-                "تم التبليغ عن طريق الكاتب العدل / البريد المسجل / محضر المحكمة وفقاً للمادة 25(1) من "
-                "القانون رقم (33) لسنة 2008."
+                "لكي يسري مفعول هذا الإنذار قانوناً، يجب تبليغه إلى المستأجر عن طريق الكاتب "
+                "العدل، أو البريد المسجل مع علم الوصول، أو محضر المحكمة، وذلك وفقاً للمادة "
+                "25(1) من القانون رقم (33) لسنة 2008."
             ),
             "landlord_name": p["landlord"], "sign_date": notice_date_ar,
         },

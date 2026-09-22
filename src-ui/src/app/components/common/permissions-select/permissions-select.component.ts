@@ -94,6 +94,36 @@ export class PermissionsSelectComponent
 
   inheritedWarning: string = $localize`Inherited from group`
 
+  // Explains what each row actually gates and, where it isn't obvious from
+  // the model name alone, which Action a real feature checks -- e.g.
+  // RentShield's "New Notice" requires Document > Add specifically, not
+  // group membership, so an admin ticking the wrong box (or the right box
+  // on the wrong row) is a common source of "why can't this role do X".
+  public typeDescriptions: Record<string, string> = {
+    Document: $localize`Documents themselves -- the files, their metadata, and actions on them. "Add" is required to create a new document, including generating a RentShield notice; without it, "New Notice" stays visible in the sidebar but submitting is rejected. "Change" is required to edit an existing document or act on one (e.g. dispatch notarization). "View" controls whether a document can be seen at all -- which specific documents a user actually sees is narrowed further by ownership (the Property Owner who generated a notice) or a workflow-granted grant on that one document (e.g. Notary access once notarization is requested, Lawyer access on a sensitive-reason notice).`,
+    Tag: $localize`The tags documents can be labeled with, including the "RentShield Notice", "Tenancy Contract", "Needs AI Review", and "AI-Reviewed" tags.`,
+    Correspondent: $localize`Correspondents -- the sender or party a document is linked to.`,
+    DocumentType: $localize`Document types used to classify documents, including the Statutory/Breach notice types RentShield's workflows assign automatically.`,
+    StoragePath: $localize`Storage path templates that decide where a consumed file is filed on disk, e.g. RentShield's "Tenancy Notices" path.`,
+    SavedView: $localize`Saved Views -- the dashboard and sidebar shortcuts, including RentShield's 8 dashboard widgets (All Notices, Notarization Pending, etc.).`,
+    PaperlessTask: $localize`Background task history -- document consumption progress, the status of a Celery task like a notice being generated.`,
+    AppConfig: $localize`System-wide application configuration (Settings > General).`,
+    UISettings: $localize`The logged-in user's own UI preferences. Every account needs "View" and "Change" here just to load the app at all -- it's the first API call made on every page load, before the app even knows what else the user can do.`,
+    History: $localize`The audit log of changes made to other objects.`,
+    Note: $localize`Notes attached to documents.`,
+    MailAccount: $localize`Configured email accounts used to fetch incoming mail.`,
+    MailRule: $localize`Rules that turn incoming mail into documents.`,
+    User: $localize`Other users' accounts.`,
+    Group: $localize`User groups/roles themselves -- e.g. this Lawyer/Property Owner/Notary/Tenant group editor.`,
+    ShareLink: $localize`Public share links for an individual document.`,
+    ShareLinkBundle: $localize`Bundles of multiple document share links.`,
+    CustomField: $localize`Custom field definitions, including every "RentShield: ..." field that appears on a notice.`,
+    Workflow: $localize`Automation Workflows, including all of RentShield's notice, AI-review, and permission-granting workflows.`,
+    ProcessedMail: $localize`The log of emails already processed by a mail rule.`,
+    GlobalStatistics: $localize`System-wide statistics.`,
+    SystemMonitoring: $localize`System health/monitoring information.`,
+  }
+
   public allowedTypes = Object.keys(PermissionType)
 
   constructor() {
