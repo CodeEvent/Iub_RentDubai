@@ -9,6 +9,7 @@ import { firstValueFrom } from 'rxjs'
 import { ConfirmButtonComponent } from 'src/app/components/common/confirm-button/confirm-button.component'
 import { PageHeaderComponent } from 'src/app/components/common/page-header/page-header.component'
 import { WidgetFrameComponent } from 'src/app/components/dashboard/widgets/widget-frame/widget-frame.component'
+import { SettingsService } from 'src/app/services/settings.service'
 import { ToastService } from 'src/app/services/toast.service'
 import {
   OrganizationDashboard,
@@ -46,6 +47,7 @@ export class AgencyDashboardComponent implements OnInit {
   private api = inject(RentshieldApiService)
   private router = inject(Router)
   private toastService = inject(ToastService)
+  private settingsService = inject(SettingsService)
 
   readonly loading = signal(true)
   readonly dashboard = signal<OrganizationDashboard | null>(null)
@@ -152,6 +154,42 @@ export class AgencyDashboardComponent implements OnInit {
       this.members.update((current) => current.filter((row) => row.id !== member.id))
     } catch (error) {
       this.toastService.showError(this.errorMessage(error, $localize`Unable to revoke that invite`))
+    } finally {
+      this.setActing(member.id, false)
+    }
+  }
+
+  isSelf(member: OrganizationMember): boolean {
+    return member.id === this.settingsService.currentUser()?.id
+  }
+
+  private setMemberActiveState(memberId: number, isActive: boolean): void {
+    this.members.update((current) =>
+      current.map((row) => (row.id === memberId ? { ...row, is_active: isActive } : row))
+    )
+  }
+
+  async deactivateTeammate(member: OrganizationMember): Promise<void> {
+    this.setActing(member.id, true)
+    try {
+      await firstValueFrom(this.api.deactivateTeammate(member.id))
+      this.toastService.showInfo($localize`${member.username} deactivated`)
+      this.setMemberActiveState(member.id, false)
+    } catch (error) {
+      this.toastService.showError(this.errorMessage(error, $localize`Unable to deactivate that teammate`))
+    } finally {
+      this.setActing(member.id, false)
+    }
+  }
+
+  async reactivateTeammate(member: OrganizationMember): Promise<void> {
+    this.setActing(member.id, true)
+    try {
+      await firstValueFrom(this.api.reactivateTeammate(member.id))
+      this.toastService.showInfo($localize`${member.username} reactivated`)
+      this.setMemberActiveState(member.id, true)
+    } catch (error) {
+      this.toastService.showError(this.errorMessage(error, $localize`Unable to reactivate that teammate`))
     } finally {
       this.setActing(member.id, false)
     }

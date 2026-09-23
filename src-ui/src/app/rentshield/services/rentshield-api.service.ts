@@ -235,6 +235,7 @@ export interface OrganizationMember {
   email: string
   date_joined: string
   pending: boolean
+  is_active: boolean
 }
 
 const RENTSHIELD_TAG_NAME = 'RentShield Notice'
@@ -834,5 +835,24 @@ export class RentshieldApiService {
 
   revokeInvite(userId: number): Observable<void> {
     return this.http.delete<void>(`${this.base}documents/organization/members/${userId}/`)
+  }
+
+  // Offboarding (2026-09-23) -- deactivate/reactivate only ever touch
+  // an already-active teammate (see rentshield_teammate_deactivate_view's
+  // own docstring for why this is separate from revoke, and for the
+  // real limitation that an already-live session isn't terminated
+  // immediately).
+  deactivateTeammate(userId: number): Observable<void> {
+    return this.http.post<void>(
+      `${this.base}documents/organization/members/${userId}/deactivate/`,
+      {}
+    )
+  }
+
+  reactivateTeammate(userId: number): Observable<void> {
+    return this.http.post<void>(
+      `${this.base}documents/organization/members/${userId}/reactivate/`,
+      {}
+    )
   }
 }

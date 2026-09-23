@@ -63,6 +63,8 @@ from documents.rentshield_views import rentshield_invite_accept_view
 from documents.rentshield_views import rentshield_invite_resend_view
 from documents.rentshield_views import rentshield_invite_revoke_view
 from documents.rentshield_views import rentshield_invite_view
+from documents.rentshield_views import rentshield_teammate_deactivate_view
+from documents.rentshield_views import rentshield_teammate_reactivate_view
 from documents.rentshield_views import signup_done_view
 from documents.rentshield_views import signup_email_view
 from documents.rentshield_views import signup_start_view
@@ -325,6 +327,16 @@ urlpatterns = [
                                 r"^organization/members/(?P<user_id>\d+)/resend/$",
                                 rentshield_invite_resend_view,
                                 name="rentshield-organization-member-resend",
+                            ),
+                            re_path(
+                                r"^organization/members/(?P<user_id>\d+)/deactivate/$",
+                                rentshield_teammate_deactivate_view,
+                                name="rentshield-organization-member-deactivate",
+                            ),
+                            re_path(
+                                r"^organization/members/(?P<user_id>\d+)/reactivate/$",
+                                rentshield_teammate_reactivate_view,
+                                name="rentshield-organization-member-reactivate",
                             ),
                             re_path(
                                 r"^organization/members/(?P<user_id>\d+)/$",

@@ -273,6 +273,89 @@ class TestOrganizationMembers(APITestCase):
         self.assertEqual(response.status_code, 404)
         self.assertTrue(User.objects.filter(pk=self.other_org_member.id).exists())
 
+    def test_deactivate_works_for_an_active_teammate(self):
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            f"/api/documents/organization/members/{self.active_teammate.id}/deactivate/",
+        )
+        self.assertEqual(response.status_code, 204)
+        self.active_teammate.refresh_from_db()
+        self.assertFalse(self.active_teammate.is_active)
+
+        log_entry = RentShieldPermissionAuditLog.objects.get(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_DEACTIVATED,
+        )
+        self.assertEqual(log_entry.organization_id, self.org_a.id)
+        self.assertEqual(log_entry.actor_id, self.requester.id)
+        self.assertIn("active@example.com", log_entry.details)
+
+    def test_deactivate_rejects_a_still_pending_teammate(self):
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            f"/api/documents/organization/members/{self.pending_teammate.id}/deactivate/",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.pending_teammate.refresh_from_db()
+        self.assertTrue(self.pending_teammate.is_active)
+
+    def test_deactivate_rejects_deactivating_yourself(self):
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            f"/api/documents/organization/members/{self.requester.id}/deactivate/",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.requester.refresh_from_db()
+        self.assertTrue(self.requester.is_active)
+
+    def test_deactivate_rejects_an_already_deactivated_teammate(self):
+        self.active_teammate.is_active = False
+        self.active_teammate.save(update_fields=["is_active"])
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            f"/api/documents/organization/members/{self.active_teammate.id}/deactivate/",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_deactivate_404s_for_a_member_of_a_different_organization(self):
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            f"/api/documents/organization/members/{self.other_org_member.id}/deactivate/",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_reactivate_works_for_a_deactivated_teammate(self):
+        self.active_teammate.is_active = False
+        self.active_teammate.save(update_fields=["is_active"])
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            f"/api/documents/organization/members/{self.active_teammate.id}/reactivate/",
+        )
+        self.assertEqual(response.status_code, 204)
+        self.active_teammate.refresh_from_db()
+        self.assertTrue(self.active_teammate.is_active)
+
+        log_entry = RentShieldPermissionAuditLog.objects.get(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_REACTIVATED,
+        )
+        self.assertEqual(log_entry.actor_id, self.requester.id)
+        self.assertIn("active@example.com", log_entry.details)
+
+    def test_reactivate_rejects_an_already_active_teammate(self):
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.post(
+            f"/api/documents/organization/members/{self.active_teammate.id}/reactivate/",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_members_list_reports_is_active(self):
+        self.active_teammate.is_active = False
+        self.active_teammate.save(update_fields=["is_active"])
+        self.client.force_authenticate(user=self.requester)
+        response = self.client.get("/api/documents/organization/members/")
+        by_username = {row["username"]: row for row in response.data}
+        self.assertFalse(by_username["active_teammate"]["is_active"])
+        self.assertTrue(by_username["pending_teammate"]["is_active"])
+
 
 class TestOrganizationInviteAccept(APITestCase):
     def setUp(self):

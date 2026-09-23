@@ -1099,26 +1099,32 @@ def organization_members_view(request):
                 "email": member.email,
                 "date_joined": member.date_joined,
                 "pending": member.id not in active_user_ids,
+                "is_active": member.is_active,
             }
             for member in members
         ],
     )
 
 
-def _resolve_pending_teammate(request, user_id: int):
-    """Shared guard for resend/revoke below. Raises Http404 if the
-    requester has no Organization, or if user_id isn't a member of the
-    requester's OWN Organization -- 404, not 403, same anti-enumeration
-    reasoning as organization_dashboard_view's own 404: another org's
-    member id existing or not is not this caller's business to learn
-    either way. Returns (organization, None) if user_id IS a real
-    teammate but has already completed setup -- the explicit non-goal
-    both resend and revoke share: this never touches an active
-    account."""
+def _resolve_org_teammate(request, user_id: int):
+    """Shared guard: raises Http404 if the requester has no Organization,
+    or if user_id isn't a member of the requester's OWN Organization --
+    404, not 403, same anti-enumeration reasoning as
+    organization_dashboard_view's own 404: another org's member id
+    existing or not is not this caller's business to learn either way."""
     organization = get_user_organization(request.user)
     if organization is None:
         raise Http404
     member = get_object_or_404(organization.group.user_set, pk=user_id)
+    return organization, member
+
+
+def _resolve_pending_teammate(request, user_id: int):
+    """Shared guard for resend/revoke below. Returns (organization,
+    None) if user_id IS a real teammate but has already completed
+    setup -- the explicit non-goal both resend and revoke share: this
+    never touches an active account."""
+    organization, member = _resolve_org_teammate(request, user_id)
     if SocialAccount.objects.filter(user=member, provider="zitadel").exists():
         return organization, None
     return organization, member
@@ -1153,8 +1159,9 @@ def rentshield_invite_revoke_view(request, user_id: int):
     group removal), so the email is immediately re-invitable. Only ever
     reaches a still-pending account (_resolve_pending_teammate's own
     guard) -- revoking an ALREADY-ACTIVE teammate who may already own
-    real documents is a materially different, higher-stakes offboarding
-    action, deliberately out of scope here."""
+    real documents is a materially different action (see
+    rentshield_teammate_deactivate_view below, added separately on
+    purpose rather than folded into this endpoint)."""
     organization, member = _resolve_pending_teammate(request, user_id)
     if member is None:
         return Response({"error": "This teammate has already completed setup."}, status=400)
@@ -1176,6 +1183,79 @@ def rentshield_invite_revoke_view(request, user_id: int):
             ),
         )
         member.delete()
+    return Response(status=204)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def rentshield_teammate_deactivate_view(request, user_id: int):
+    """POST /api/documents/organization/members/<id>/deactivate/ --
+    offboarding for a teammate who has already completed setup (the
+    counterpart to revoke, which only ever touches a still-pending
+    one). Deliberately narrow (2026-09-23, scoped explicitly this way):
+    flips is_active=False and nothing else -- no ZITADEL call, no
+    document reassignment. Document.owner stays exactly as it was;
+    coworkers keep seeing the document through the existing
+    grant_organization_access group grant, which was never conditioned
+    on the owner still being active. Blocks deactivating yourself, and
+    a still-pending teammate (revoke is the right action there).
+
+    Real, load-bearing limitation, not glossed over: this blocks the
+    account's NEXT login (paperless/signals.py's handle_social_account_
+    updated already skips syncing an inactive user, and Django's own
+    auth backend refuses to authenticate one) but does not terminate a
+    session that's already live -- neither this codebase nor Django
+    itself enforces is_active on an established session by default.
+    Real-time session termination would be a separate, larger feature
+    (server-side invalidation on every request), not part of this."""
+    organization, member = _resolve_org_teammate(request, user_id)
+    if member.id == request.user.id:
+        return Response({"error": "You cannot deactivate your own account."}, status=400)
+    if not SocialAccount.objects.filter(user=member, provider="zitadel").exists():
+        return Response(
+            {"error": "This teammate hasn't completed setup yet -- revoke their invite instead."},
+            status=400,
+        )
+    if not member.is_active:
+        return Response({"error": "This teammate is already deactivated."}, status=400)
+
+    with transaction.atomic():
+        member.is_active = False
+        member.save(update_fields=["is_active"])
+        RentShieldPermissionAuditLog.objects.create(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_DEACTIVATED,
+            organization=organization,
+            actor=request.user,
+            details=(
+                f"{request.user.username} deactivated {member.email} "
+                f"({member.username}) in {organization.name!r}."
+            ),
+        )
+    return Response(status=204)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def rentshield_teammate_reactivate_view(request, user_id: int):
+    """POST /api/documents/organization/members/<id>/reactivate/ -- the
+    undo for deactivate above. Cheap to include alongside it so a
+    mis-click doesn't leave someone permanently locked out."""
+    organization, member = _resolve_org_teammate(request, user_id)
+    if member.is_active:
+        return Response({"error": "This teammate is already active."}, status=400)
+
+    with transaction.atomic():
+        member.is_active = True
+        member.save(update_fields=["is_active"])
+        RentShieldPermissionAuditLog.objects.create(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_REACTIVATED,
+            organization=organization,
+            actor=request.user,
+            details=(
+                f"{request.user.username} reactivated {member.email} "
+                f"({member.username}) in {organization.name!r}."
+            ),
+        )
     return Response(status=204)
 
 

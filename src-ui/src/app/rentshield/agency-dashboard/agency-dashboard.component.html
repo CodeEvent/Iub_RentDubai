@@ -155,8 +155,29 @@
                       [disabled]="isActingOn(member.id)"
                       (confirm)="revokeInvite(member)">
                     </pngx-confirm-button>
-                  } @else {
+                  } @else if (member.is_active) {
                     <span class="badge bg-success" i18n>Active</span>
+                    @if (!isSelf(member)) {
+                      <pngx-confirm-button
+                        label=""
+                        buttonClasses="btn-outline-secondary btn-sm"
+                        iconName="slash-circle"
+                        confirmMessage="Deactivate {{ member.username }}? They'll lose access on their next login; their documents are unaffected."
+                        i18n-confirmMessage
+                        [disabled]="isActingOn(member.id)"
+                        (confirm)="deactivateTeammate(member)">
+                      </pngx-confirm-button>
+                    }
+                  } @else {
+                    <span class="badge bg-secondary" i18n>Deactivated</span>
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary btn-sm"
+                      [disabled]="isActingOn(member.id)"
+                      (click)="reactivateTeammate(member)">
+                      <i-bs name="arrow-clockwise"></i-bs>
+                      <ng-container i18n>Reactivate</ng-container>
+                    </button>
                   }
                 </div>
               </div>
