@@ -83,10 +83,13 @@ def render_notice_html(document: dict, include_signature_field: bool = False) ->
 _PINNED_CHROMIUM = "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell"
 
 
-def render_notice_pdf(document: dict) -> bytes:
+def render_html_to_pdf(html_content: str) -> bytes:
+    """The actual Chromium launch/print step, split out of
+    render_notice_pdf() below so other RentShield PDFs (e.g.
+    rdsc_packet.py's filing packet) reuse the same pinned-Chromium
+    fallback instead of duplicating it."""
     import os
 
-    html_content = render_notice_html(document)
     launch_kwargs = {"executable_path": _PINNED_CHROMIUM} if os.path.exists(_PINNED_CHROMIUM) else {}
     with sync_playwright() as p:
         browser = p.chromium.launch(**launch_kwargs)
@@ -96,3 +99,7 @@ def render_notice_pdf(document: dict) -> bytes:
             return page.pdf(format="A4", print_background=True, margin={"top": "20px", "bottom": "20px"})
         finally:
             browser.close()
+
+
+def render_notice_pdf(document: dict) -> bytes:
+    return render_html_to_pdf(render_notice_html(document))

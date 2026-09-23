@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 
 from documents.models import CustomField
+from documents.rentshield.service_methods import SERVICE_METHODS
 
 RENTSHIELD_TAG_NAME = "RentShield Notice"
 TENANCY_CONTRACT_TAG_NAME = "Tenancy Contract"
@@ -129,6 +130,24 @@ CUSTOM_FIELD_DEFS: dict[str, tuple[str, dict | None]] = {
     "RentShield: Notarized Copy": (CustomField.FieldDataType.DOCUMENTLINK, None),
     "RentShield: Served Date": (CustomField.FieldDataType.DATE, None),
     "RentShield: Reason Requirements Acknowledged": (CustomField.FieldDataType.BOOL, None),
+    # RDSC filing-packet support (2026-09-23) -- served_date above already
+    # covers *when*; these cover *how* and *with what evidence*, which
+    # today only the Real Notary Public path captures (via its own
+    # notary_status signal). Registered mail and court bailiff -- the
+    # other two Article 25(3)-valid methods -- had no capture at all.
+    "RentShield: Service Method": (
+        CustomField.FieldDataType.SELECT,
+        {
+            "select_options": [
+                {"id": key, "label": meta["label"]}
+                for key, meta in SERVICE_METHODS.items()
+                if meta["valid"]
+            ],
+        },
+    ),
+    "RentShield: Ejari Certificate": (CustomField.FieldDataType.DOCUMENTLINK, None),
+    "RentShield: Tenancy Contract": (CustomField.FieldDataType.DOCUMENTLINK, None),
+    "RentShield: Service Evidence": (CustomField.FieldDataType.DOCUMENTLINK, None),
 }
 
 # Short keys used everywhere in Python/TypeScript code that isn't the
@@ -166,6 +185,10 @@ FIELD_KEYS: dict[str, str] = {
     "notarized_copy_document": "RentShield: Notarized Copy",
     "served_date": "RentShield: Served Date",
     "reason_requirements_acknowledged": "RentShield: Reason Requirements Acknowledged",
+    "service_method": "RentShield: Service Method",
+    "ejari_certificate_document": "RentShield: Ejari Certificate",
+    "tenancy_contract_document": "RentShield: Tenancy Contract",
+    "service_evidence_document": "RentShield: Service Evidence",
 }
 
 

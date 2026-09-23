@@ -43,6 +43,15 @@ amounts due through Dubai's Rental Dispute Settlement Centre (RDSC).
 
 ## What this skill does NOT do
 
-It does not calculate fees, does not generate the RDSC claim form, and
-does not track case status — those require direct interaction with the
-RDSC/Dubai Courts systems, which are outside this platform's scope today.
+It does not calculate the exact filing fee (RentShield never captures the
+annual rent amount that 3.5% figure is based on), does not generate or
+submit the RDC claim form itself, and does not track case status — those
+require direct interaction with the RDSC/Dubai Courts systems, which are
+outside this platform's scope today.
+
+Once a notice has been served (its Served Date is set), the notice's own
+"Generate RDSC Filing Packet" action produces a reference checklist --
+what this portal will ask for (Ejari certificate, tenancy contract, the
+notice itself, proof of service) and whether each one is already linked
+on the notice -- to file yourself at rdc.gov.ae. That checklist is not
+the claim form and nothing here submits anything to RDC on your behalf.

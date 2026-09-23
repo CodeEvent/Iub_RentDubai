@@ -51,6 +51,7 @@ from rest_framework.response import Response
 from documents.models import CustomFieldInstance
 from documents.models import Document
 from documents.models import RentShieldPermissionAuditLog
+from documents.models import Tag
 from documents.permissions import has_perms_owner_aware
 from documents.rentshield.citation_graph import build_citation_graph
 from documents.rentshield.constants import ALL_REASONS
@@ -89,7 +90,9 @@ from documents.rentshield.roles import get_user_organization
 from documents.rentshield.roles import grant_property_owner
 from documents.rentshield.service import check_notarization_status
 from documents.rentshield.service import generate_and_consume
+from documents.rentshield.service import read_notice_fields
 from documents.rentshield.service import request_notarization
+from documents.rentshield.service import write_and_consume
 from documents.rentshield.service_methods import SERVICE_METHODS
 from documents.rentshield.skills_lib import get_skill
 from documents.rentshield.skills_lib import load_skills
@@ -650,6 +653,43 @@ def notarize_view(request, document_id: int):
             "signing_url": result["signing_url"],
         },
     )
+
+
+RDSC_PACKET_TAG_NAME = "RentShield: RDSC Filing Packet"
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CanActOnDocument])
+def rdsc_packet_view(request, document_id: int):
+    """POST /api/documents/notice/<document_id>/rdsc-packet/ -- generates
+    a reference checklist (documents.rentshield.rdsc_packet) for filing
+    this notice at Dubai's Rental Dispute Settlement Centre (rdc.gov.ae),
+    as its own new Document. Requires served_date to already be set --
+    there's nothing to file a dispute over until the notice was actually
+    served. Same gating and visibility rules as notarize_view above."""
+    document = _get_visible_document_or_404(request, document_id)
+    fields = read_notice_fields(document)
+    if not fields.get("served_date"):
+        return Response(
+            {"error": "Mark this notice as served (set its Served Date) before generating a filing packet."},
+            status=400,
+        )
+
+    from documents.rentshield.rdsc_packet import build_rdsc_packet
+
+    pdf_bytes = build_rdsc_packet(fields)
+    tag, _created = Tag.objects.get_or_create(
+        name=RDSC_PACKET_TAG_NAME,
+        defaults={"color": "#6366f1"},
+    )
+    task_id = write_and_consume(
+        pdf_bytes,
+        f"RDSC Filing Packet - {fields.get('tenant_name')}.pdf",
+        title=f"RDSC Filing Packet - {fields.get('tenant_name')}",
+        owner_id=document.owner_id,
+        tag_ids=[tag.id],
+    )
+    return Response({"task_id": task_id})
 
 
 @api_view(["POST"])

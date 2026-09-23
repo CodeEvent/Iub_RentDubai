@@ -61,6 +61,7 @@ from documents.rentshield_views import legal_skills_view
 from documents.rentshield_views import notarize_status_view
 from documents.rentshield_views import notarize_uploaded_view
 from documents.rentshield_views import notarize_view
+from documents.rentshield_views import rdsc_packet_view
 from documents.rentshield_views import organization_dashboard_view
 from documents.rentshield_views import organization_members_view
 from documents.rentshield_views import organization_status_view
@@ -292,6 +293,11 @@ urlpatterns = [
                                 r"^notice/(?P<document_id>\d+)/notarize-status/$",
                                 notarize_status_view,
                                 name="rentshield-notarize-status",
+                            ),
+                            re_path(
+                                r"^notice/(?P<document_id>\d+)/rdsc-packet/$",
+                                rdsc_packet_view,
+                                name="rentshield-rdsc-packet",
                             ),
                             re_path(
                                 "^security/passkeys/$",

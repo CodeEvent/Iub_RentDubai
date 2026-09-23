@@ -48,6 +48,7 @@ export interface Notice {
   esign_signed_document_url: string | null
   notary_status: string | null
   notary_reference_no: string | null
+  served_date: string | null
   created_at: string
 }
 
@@ -377,6 +378,7 @@ export class RentshieldApiService {
       esign_signed_document_url: (f['esign_signed_document_url'] as string) ?? null,
       notary_status: (f['notary_status'] as string) ?? null,
       notary_reference_no: (f['notary_reference_no'] as string) ?? null,
+      served_date: (f['served_date'] as string) ?? null,
       created_at: doc.created,
     }
   }
@@ -499,6 +501,17 @@ export class RentshieldApiService {
       status: string
       signed_document_url: string | null
     }>(`${this.base}documents/notice/${documentId}/notarize-status/`)
+  }
+
+  // RDSC filing-packet reference checklist (2026-09-23) -- see
+  // documents/rentshield/rdsc_packet.py. Requires served_date to already
+  // be set on the notice; returns a Celery task id, same polling
+  // contract as documents/notice/create/'s create_notice_view.
+  generateRdscPacket(documentId: number): Observable<{ task_id: string }> {
+    return this.http.post<{ task_id: string }>(
+      `${this.base}documents/notice/${documentId}/rdsc-packet/`,
+      {}
+    )
   }
 
   // Property-owner identity verification (documents/rentshield_identity/,
