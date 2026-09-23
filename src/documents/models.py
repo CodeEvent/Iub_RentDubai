@@ -105,7 +105,13 @@ class RentShieldPermissionAuditLog(models.Model):
     )
     actor = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        # SET_NULL, not CASCADE like document/organization above -- a
+        # compliance record should outlive the account that performed
+        # the action, not disappear the moment that account is deleted
+        # (2026-09-23, flagged once actor started actually getting
+        # populated by the invite/resend/revoke actions -- it was
+        # always null before that, so this never mattered until now).
+        on_delete=models.SET_NULL,
         null=True,
         related_name="rentshield_permission_audit_logs",
     )

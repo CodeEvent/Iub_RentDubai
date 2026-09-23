@@ -248,3 +248,24 @@ class TestGrantOrganizationAccessAtomicity:
 
         assert RentShieldPermissionAuditLog.objects.filter(document=document).count() == 0
         assert not get_groups_with_perms(document).exists()
+
+
+@pytest.mark.django_db
+def test_audit_log_survives_deletion_of_its_own_actor():
+    """2026-09-23: actor is SET_NULL, not CASCADE like document/
+    organization -- a compliance record should outlive the account that
+    performed the action, not vanish the moment that account is
+    deleted. Regression test for the fix, not just documentation."""
+    actor = User.objects.create_user(username="deletable_actor")
+    log = RentShieldPermissionAuditLog.objects.create(
+        action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITED,
+        actor=actor,
+        details="test row",
+    )
+    log_id = log.id
+
+    actor.delete()
+
+    log.refresh_from_db()
+    assert RentShieldPermissionAuditLog.objects.filter(id=log_id).exists()
+    assert log.actor is None
