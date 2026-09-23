@@ -19,6 +19,7 @@ from django.core.signing import dumps
 from rest_framework.test import APITestCase
 
 from documents.models import Organization
+from documents.models import RentShieldPermissionAuditLog
 from documents.rentshield.zitadel_provisioning import ZitadelProvisioningError
 from documents.rentshield_views import INVITE_TOKEN_SALT
 
@@ -87,6 +88,13 @@ class TestOrganizationInvite(APITestCase):
         self.assertIn("newteammate@example.com", mail.outbox[0].to)
         self.assertIn("/invite/accept", mail.outbox[0].body)
 
+        log_entry = RentShieldPermissionAuditLog.objects.get(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITED,
+        )
+        self.assertEqual(log_entry.organization_id, self.org.id)
+        self.assertEqual(log_entry.actor_id, self.inviter.id)
+        self.assertIn("newteammate@example.com", log_entry.details)
+
     def test_failed_zitadel_provisioning_does_not_leave_an_orphaned_user(self):
         """Regression test for a real bug caught during live browser
         testing (2026-09-22): provision_zitadel_user used to be called
@@ -110,6 +118,11 @@ class TestOrganizationInvite(APITestCase):
             )
         self.assertEqual(response.status_code, 500)
         self.assertFalse(User.objects.filter(email="orphan-check@example.com").exists())
+        self.assertFalse(
+            RentShieldPermissionAuditLog.objects.filter(
+                action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITED,
+            ).exists(),
+        )
 
 
 class TestOrganizationMembers(APITestCase):
@@ -181,6 +194,13 @@ class TestOrganizationMembers(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("pending@example.com", mail.outbox[0].to)
 
+        log_entry = RentShieldPermissionAuditLog.objects.get(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITE_RESENT,
+        )
+        self.assertEqual(log_entry.organization_id, self.org_a.id)
+        self.assertEqual(log_entry.actor_id, self.requester.id)
+        self.assertIn("pending@example.com", log_entry.details)
+
     def test_resend_rejects_an_already_active_teammate(self):
         self.client.force_authenticate(user=self.requester)
         response = self.client.post(
@@ -211,6 +231,13 @@ class TestOrganizationMembers(APITestCase):
         self.assertEqual(response.status_code, 204)
         mock_delete.assert_called_once_with("fake-zitadel-id", self.org_a)
         self.assertFalse(User.objects.filter(pk=self.pending_teammate.id).exists())
+
+        log_entry = RentShieldPermissionAuditLog.objects.get(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITE_REVOKED,
+        )
+        self.assertEqual(log_entry.organization_id, self.org_a.id)
+        self.assertEqual(log_entry.actor_id, self.requester.id)
+        self.assertIn("pending@example.com", log_entry.details)
 
     def test_revoke_frees_the_email_for_an_immediate_re_invite(self):
         self.client.force_authenticate(user=self.requester)

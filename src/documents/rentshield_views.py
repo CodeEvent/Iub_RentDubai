@@ -50,6 +50,7 @@ from rest_framework.response import Response
 
 from documents.models import CustomFieldInstance
 from documents.models import Document
+from documents.models import RentShieldPermissionAuditLog
 from documents.permissions import has_perms_owner_aware
 from documents.rentshield.citation_graph import build_citation_graph
 from documents.rentshield.constants import ALL_REASONS
@@ -1021,6 +1022,12 @@ def rentshield_invite_view(request):
             organization=organization,
         )
         _send_invite_email(request, user, organization)
+        RentShieldPermissionAuditLog.objects.create(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITED,
+            organization=organization,
+            actor=request.user,
+            details=f"{request.user.username} invited {email} to {organization.name!r}.",
+        )
 
     return Response(status=201)
 
@@ -1124,7 +1131,17 @@ def rentshield_invite_resend_view(request, user_id: int):
     organization, member = _resolve_pending_teammate(request, user_id)
     if member is None:
         return Response({"error": "This teammate has already completed setup."}, status=400)
-    _send_invite_email(request, member, organization)
+    with transaction.atomic():
+        _send_invite_email(request, member, organization)
+        RentShieldPermissionAuditLog.objects.create(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITE_RESENT,
+            organization=organization,
+            actor=request.user,
+            details=(
+                f"{request.user.username} resent the invite for "
+                f"{member.email} ({member.username}) in {organization.name!r}."
+            ),
+        )
     return Response(status=204)
 
 
@@ -1146,6 +1163,18 @@ def rentshield_invite_revoke_view(request, user_id: int):
     with transaction.atomic():
         if zitadel_user_id is not None:
             delete_zitadel_user(zitadel_user_id, organization)
+        # Captured into `details` as text, not a FK, before member.delete()
+        # below removes that row -- see RentShieldPermissionAuditLog's own
+        # docstring on why.
+        RentShieldPermissionAuditLog.objects.create(
+            action=RentShieldPermissionAuditLog.ACTION_TEAMMATE_INVITE_REVOKED,
+            organization=organization,
+            actor=request.user,
+            details=(
+                f"{request.user.username} revoked the pending invite for "
+                f"{member.email} ({member.username}) in {organization.name!r}."
+            ),
+        )
         member.delete()
     return Response(status=204)
 

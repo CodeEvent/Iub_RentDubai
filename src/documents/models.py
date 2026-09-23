@@ -64,17 +64,30 @@ class Organization(models.Model):
 
 
 class RentShieldPermissionAuditLog(models.Model):
-    """One row per automated organization permission grant (documents/
-    rentshield/signals.py's grant_organization_access) -- a compliance
-    trail for "when and why was this Group given access to this
-    Document", same RentShieldLoginLog pattern (queryable DB rows, not
-    log-pipeline lines) rather than a new logging convention. `actor` is
-    always null today: the grant runs from document_consumption_finished,
-    which consumer.py fires with no user/request in its kwargs (this can
-    run from an async Celery consume with no request at all) -- the field
-    exists for a future manual/admin-triggered grant, not this one."""
+    """A compliance trail row for a permission/membership-affecting
+    action -- same RentShieldLoginLog pattern (queryable DB rows, not
+    log-pipeline lines) rather than a new logging convention.
+
+    ACTION_ORGANIZATION_GRANT (documents/rentshield/signals.py's
+    grant_organization_access): `actor` is always null -- that grant
+    runs from document_consumption_finished, which consumer.py fires
+    with no user/request in its kwargs (this can run from an async
+    Celery consume with no request at all).
+
+    ACTION_TEAMMATE_INVITED/_RESENT/_REVOKED (2026-09-23,
+    rentshield_views.py's rentshield_invite_view/_resend_view/
+    _revoke_view): the first real callers with `actor` populated --
+    these are plain synchronous views with a real logged-in inviter,
+    not an async signal. The invited/revoked teammate's own identity
+    goes in `details` as text, not a separate FK -- deliberately: a
+    revoke deletes that User row in the same transaction, and a FK
+    would need its own on_delete handling to survive that; `details`
+    already does, for free, with no schema change."""
 
     ACTION_ORGANIZATION_GRANT = "ORGANIZATION_GRANT"
+    ACTION_TEAMMATE_INVITED = "TEAMMATE_INVITED"
+    ACTION_TEAMMATE_INVITE_RESENT = "TEAMMATE_INVITE_RESENT"
+    ACTION_TEAMMATE_INVITE_REVOKED = "TEAMMATE_INVITE_REVOKED"
 
     timestamp = models.DateTimeField(auto_now_add=True)
     action = models.CharField(max_length=64, default=ACTION_ORGANIZATION_GRANT)
