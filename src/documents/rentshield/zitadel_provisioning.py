@@ -124,6 +124,60 @@ def _headers(org_id: str = ZITADEL_ORG_ID) -> dict:
     }
 
 
+def _ensure_organization_role(organization) -> str:
+    """Idempotently creates a ZITADEL Project Role for `organization`,
+    keyed by its Django Group's own name, and returns that key.
+
+    2026-09-23, fixing a real bug caught live: PAPERLESS_SOCIAL_ACCOUNT_
+    SYNC_GROUPS (paperless/signals.py's handle_social_account_updated)
+    REPLACES a user's entire Django group set from the ZITADEL ID
+    token's roles claim on every single login (`.groups.set(groups,
+    clear=True)`). Before this fix, provision_zitadel_user only ever
+    granted the ZITADEL-side role "Property Owner" -- an Organization's
+    membership existed ONLY as a local Django group, with nothing in
+    the token to tell the next login's sync to keep it. Confirmed live:
+    a real org member's `Org: X` group vanished on their second login,
+    silently breaking the dashboard/team-roster/document-sharing
+    features, all of which are defined purely as "whichever
+    Organization.group the user is currently in."
+
+    The fix makes an Organization's membership round-trip through
+    ZITADEL like Property Owner/Notary Public already do: a Project
+    Role named EXACTLY after the Organization's Group (the sync matches
+    by exact Group.name, see handle_social_account_updated), granted
+    alongside the ordinary role(s) below, so it survives every future
+    re-sync instead of only existing until the next login.
+
+    A 409 ("Role already exists") is the expected, harmless case for
+    every organization after its first invited/signed-up member --
+    treated as success, not retried or logged as an error.
+
+    Deliberately _headers() with no org_id (defaults to ZITADEL_ORG_ID,
+    the root org) -- confirmed live this must run in the PROJECT's own
+    owning organization's context, not the tenant's: passing the
+    tenant's org_id here 400s with "Project not found", since the
+    shared "RentShield" project lives under the root org and each
+    Organization's own users only ever get cross-org grants against it
+    (the same reason the grants call further down still works with a
+    tenant org_id -- granting a user access to a project is a
+    user-scoped operation, defining the project's own roles is not)."""
+    response = requests.post(
+        f"{ZITADEL_BASE_URL}/management/v1/projects/{ZITADEL_PROJECT_ID}/roles",
+        headers=_headers(),
+        json={
+            "roleKey": organization.group.name,
+            "displayName": organization.group.name,
+            "group": "RentShield Organizations",
+        },
+        timeout=10,
+    )
+    if response.status_code not in (200, 409):
+        raise ZitadelProvisioningError(
+            f"ZITADEL organization role creation failed: {response.status_code} {response.text}",
+        )
+    return organization.group.name
+
+
 def provision_zitadel_user(
     username: str,
     email: str,
@@ -149,7 +203,10 @@ def provision_zitadel_user(
     None and get the original single-org behavior unchanged. Assumes
     the ZITADEL-side Organization + project grant already exist (the
     onboarding guide's own §3 manual steps) -- this only points a new
-    user at the right existing one, it doesn't create it."""
+    user at the right existing one, it doesn't create it. Also grants a
+    per-organization ZITADEL role (_ensure_organization_role above) so
+    that membership survives PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS's
+    clear-and-resync on every future login, not just this one."""
     org_id = organization.zitadel_org_id if organization else ZITADEL_ORG_ID
     response = requests.post(
         f"{ZITADEL_BASE_URL}/v2/users/new",
@@ -173,11 +230,28 @@ def provision_zitadel_user(
         )
     user_id = response.json()["id"]
 
-    if groups:
+    role_keys = list(groups)
+    if organization:
+        role_keys.append(_ensure_organization_role(organization))
+
+    if role_keys:
+        # Deliberately _headers() (root org context), not _headers(org_id)
+        # -- confirmed live this must be root: a tenant Organization's
+        # own ProjectGrant only exposes whichever role keys existed at
+        # the time that grant was first set up (Property Owner/Notary
+        # Public, from the onboarding guide's original manual step), and
+        # does NOT automatically pick up a role created after the fact
+        # (_ensure_organization_role above) -- granting that new role in
+        # tenant context 400s with "Project.Role.NotFound" even though
+        # the role definitely exists; root context isn't restricted by
+        # any single org's ProjectGrant scope. For an individual
+        # signup (organization=None) this is a no-op: org_id already
+        # equals ZITADEL_ORG_ID (root) in that case, so this was already
+        # the effective behavior there.
         grant_response = requests.post(
             f"{ZITADEL_BASE_URL}/management/v1/users/{user_id}/grants",
-            headers=_headers(org_id),
-            json={"project_id": ZITADEL_PROJECT_ID, "role_keys": groups},
+            headers=_headers(),
+            json={"project_id": ZITADEL_PROJECT_ID, "role_keys": role_keys},
             timeout=10,
         )
         if grant_response.status_code != 200:
