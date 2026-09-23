@@ -63,7 +63,15 @@ export class SavedViewService extends AbstractPaperlessService<SavedView> {
           }
         })
       )
-      .subscribe()
+      .subscribe({
+        next: () => {},
+        // list()'s own tap({error}) above only sets loading/dashboard
+        // state on failure, it doesn't stop the error from propagating
+        // -- an uncaught error here (e.g. a 403 for an account with no
+        // view_savedview permission) otherwise crashes as an unhandled
+        // promise rejection on every page load for that account.
+        error: () => {},
+      })
   }
 
   get allViews(): SavedView[] {
