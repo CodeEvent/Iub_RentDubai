@@ -392,6 +392,64 @@ class IdentityVerificationAuditLog(models.Model):
         }
 
 
+class NoticeSignerVerification(models.Model):
+    """Confirms the actual person clicking a notice's e-signature link is
+    the landlord/signer named on it, before
+    documents.rentshield.esign.orchestrator.request_signing() ever fires
+    the real DocuSeal/OpenSign request (2026-09-23). Closes a real gap
+    found by reading orchestrator.py: DocuSeal/OpenSign email-link
+    signing has no identity check of its own today -- whoever holds the
+    link can sign.
+
+    Deliberately its own small model, not a reuse of IdentityVerification
+    -- that one carries an entire Notary-review pipeline (video calls,
+    NFC chip cross-checks, claim locking) built for RentShield's own
+    property-owner accounts. A notice signer has no RentShield account
+    at all and only ever needs the automated Idswyft OCR + liveness +
+    face-match result, with no human review step -- reusing the heavier
+    model would just be unused scope sitting on every row."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        VERIFIED = "verified", "Verified"
+        FAILED = "failed", "Failed"
+        MANUAL_REVIEW = "manual_review", "Needs manual review"
+
+    document = models.OneToOneField(
+        "documents.Document",
+        on_delete=models.CASCADE,
+        related_name="rentshield_signer_verification",
+    )
+    # Copied from the notice's own CustomFieldInstance values at row
+    # creation, not read live each time -- a landlord who already has an
+    # emailed link mid-capture shouldn't have the name they're being
+    # matched against silently change under them if someone edits the
+    # notice afterward.
+    signer_name = models.CharField(max_length=255, blank=True, default="")
+    signer_email = models.EmailField()
+
+    provider = models.CharField(max_length=32, default="idswyft")
+    verification_id = models.CharField(max_length=255, blank=True, default="")
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.PENDING)
+
+    passport_photo = models.FileField(upload_to="rentshield_identity/signer_passports/", blank=True, null=True)
+    selfie_photo = models.FileField(upload_to="rentshield_identity/signer_selfies/", blank=True, null=True)
+
+    # Idswyft's OCR read of the uploaded document -- compared against
+    # signer_name (see signer_views.py's _names_roughly_match) as a
+    # second, independent check on top of Idswyft's own automated
+    # face-match: Idswyft confirms "the selfie matches the document photo",
+    # not "the document belongs to the person this notice names".
+    ocr_full_name = models.CharField(max_length=255, blank=True, default="")
+    name_mismatch = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"document {self.document_id}: {self.status}"
+
+
 class DevicePairingCode(models.Model):
     """A short-lived, single-use code that lets the native Android/iOS
     app sign a user in by scanning a QR code shown on this web app's

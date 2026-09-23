@@ -588,6 +588,15 @@ export class RentshieldApiService {
     )
   }
 
+  // Notice-SIGNER identity verification (2026-09-23) has no Angular
+  // client at all -- a landlord clicking an emailed capture link has no
+  // RentShield account, and Angular's entire index.html is served
+  // behind login_required (see paperless/urls.py's catch-all comment).
+  // That flow is a plain Django template + vanilla JS instead:
+  // documents/templates/rentshield/signer_verify.html and
+  // documents/static/rentshield/signer-verify.js, talking straight to
+  // documents/rentshield_identity/signer_views.py's token-gated API.
+
   // Lets the frontend show the "Identity Verification Admin" nav link
   // to a Notary Public account too, not just is_staff admins -- see
   // admin_views.py's notary_status_view docstring for why this exists

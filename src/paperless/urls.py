@@ -37,6 +37,11 @@ from documents.rentshield_identity.views import notary_confirm_view
 from documents.rentshield_identity.views import notary_reject_view
 from documents.rentshield_identity.views import notary_request_more_info_view
 from documents.rentshield_identity.views import release_verification_view
+from documents.rentshield_identity.signer_views import notice_signer_verify_page_view
+from documents.rentshield_identity.signer_views import signer_start_view
+from documents.rentshield_identity.signer_views import signer_status_view
+from documents.rentshield_identity.signer_views import signer_upload_front_view
+from documents.rentshield_identity.signer_views import signer_upload_selfie_view
 from documents.rentshield_identity.views import request_video_call_reschedule_view
 from documents.rentshield_identity.views import schedule_video_call_view
 from documents.rentshield_identity.views import start_verification_view
@@ -372,6 +377,30 @@ urlpatterns = [
                                 r"^identity/verify/webhook/$",
                                 idswyft_webhook_view,
                                 name="rentshield-identity-verify-webhook",
+                            ),
+                            # Notice-signer identity verification --
+                            # documents/rentshield_identity/signer_views.py.
+                            # Token-gated (AllowAny), not session-gated: the
+                            # signer has no RentShield account at all.
+                            re_path(
+                                r"^notice-signer/(?P<token>[^/]+)/start/$",
+                                signer_start_view,
+                                name="rentshield-signer-verify-start",
+                            ),
+                            re_path(
+                                r"^notice-signer/(?P<token>[^/]+)/status/$",
+                                signer_status_view,
+                                name="rentshield-signer-verify-status",
+                            ),
+                            re_path(
+                                r"^notice-signer/(?P<token>[^/]+)/front-document/$",
+                                signer_upload_front_view,
+                                name="rentshield-signer-verify-front-document",
+                            ),
+                            re_path(
+                                r"^notice-signer/(?P<token>[^/]+)/live-capture/$",
+                                signer_upload_selfie_view,
+                                name="rentshield-signer-verify-live-capture",
                             ),
                             re_path(
                                 r"^identity/verify/admin/list/$",
@@ -810,6 +839,11 @@ urlpatterns = [
     # session yet either. See rentshield_invite_accept_view's own
     # comment.
     re_path(r"^invite/accept/?$", rentshield_invite_accept_view, name="rentshield-invite-accept"),
+    # Notice-signer identity verification page (2026-09-23) -- public, no
+    # login required, same reasoning as /login/* and /invite/accept/
+    # above: a notice signer has no RentShield account either. See
+    # signer_views.py's notice_signer_verify_page_view docstring.
+    re_path(r"^sign-verify/?$", notice_signer_verify_page_view, name="rentshield-signer-verify-page"),
     # ZITADEL migration Phase D -- called cross-origin from the
     # zitadel.rentshield.local bridge page, not from anything on this
     # domain. Not yet reachable through the real signup flow (Phase F).

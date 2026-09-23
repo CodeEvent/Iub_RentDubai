@@ -1,0 +1,46 @@
+{% extends "rentshield/signup_base.html" %}
+{% load static %}
+{% block title %}Verify your identity to sign{% endblock %}
+{% block content %}
+{% if not error %}
+    <div id="rs-signer-app" data-token="{{ token }}">
+        <div id="rs-signer-intro" class="rs-signer-phase">
+            <h1>Verify your identity to sign</h1>
+            <p class="rs-wizard-hint">
+                {% if signer_name %}Hi {{ signer_name }} -- {% endif %}
+                before you can sign this notice, confirm your identity with a quick photo ID and
+                selfie check. It takes under a minute.
+            </p>
+            <button type="button" id="rs-signer-start-btn" class="rs-btn rs-btn-primary">
+                <span class="rs-btn-label">Start Verification</span>
+            </button>
+        </div>
+        <div id="rs-signer-front" class="rs-signer-phase" style="display:none">
+            <h1>Photograph your ID</h1>
+            <p class="rs-wizard-hint">Take a clear photo of your passport or ID card.</p>
+            <label for="rs-signer-front-input">Passport / ID photo</label>
+            <input type="file" id="rs-signer-front-input" class="rs-input" accept="image/*" capture="environment">
+        </div>
+        <div id="rs-signer-selfie" class="rs-signer-phase" style="display:none">
+            <h1>Take a selfie</h1>
+            <p class="rs-wizard-hint">Now take a selfie so we can match it to your ID.</p>
+            <label for="rs-signer-selfie-input">Selfie</label>
+            <input type="file" id="rs-signer-selfie-input" class="rs-input" accept="image/*" capture="user">
+        </div>
+        <div id="rs-signer-verified" class="rs-signer-phase" style="display:none">
+            <h1>You're verified</h1>
+            <p class="rs-wizard-hint">You'll receive a separate email shortly with the actual document to sign.</p>
+        </div>
+        <div id="rs-signer-manual-review" class="rs-signer-phase" style="display:none">
+            <h1>Almost there</h1>
+            <p class="rs-wizard-hint">We need to double-check a few details before you can sign. We'll email you once that's done.</p>
+        </div>
+        <div id="rs-signer-busy" class="rs-spinner" style="display:none; margin-top: .9rem;"></div>
+        <div id="rs-signer-error" class="rs-wizard-error" style="display:none; margin-top: .9rem;"></div>
+    </div>
+    <script src="{% static 'rentshield/signer-verify.js' %}"></script>
+{% else %}
+    <h1>Link invalid</h1>
+    <p class="rs-wizard-hint">This verification link is invalid or has expired. Contact whoever sent it to ask for a new one.</p>
+{% endif %}
+{% endblock %}

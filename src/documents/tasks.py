@@ -940,6 +940,45 @@ def run_notarization_task(document_id: int) -> dict:
 
 
 @shared_task
+def fire_signing_after_verification_task(document_id: int) -> dict:
+    """Fires the actual DocuSeal/OpenSign signing request once a
+    NoticeSignerVerification for `document_id` has been confirmed
+    VERIFIED -- dispatched from
+    documents/rentshield_identity/signer_views.py's
+    signer_upload_selfie_view rather than calling
+    documents.rentshield.service._fire_signing_request() inline there,
+    same "don't block the request on an external provider call" reason
+    as run_notarization_task below. Imports done inside the task body
+    for the same documents.tasks <-> documents.rentshield circular-import
+    reason as every other task here."""
+    from documents.models import Document
+    from documents.rentshield.service import _fire_signing_request
+    from documents.rentshield.service import read_notice_fields
+    from documents.rentshield.service import sync_notarization_stage_tag
+
+    try:
+        document = Document.objects.get(id=document_id)
+    except Document.DoesNotExist:
+        logger.warning("fire_signing_after_verification_task: no such document %s", document_id)
+        return {"error": f"Document {document_id} does not exist"}
+
+    fields = read_notice_fields(document)
+    try:
+        result = _fire_signing_request(document, fields)
+    except Exception as exc:
+        logger.exception(
+            "fire_signing_after_verification_task: dispatch failed for document %s: %s",
+            document_id,
+            exc,
+        )
+        sync_notarization_stage_tag(document, "failed")
+        return {"error": str(exc)}
+
+    sync_notarization_stage_tag(document, result["status"])
+    return result
+
+
+@shared_task
 def notify_notice_served_task(document_id: int, status: str) -> dict:
     """Async wrapper around documents.rentshield.service's served_date
     stamping + _notify_notice_served() -- dispatched from documents/

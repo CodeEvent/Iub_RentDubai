@@ -10,6 +10,7 @@ import logging
 import os
 import tempfile
 from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 from time import mktime
 
@@ -454,20 +455,15 @@ def read_notice_fields(document: Document) -> dict:
     return fields
 
 
-def request_notarization(document: Document) -> dict:
-    """Routes the notice on `document` through a real e-signature
-    workflow (DocuSeal primary, OpenSign fallback) via
-    documents.rentshield.esign.orchestrator, then writes the result back
-    onto that Document's own CustomFieldInstance rows -- no separate
-    Notice row to update. Requires the notarization add-on to have been
-    selected and a landlord email to route the signing request to.
-    """
-    fields = read_notice_fields(document)
-    if not fields.get("add_notarization"):
-        raise ValueError("Notarization add-on was not selected for this notice")
-    if not fields.get("landlord_email"):
-        raise ValueError("A landlord email is required to route the notarization request")
+SIGNER_TOKEN_SALT = "rentshield-signer-verify"
+SIGNER_TOKEN_MAX_AGE_SECONDS = int(timedelta(days=14).total_seconds())
 
+
+def _fire_signing_request(document: Document, fields: dict) -> dict:
+    """The actual DocuSeal/OpenSign dispatch -- split out of
+    request_notarization() below so it can be called either immediately
+    (a notice whose signer already verified once before) or later, once
+    signer_views.py's capture flow confirms the signer's identity."""
     from documents.rentshield.esign.orchestrator import request_signing
 
     document_data = build_notice(notice_to_builder_input(fields))
@@ -492,6 +488,85 @@ def request_notarization(document: Document) -> dict:
     }.items():
         _set_custom_field_value(document, key, value)
     return result
+
+
+def _send_signer_verification_email(document: Document, verification) -> None:
+    """Emails the notice's signer a link to RentShield's own capture
+    page (Angular route /sign-verify/:token, no login -- the signer has
+    no RentShield account) instead of a DocuSeal/OpenSign link directly.
+    Same signed-token shape as rentshield_views.py's invite-accept link
+    (django.core.signing.dumps, no separate token column to keep in
+    sync) -- built from settings.PAPERLESS_URL/BASE_URL rather than a
+    request.build_absolute_uri, the same way workflows/actions.py builds
+    doc_url, since this fires from Celery tasks with no request in hand."""
+    from urllib.parse import quote
+
+    from django.core.signing import dumps
+
+    token = dumps({"verification_id": verification.id}, salt=SIGNER_TOKEN_SALT)
+    # A query param, not a path segment (unlike signer_views.py's own
+    # API urls) -- this is an Angular route (sign-verify.component.ts),
+    # and a trailing-slash path segment is one more thing for the
+    # frontend router's UrlSerializer to normalize correctly; a query
+    # param sidesteps that entirely, same as rentshield_views.py's own
+    # invite-accept link.
+    verify_url = f"{settings.PAPERLESS_URL}{settings.BASE_URL}sign-verify/?token={quote(token, safe='')}"
+    send_mail(
+        subject="Verify your identity to sign this notice",
+        message=(
+            f"You've been asked to sign a tenancy notice on RentShield.\n\n"
+            "Before you can sign, confirm your identity with a quick photo ID + selfie check "
+            f"(takes under a minute): {verify_url}\n\n"
+            "Once you're verified, you'll receive a separate email with the actual document to sign."
+        ),
+        from_email=None,
+        recipient_list=[verification.signer_email],
+        fail_silently=False,
+    )
+
+
+def request_notarization(document: Document) -> dict:
+    """Routes the notice on `document` through a real e-signature
+    workflow (DocuSeal primary, OpenSign fallback) via
+    documents.rentshield.esign.orchestrator, then writes the result back
+    onto that Document's own CustomFieldInstance rows -- no separate
+    Notice row to update. Requires the notarization add-on to have been
+    selected and a landlord email to route the signing request to.
+
+    Identity-verification gate (2026-09-23): DocuSeal/OpenSign's own
+    email-link signing has no identity check at all -- anyone holding
+    the link can sign. Rather than firing that request straight away,
+    this get_or_creates a NoticeSignerVerification for the document and,
+    unless it's already VERIFIED (e.g. a retried dispatch after the
+    signer completed capture once), emails the signer RentShield's own
+    capture link instead and returns early with an
+    "awaiting_signer_verification" status -- a real, freeform STRING
+    custom field (see custom_fields.py), so this is a safe value to
+    write. signer_views.py's signer_upload_selfie_view is what actually
+    calls _fire_signing_request() once that verification succeeds.
+    """
+    fields = read_notice_fields(document)
+    if not fields.get("add_notarization"):
+        raise ValueError("Notarization add-on was not selected for this notice")
+    if not fields.get("landlord_email"):
+        raise ValueError("A landlord email is required to route the notarization request")
+
+    from documents.rentshield_identity.models import NoticeSignerVerification
+
+    verification, _created = NoticeSignerVerification.objects.get_or_create(
+        document=document,
+        defaults={
+            "signer_name": fields.get("landlord_name") or "",
+            "signer_email": fields["landlord_email"],
+        },
+    )
+    if verification.status != NoticeSignerVerification.Status.VERIFIED:
+        _send_signer_verification_email(document, verification)
+        result = {"provider": "", "external_id": "", "signing_url": "", "status": "awaiting_signer_verification"}
+        _set_custom_field_value(document, "esign_status", result["status"])
+        return result
+
+    return _fire_signing_request(document, fields)
 
 
 def check_notarization_status(document: Document) -> dict:

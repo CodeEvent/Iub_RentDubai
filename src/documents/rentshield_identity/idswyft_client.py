@@ -94,8 +94,20 @@ def normalize_image_for_idswyft(file_bytes: bytes, content_type: str | None) -> 
 _USER_ID_NAMESPACE = uuid.UUID("0fe723ca-3c0c-4177-aa16-82434b43314c")
 
 
+def _stable_uuid(key: str) -> str:
+    return str(uuid.uuid5(_USER_ID_NAMESPACE, key))
+
+
 def rentshield_user_uuid(django_user_id: int) -> str:
-    return str(uuid.uuid5(_USER_ID_NAMESPACE, f"rentshield-user-{django_user_id}"))
+    return _stable_uuid(f"rentshield-user-{django_user_id}")
+
+
+# Same namespace, a different key prefix -- a NoticeSignerVerification
+# has no Django user (the signer never gets a RentShield account), just
+# its own row id, which is every bit as stable a key as django_user_id
+# is above.
+def rentshield_signer_uuid(signer_verification_id: int) -> str:
+    return _stable_uuid(f"rentshield-signer-{signer_verification_id}")
 
 
 def is_configured() -> bool:
@@ -125,22 +137,33 @@ def _hosted_url(verification_id: str, body: dict) -> str:
     )
 
 
-def create_verification_session(django_user_id: int, document_type: str = "passport") -> dict:
-    """Starts a new verification session. The actual capture (photo +
-    selfie) happens inside RentShield's own UI via upload_front_document()/
-    upload_live_capture() below -- not Idswyft's hosted page -- see
-    rentshield_identity/views.py's start_verification_view."""
+def _create_session(user_uuid: str, document_type: str) -> dict:
     body = _fetch(
         "/api/v2/verify/initialize",
         method="POST",
         json={
-            "user_id": rentshield_user_uuid(django_user_id),
+            "user_id": user_uuid,
             "document_type": document_type,
             "verification_mode": "identity",
         },
     )
     verification_id = body["verification_id"]
     return {"verification_id": verification_id, "hosted_url": _hosted_url(verification_id, body)}
+
+
+def create_verification_session(django_user_id: int, document_type: str = "passport") -> dict:
+    """Starts a new verification session. The actual capture (photo +
+    selfie) happens inside RentShield's own UI via upload_front_document()/
+    upload_live_capture() below -- not Idswyft's hosted page -- see
+    rentshield_identity/views.py's start_verification_view."""
+    return _create_session(rentshield_user_uuid(django_user_id), document_type)
+
+
+def create_verification_session_for_signer(signer_verification_id: int, document_type: str = "passport") -> dict:
+    """Same as create_verification_session() above, keyed by a
+    NoticeSignerVerification row id instead of a Django user id -- see
+    rentshield_identity/signer_views.py's signer_start_view."""
+    return _create_session(rentshield_signer_uuid(signer_verification_id), document_type)
 
 
 def _upload(path: str, field_name: str, file_bytes: bytes, filename: str, content_type: str) -> dict:
