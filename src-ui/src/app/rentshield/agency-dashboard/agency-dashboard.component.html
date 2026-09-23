@@ -116,8 +116,20 @@
         @if (membersLoading()) {
           <div class="spinner-border spinner-border-sm" role="status"></div>
         } @else {
+          @if (members().length > 5) {
+            <div class="input-group input-group-sm mb-2" style="max-width: 20rem">
+              <span class="input-group-text"><i-bs name="search"></i-bs></span>
+              <input
+                type="search"
+                class="form-control"
+                placeholder="Search by name or email"
+                i18n-placeholder
+                [(ngModel)]="memberSearch"
+                (ngModelChange)="onMemberSearchChange()">
+            </div>
+          }
           <div class="list-group border-light">
-            @for (member of members(); track member.id) {
+            @for (member of filteredMembers(); track member.id) {
               <div class="list-group-item d-flex justify-content-between align-items-center">
                 <div>
                   <div>{{ member.username }}</div>
@@ -149,7 +161,11 @@
                 </div>
               </div>
             } @empty {
-              <p class="text-muted small mb-0" i18n>No team members yet.</p>
+              @if (memberSearch.trim()) {
+                <p class="text-muted small mb-0" i18n>No team members match "{{ memberSearch }}".</p>
+              } @else {
+                <p class="text-muted small mb-0" i18n>No team members yet.</p>
+              }
             }
           </div>
         }

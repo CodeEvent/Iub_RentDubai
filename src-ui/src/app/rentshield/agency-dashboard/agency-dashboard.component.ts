@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common'
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit, inject, signal } from '@angular/core'
+import { Component, OnInit, computed, inject, signal } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { Router, RouterModule } from '@angular/router'
 import { NgbPopoverModule } from '@ng-bootstrap/ng-bootstrap'
@@ -56,6 +56,22 @@ export class AgencyDashboardComponent implements OnInit {
   readonly members = signal<OrganizationMember[]>([])
   readonly membersLoading = signal(true)
   readonly memberActionIds = signal<Set<number>>(new Set())
+
+  memberSearch = ''
+  private readonly memberSearchTerm = signal('')
+  readonly filteredMembers = computed(() => {
+    const term = this.memberSearchTerm().trim().toLowerCase()
+    if (!term) return this.members()
+    return this.members().filter(
+      (member) =>
+        member.username.toLowerCase().includes(term) ||
+        member.email.toLowerCase().includes(term)
+    )
+  })
+
+  onMemberSearchChange(): void {
+    this.memberSearchTerm.set(this.memberSearch)
+  }
 
   ngOnInit(): void {
     this.api.getOrganizationDashboard().subscribe({
